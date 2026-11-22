@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.NoticeKind
 import com.muktiarafi.turu.models.NoticeView
+import com.muktiarafi.turu.models.NotificationsAct
 import com.muktiarafi.turu.models.NotificationsView
 import kotlinx.serialization.json.Json
 
@@ -111,7 +112,7 @@ class NotificationsPanel {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
         selected.clear()
-        client.act("notifications", "clear") { error = it }
+        client.act("notifications", NotificationsAct.CLEAR, NotificationsAct.JsonSerializer) { error = it }
     }
 
     /** The events the filter shows, newest first. */

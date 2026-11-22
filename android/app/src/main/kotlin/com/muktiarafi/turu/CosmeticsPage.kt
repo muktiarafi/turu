@@ -68,12 +68,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.CosmeticItemView
+import com.muktiarafi.turu.models.CosmeticsAct
+import com.muktiarafi.turu.models.CosmeticsQuery
 import com.muktiarafi.turu.models.CosmeticsView
 import com.muktiarafi.turu.models.OutfitView
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Cosmetics for the tab on screen (`turu_frontend::models::cosmetics`): what the game actions
@@ -109,16 +109,16 @@ class CosmeticsPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("cosmetics", "do", JSONObject().put("action", "open"))
+            it.act("cosmetics", CosmeticsAct.open, CosmeticsAct.JsonSerializer)
         }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject()) {
+    fun act(action: CosmeticsAct) {
         error = null
-        client?.act("cosmetics", "do", body.put("action", action)) { error = it }
+        client?.act("cosmetics", action, CosmeticsAct.JsonSerializer) { error = it }
     }
 
-    fun query(field: String, value: Any) = act("query", JSONObject().put(field, value))
+    fun query(change: CosmeticsQuery) = act(CosmeticsAct.query(change))
 }
 
 private enum class CosmeticsTab(val label: String) { Copy("Copy"), Catalog("Catalog"), Outfits("Outfits"), Colors("Colors") }
@@ -153,12 +153,12 @@ fun CosmeticsPage(state: ShellState, panel: CosmeticsPanel, fullWindow: () -> Un
                         }
                     },
                     enabled = view?.busy == false,
-                    onClick = { close(); panel.act("reset") },
+                    onClick = { close(); panel.act(CosmeticsAct.reset) },
                 )
                 DropdownMenuItem(
                     text = { Text("Check catalog updates") },
                     enabled = view?.catalog?.busy == false,
-                    onClick = { close(); panel.act("check-updates") },
+                    onClick = { close(); panel.act(CosmeticsAct.check_updates) },
                 )
                 HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
             }
@@ -216,18 +216,18 @@ private fun CopyTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Modifi
                         loading = false,
                         empty = "Nobody else is in this room",
                         none = "Nobody else here",
-                        onOpen = { panel.act("players") },
+                        onOpen = { panel.act(CosmeticsAct.players) },
                     ) { player = it }
                 }
                 Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick = { panel.act("copy-player", JSONObject().put("name", player)) }, enabled = !view.busy && player.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp)) { Text("Copy") }
+                OutlinedButton(onClick = { panel.act(CosmeticsAct.copy_player(player)) }, enabled = !view.busy && player.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp)) { Text("Copy") }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                FilledTonalButton(onClick = { panel.act("copy-target") }, enabled = !view.busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Copy my target's look") }
+                FilledTonalButton(onClick = { panel.act(CosmeticsAct.copy_target) }, enabled = !view.busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Copy my target's look") }
             }
             Label("Any character, from its character page")
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                val copy = { if (character.isNotBlank() && !view.busy) panel.act("copy-page", JSONObject().put("name", character.trim())) }
+                val copy = { if (character.isNotBlank() && !view.busy) panel.act(CosmeticsAct.copy_page(character.trim())) }
                 OutlinedTextField(
                     value = character,
                     onValueChange = { character = it },
@@ -251,7 +251,7 @@ private fun CopyTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Modifi
             Label("Gender")
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for ((label, g) in listOf("Female" to "F", "Male" to "M", "Swap" to "")) {
-                    OutlinedButton(onClick = { panel.act("gender", JSONObject().put("gender", g)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(label) }
+                    OutlinedButton(onClick = { panel.act(CosmeticsAct.gender(g)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(label) }
                 }
             }
             Text(
@@ -277,7 +277,7 @@ private fun CatalogTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Mod
     LaunchedEffect(query) {
         if (query != c.query) {
             delay(350)
-            panel.query("query", query)
+            panel.query(CosmeticsQuery(query = query))
         }
     }
     Column(modifier) {
@@ -301,7 +301,7 @@ private fun CatalogTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Mod
                     items(c.categories) { cat ->
                         FilterChip(
                             selected = cat == c.category,
-                            onClick = { panel.query("category", cat) },
+                            onClick = { panel.query(CosmeticsQuery(category = cat)) },
                             label = { Text(cat) },
                             leadingIcon = if (cat == "Favorites") { { Icon(Icons.Rounded.Favorite, contentDescription = null, modifier = Modifier.size(16.dp)) } } else null,
                             colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Turu.AccentTint, selectedLabelColor = Turu.Text),
@@ -315,12 +315,12 @@ private fun CatalogTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Mod
                     if (c.category == "Weapon") {
                         Box(Modifier.weight(1f)) {
                             Picker(label = "Kind", value = c.weaponKind, options = listOf("" to "All kinds") + c.weaponKinds.map { it to it }, loading = false, none = "All kinds") {
-                                panel.query("weaponKind", it)
+                                panel.query(CosmeticsQuery(weaponKind = it))
                             }
                         }
                     }
                     Box(Modifier.weight(1f)) {
-                        Picker(label = "Sort", value = c.sort, options = c.sorts.map { it to it }, loading = false) { panel.query("sort", it) }
+                        Picker(label = "Sort", value = c.sort, options = c.sorts.map { it to it }, loading = false) { panel.query(CosmeticsQuery(sort = it)) }
                     }
                 }
             }
@@ -356,10 +356,10 @@ private fun CatalogTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Mod
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(start = 8.dp),
             )
-            IconButton(onClick = { panel.query("page", (c.page - 1u).toLong()) }, enabled = c.page > 0u) {
+            IconButton(onClick = { panel.query(CosmeticsQuery(page = c.page - 1u)) }, enabled = c.page > 0u) {
                 Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = "Previous page")
             }
-            IconButton(onClick = { panel.query("page", (c.page + 1u).toLong()) }, enabled = c.page + 1u < c.pages) {
+            IconButton(onClick = { panel.query(CosmeticsQuery(page = c.page + 1u)) }, enabled = c.page + 1u < c.pages) {
                 Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "Next page")
             }
         }
@@ -368,7 +368,6 @@ private fun CatalogTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Mod
 
 @Composable
 private fun ItemRow(item: CosmeticItemView, busy: Boolean, panel: CosmeticsPanel) {
-    val at = JSONObject().put("key", item.key)
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 16.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -377,14 +376,14 @@ private fun ItemRow(item: CosmeticItemView, busy: Boolean, panel: CosmeticsPanel
             Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${item.category} · #${item.id}", style = MaterialTheme.typography.bodySmall, color = Turu.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        IconButton(onClick = { panel.act("favorite", JSONObject().put("key", item.key)) }) {
+        IconButton(onClick = { panel.act(CosmeticsAct.favorite(item.key)) }) {
             Icon(
                 if (item.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                 contentDescription = if (item.favorite) "Remove ${item.name} from favorites" else "Add ${item.name} to favorites",
                 tint = if (item.favorite) Turu.Danger else Turu.Muted,
             )
         }
-        TextButton(onClick = { panel.act("equip", at) }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Equip") }
+        TextButton(onClick = { panel.act(CosmeticsAct.equip(item.key)) }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Equip") }
     }
 }
 
@@ -410,7 +409,7 @@ private fun OutfitsTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Mod
     if (saving) {
         NameDialog(title = "Save current look", initial = "My outfit", confirm = "Save", onDismiss = { saving = false }) { name ->
             saving = false
-            panel.act("save-look", JSONObject().put("name", name))
+            panel.act(CosmeticsAct.save_look(name))
         }
     }
     deleting?.let { o ->
@@ -418,7 +417,7 @@ private fun OutfitsTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Mod
             onDismissRequest = { deleting = null },
             title = { Text("Delete this outfit?") },
             text = { Text("${o.name}. The items stay in the catalog.") },
-            confirmButton = { TextButton(onClick = { deleting = null; panel.act("delete-set", JSONObject().put("index", o.position.toLong()).put("name", o.name)) }) { Text("Delete", color = Turu.Danger) } },
+            confirmButton = { TextButton(onClick = { deleting = null; panel.act(CosmeticsAct.delete_set(o.position, o.name)) }) { Text("Delete", color = Turu.Danger) } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
             containerColor = Turu.Card,
         )
@@ -439,7 +438,7 @@ private fun OutfitRow(o: OutfitView, panel: CosmeticsPanel, onDelete: () -> Unit
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        TextButton(onClick = { panel.act("equip-set", JSONObject().put("index", o.position.toLong()).put("name", o.name)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Equip") }
+        TextButton(onClick = { panel.act(CosmeticsAct.equip_set(o.position, o.name)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Equip") }
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "${o.name}: delete", tint = Turu.Muted) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Turu.Card) {
@@ -462,7 +461,7 @@ private fun ColorsTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Modi
         }
         seen = view.colorsCount
     }
-    val apply = { panel.act("colors", JSONObject().put("hex", JSONArray(hex.toList()))) }
+    val apply = { panel.act(CosmeticsAct.colors(hex.toList())) }
     LazyColumn(modifier) {
         itemsIndexed(view.colorRows) { i, row ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -496,7 +495,7 @@ private fun ColorsTab(view: CosmeticsView, panel: CosmeticsPanel, modifier: Modi
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(onClick = apply, enabled = hex.all { it.isBlank() || hexColor(it) != null }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Apply colors") }
-                OutlinedButton(onClick = { panel.act("read-colors") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Read from avatar") }
+                OutlinedButton(onClick = { panel.act(CosmeticsAct.read_colors) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Read from avatar") }
             }
             if (view.ccStatus.isNotEmpty()) {
                 Text(view.ccStatus, style = MaterialTheme.typography.bodySmall, color = Turu.Success, modifier = Modifier.padding(horizontal = 16.dp))

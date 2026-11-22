@@ -721,8 +721,7 @@ pub const OPTION_GROUPS: [(&str, &[&str]); 6] = [
 
 use super::form::{KindView, OptionValue, OptionView, SectionView};
 use super::tab_state::PerTab;
-use serde::Serialize;
-use serde_json::Value as Json;
+use serde::{Deserialize, Serialize};
 
 static DRAFTS: PerTab<Draft> = PerTab::new();
 
@@ -907,37 +906,72 @@ pub fn view(bot: &Arc<Bot>) -> CoreBotsView {
     }
 }
 
-/// What the page does: `open` (read the game and the file), `close` (save, as closing the egui
-/// window does), `save`, `revert`, `refresh` (the classes and gear again), `confirm-public`
-/// (Private Rooms off, answered), `dismiss` (the message), `option` (`tag`, `value`), `role`
-/// (`index`, and `class`, `mode`, `equipment` or `slot` with `item`).
-pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
+/// CoreBots' actions (`POST /models/core-bots/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum CoreBotsAct {
+    /// Reads the game and the file.
+    Open,
+    /// Saves, as closing the egui window does.
+    Close,
+    Save,
+    Revert,
+    /// Reads the classes and gear again.
+    Refresh,
+    /// Private Rooms off, answered.
+    ConfirmPublic,
+    /// Dismisses the message.
+    Dismiss,
+    /// Sets the option tagged `tag`.
+    Option {
+        tag: String,
+        value: OptionValue,
+    },
+    /// Changes the role at `position`: the fields given (`slot` with `item`).
+    Role {
+        position: u32,
+        class: Option<String>,
+        mode: Option<String>,
+        equipment: Option<bool>,
+        slot: Option<u32>,
+        item: Option<String>,
+    },
+}
+
+pub fn act(bot: &Arc<Bot>, act: CoreBotsAct) -> Result<(), String> {
     let draft = DRAFTS.of(bot);
     let mut d = lock(&draft);
     d.apply_fetched();
     let editable = !d.username.is_empty();
-    match action {
-        "open" => {
+    match act {
+        CoreBotsAct::Open => {
             d.sets = SkillSets::load_for(bot);
             d.fetch(bot, Purpose::Open);
         }
-        "close" => {
+        CoreBotsAct::Close => {
             if editable {
                 d.save(false);
             }
         }
-        "save" => d.fetch(bot, Purpose::Save),
-        "refresh" => d.fetch(bot, Purpose::LoadCharacter),
-        "revert" => {
+        CoreBotsAct::Save => d.fetch(bot, Purpose::Save),
+        CoreBotsAct::Refresh => d.fetch(bot, Purpose::LoadCharacter),
+        CoreBotsAct::Revert => {
             let username = d.username.clone();
             d.read_values.remove(&username);
             d.load(true);
         }
-        "confirm-public" => *lock(&PUBLIC_CONFIRMED) = Some(d.username.clone()),
-        "dismiss" => d.message = None,
-        "option" if editable => {
-            let tag = body.get("tag").and_then(Json::as_str).ok_or("tag is missing")?;
-            let value = body.get("value").ok_or("value is missing")?;
+        CoreBotsAct::ConfirmPublic => *lock(&PUBLIC_CONFIRMED) = Some(d.username.clone()),
+        CoreBotsAct::Dismiss => d.message = None,
+        CoreBotsAct::Option { .. } | CoreBotsAct::Role { .. } if !editable => {
+            return Err("Log in first: the options are your character's".into());
+        }
+        CoreBotsAct::Option { tag, value } => {
             let d = &mut *d;
             let opt = d
                 .options
@@ -946,42 +980,44 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
                 .find(|o| o.tag == tag)
                 .ok_or_else(|| format!("no option {tag}"))?;
             opt.value = match (&opt.default, value) {
-                (Value::Bool(_), Json::Bool(b)) => Value::Bool(*b),
-                (Value::Int(_), n) => Value::Int(n.as_i64().and_then(|n| i32::try_from(n).ok()).ok_or("not a number")?),
-                (Value::Text(_), Json::String(t)) => Value::Text(t.clone()),
-                _ => return Err(format!("not a value for {tag}: {value}")),
+                (Value::Bool(_), OptionValue::Switch(b)) => Value::Bool(b),
+                (Value::Int(_), OptionValue::Number(n)) => Value::Int(i32::try_from(n).map_err(|_| "not a number")?),
+                (Value::Text(_), OptionValue::Text(t)) => Value::Text(t),
+                (_, value) => return Err(format!("not a value for {tag}: {value:?}")),
             };
         }
-        "role" if editable => {
-            let index = body.get("index").and_then(Json::as_u64).ok_or("index is missing")? as usize;
+        CoreBotsAct::Role {
+            position,
+            class,
+            mode,
+            equipment,
+            slot,
+            item,
+        } => {
+            let index = position as usize;
             let d = &mut *d;
             if index >= d.roles.len() {
                 return Err("no such role".into());
             }
-            if let Some(class) = body.get("class").and_then(Json::as_str) {
+            if let Some(class) = class {
                 d.roles[index].mode = None;
                 let (sets, current) = (&mut d.sets, d.current_class.clone());
-                d.roles[index].select_class(class.to_owned(), sets, current.as_deref());
+                d.roles[index].select_class(class, sets, current.as_deref());
             }
-            if let Some(mode) = body.get("mode").and_then(Json::as_str) {
-                d.roles[index].mode = Some(mode.to_owned());
+            if let Some(mode) = mode {
+                d.roles[index].mode = Some(mode);
             }
-            if let Some(on) = body.get("equipment").and_then(Json::as_bool) {
+            if let Some(on) = equipment {
                 d.roles[index].use_equipment = on;
             }
-            if let (Some(slot), Some(item)) = (
-                body.get("slot").and_then(Json::as_u64),
-                body.get("item").and_then(Json::as_str),
-            ) {
+            if let (Some(slot), Some(item)) = (slot, item) {
                 let slot = slot as usize;
                 if slot >= SLOTS.len() {
                     return Err("no such slot".into());
                 }
-                d.roles[index].gear[slot] = item.to_owned();
+                d.roles[index].gear[slot] = item;
             }
         }
-        "option" | "role" => return Err("Log in first: the options are your character's".into()),
-        other => return Err(format!("no action {other}")),
     }
     Ok(())
 }

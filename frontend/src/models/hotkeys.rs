@@ -10,7 +10,7 @@
 //! shortcuts (`Platform::has_hotkeys` false: both Android apps) neither run nor show them.
 
 use super::tab_state::lock;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -644,7 +644,6 @@ pub static ACTIONS: &[Action] = &[
 pub fn find(id: &str) -> Option<&'static Action> {
     ACTIONS.iter().find(|a| a.id.eq_ignore_ascii_case(id))
 }
-
 
 /// egui's key names (`egui::Key::name`, in `Key::ALL`'s order), which gestures are saved and
 /// matched by. A test in the egui window checks they still match egui's.
@@ -1421,29 +1420,56 @@ pub fn view() -> HotKeysView {
     }
 }
 
-/// `POST /models/hotkeys/do`: `assign` (`id`, `key`: one of [`KEY_NAMES`], `ctrl`, `shift`, `alt`;
-/// answers `moved`, the action that lost the key, or empty), `clear` (`id`), `add` (`id`), `remove`
-/// (`id`), `undo-remove`, `reset`.
-pub fn act(store: &Store, action: &str, body: &Value) -> Result<Value, String> {
-    let text = |key: &str| {
-        body.get(key)
-            .and_then(Value::as_str)
-            .ok_or_else(|| format!("{key} is missing"))
-    };
-    let flag = |key: &str| body.get(key).and_then(Value::as_bool).unwrap_or(false);
-    match action {
-        "assign" => {
-            let gesture = Gesture::of_press(text("key")?, flag("ctrl"), flag("shift"), flag("alt"))
-                .ok_or("That key can't be a hotkey")?;
-            let moved = store.assign(text("id")?, gesture)?;
+/// HotKeys' actions (`POST /models/hotkeys/do`); `id` is an action's ("OpenBank").
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum HotKeysAct {
+    /// Gives `key` (one of [`KEY_NAMES`]) with its modifiers to the action: answers `moved`, the
+    /// action that lost the key, or empty.
+    Assign {
+        id: String,
+        key: String,
+        ctrl: bool,
+        shift: bool,
+        alt: bool,
+    },
+    Clear {
+        id: String,
+    },
+    Add {
+        id: String,
+    },
+    Remove {
+        id: String,
+    },
+    UndoRemove,
+    Reset,
+}
+
+pub fn act(store: &Store, act: HotKeysAct) -> Result<Value, String> {
+    match act {
+        HotKeysAct::Assign {
+            id,
+            key,
+            ctrl,
+            shift,
+            alt,
+        } => {
+            let gesture = Gesture::of_press(&key, ctrl, shift, alt).ok_or("That key can't be a hotkey")?;
+            let moved = store.assign(&id, gesture)?;
             Ok(json!({ "moved": moved.unwrap_or_default() }))
         }
-        "clear" => store.clear_key(text("id")?).map(|_| json!({})),
-        "add" => store.add(text("id")?).map(|()| json!({})),
-        "remove" => store.remove(text("id")?).map(|_| json!({})),
-        "undo-remove" => store.undo_remove().map(|_| json!({})),
-        "reset" => store.reset().map(|()| json!({})),
-        other => Err(format!("no action {other}")),
+        HotKeysAct::Clear { id } => store.clear_key(&id).map(|_| json!({})),
+        HotKeysAct::Add { id } => store.add(&id).map(|()| json!({})),
+        HotKeysAct::Remove { id } => store.remove(&id).map(|_| json!({})),
+        HotKeysAct::UndoRemove => store.undo_remove().map(|_| json!({})),
+        HotKeysAct::Reset => store.reset().map(|()| json!({})),
     }
 }
 
@@ -1540,10 +1566,11 @@ mod tests {
         let bank = store.bindings().into_iter().find(|b| b.action == "OpenBank").unwrap();
         assert_eq!(bank.gesture, None);
         assert!(store.undo_remove().is_err());
-        assert_eq!(
-            act(&store, "assign", &json!({ "id": "OpenBank", "key": "Escape" })),
-            Err("That key can't be a hotkey".into())
-        );
+        let escape = serde_json::from_value(json!({
+            "action": "assign", "id": "OpenBank", "key": "Escape", "ctrl": false, "shift": false, "alt": false,
+        }))
+        .unwrap();
+        assert_eq!(act(&store, escape), Err("That key can't be a hotkey".into()));
         store.reset().unwrap();
         assert_eq!(store.bindings(), defaults());
         // Saved as VibeSkua's strings.

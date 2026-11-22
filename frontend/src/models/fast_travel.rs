@@ -10,8 +10,7 @@
 
 use super::scheduler::{Note, Tint};
 use super::tab_state::{PerTab, lock};
-use serde::Serialize;
-use serde_json::Value as Json;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use turu_bot::Bot;
 use turu_bot::api::{map, player};
@@ -292,67 +291,93 @@ pub fn view(bot: &Arc<Bot>) -> FastTravelView {
     s.view()
 }
 
-fn destination(body: &Json) -> Result<FastTravel, String> {
-    let text = |name: &str| {
-        body.get(name)
-            .and_then(Json::as_str)
-            .map(str::to_owned)
-            .ok_or_else(|| format!("{name} is missing"))
-    };
-    Ok(FastTravel::new(
-        &text("name")?,
-        &text("map")?,
-        &text("cell")?,
-        &text("pad")?,
-    ))
+/// Fast Travel's actions (`POST /models/fast-travel/do`). A destination is named by its
+/// `position` and its name, so a list changed meanwhile isn't changed in the wrong place.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum FastTravelAct {
+    /// Reads the list again.
+    Open,
+    Travel {
+        position: u32,
+        name: String,
+    },
+    Add {
+        name: String,
+        map: String,
+        cell: String,
+        pad: String,
+    },
+    /// Changes the destination at `position`, named `was` before.
+    Edit {
+        position: u32,
+        was: String,
+        name: String,
+        map: String,
+        cell: String,
+        pad: String,
+    },
+    Remove {
+        position: u32,
+        name: String,
+    },
+    Clear,
+    /// Adds where the player is.
+    GetCurrent,
+    /// Private rooms on or off, and the room's number; each kept when not given.
+    Private {
+        on: Option<bool>,
+        room: Option<i64>,
+    },
+    /// Dismisses the note.
+    Dismiss,
 }
 
-/// `open` (read the list again), `travel` (`index`, `name`), `add` (`name`, `map`, `cell`,
-/// `pad`), `edit` (`index`, `was`: its name before, and the four fields), `remove` (`index`,
-/// `name`), `clear`, `get-current`, `private` (`on`, `room`), `dismiss` (the note).
-pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
-    let index = || {
-        body.get("index")
-            .and_then(Json::as_u64)
-            .map(|i| i as usize)
-            .ok_or_else(|| "index is missing".to_owned())
-    };
-    let named = |key: &str| {
-        body.get(key)
-            .and_then(Json::as_str)
-            .map(str::to_owned)
-            .ok_or_else(|| format!("{key} is missing"))
-    };
+pub fn act(bot: &Arc<Bot>, act: FastTravelAct) -> Result<(), String> {
     let state = STATE.of(bot);
-    match action {
-        "open" => lock(&state).load(bot),
-        "travel" => {
+    match act {
+        FastTravelAct::Open => lock(&state).load(bot),
+        FastTravelAct::Travel { position, name } => {
             let mut s = lock(&state);
-            let i = s.at(index()?, &named("name")?)?;
+            let i = s.at(position as usize, &name)?;
             let dest = s.list[i].clone();
             s.travel(bot, dest);
         }
-        "add" => lock(&state).put(bot, &destination(body)?, None)?,
-        "edit" => {
-            let mut s = lock(&state);
-            let i = s.at(index()?, &named("was")?)?;
-            s.put(bot, &destination(body)?, Some(i))?;
+        FastTravelAct::Add { name, map, cell, pad } => {
+            lock(&state).put(bot, &FastTravel::new(&name, &map, &cell, &pad), None)?
         }
-        "remove" => {
+        FastTravelAct::Edit {
+            position,
+            was,
+            name,
+            map,
+            cell,
+            pad,
+        } => {
             let mut s = lock(&state);
-            let i = s.at(index()?, &named("name")?)?;
+            let i = s.at(position as usize, &was)?;
+            s.put(bot, &FastTravel::new(&name, &map, &cell, &pad), Some(i))?;
+        }
+        FastTravelAct::Remove { position, name } => {
+            let mut s = lock(&state);
+            let i = s.at(position as usize, &name)?;
             s.remove(bot, i);
         }
-        "clear" => lock(&state).clear(bot),
-        "get-current" => get_current(bot),
-        "private" => {
+        FastTravelAct::Clear => lock(&state).clear(bot),
+        FastTravelAct::GetCurrent => get_current(bot),
+        FastTravelAct::Private { on, room } => {
             let mut s = lock(&state);
-            let on = body.get("on").and_then(Json::as_bool).unwrap_or(s.private_room);
-            let room = body.get("room").and_then(Json::as_i64).unwrap_or(s.room);
+            let on = on.unwrap_or(s.private_room);
+            let room = room.unwrap_or(s.room);
             s.set_private(on, room);
         }
-        "dismiss" => lock(&state).note = None,
-        other => return Err(format!("no action {other}")),
+        FastTravelAct::Dismiss => lock(&state).note = None,
     }
     Ok(())
 }

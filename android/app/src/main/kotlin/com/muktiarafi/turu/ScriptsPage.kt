@@ -66,9 +66,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.Control
+import com.muktiarafi.turu.models.RailAct
+import com.muktiarafi.turu.models.ScriptsAct
 import com.muktiarafi.turu.models.ScriptsView
 import com.muktiarafi.turu.models.Status
-import org.json.JSONObject
 
 /**
  * The Script Loader's actions on the tab on screen, over its models ([TabModels]): the view is
@@ -91,20 +92,21 @@ class ScriptsPanel(
     var busy by mutableStateOf<String?>(null)
         private set
 
-    private fun act(action: String, body: JSONObject = JSONObject()) {
-        busy = action
+    /** Runs `action`, `name` showing as [busy] meanwhile. */
+    private fun act(name: String, action: ScriptsAct) {
+        busy = name
         error = null
-        models.act("scripts", action, body) { failed ->
+        models.act("scripts", action, ScriptsAct.JsonSerializer) { failed ->
             busy = null
             error = failed
         }
     }
 
-    fun start() = act("start")
-    fun stop() = act("stop")
-    fun pause() = act("pause")
-    fun resume() = act("resume")
-    fun favourite() = act("favourite")
+    fun start() = act("start", ScriptsAct.start)
+    fun stop() = act("stop", ScriptsAct.stop)
+    fun pause() = act("pause", ScriptsAct.pause)
+    fun resume() = act("resume", ScriptsAct.resume)
+    fun favourite() = act("favourite", ScriptsAct.favourite)
     fun clearLog() = models.clearLog("script")
 
     /** The favourite or recent script being started, for its row's spinner. */
@@ -117,7 +119,7 @@ class ScriptsPanel(
         busy = "start"
         starting = path
         error = null
-        models.act("rail", "start-quick", JSONObject().put("path", path)) { failed ->
+        models.act("rail", RailAct.start_quick(path), RailAct.JsonSerializer) { failed ->
             busy = null
             starting = null
             error = failed

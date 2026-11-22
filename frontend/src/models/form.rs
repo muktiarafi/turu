@@ -3,7 +3,7 @@
 //! Fields inside enum variants are one word: facet-generate doesn't rename inside them as serde
 //! does.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -39,8 +39,9 @@ pub struct OptionView {
     pub restart: bool,
 }
 
-/// An option's value, typed for the shells (a switch's, a number's, a text's or a choice's key).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+/// An option's value, typed for the shells (a switch's, a number's, a text's or a choice's key); a
+/// shell sends one back to set it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 #[repr(C)]

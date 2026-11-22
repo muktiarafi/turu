@@ -11,7 +11,7 @@
 use super::tab_state::lock;
 use crate::crash_reports::{self, Report};
 use crate::graphics_tips::{self, Tip};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value as Json, json};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Once};
@@ -380,17 +380,31 @@ pub fn view(bot: &Arc<Bot>) -> PromptsView {
     PromptsView { prompt: current(bot) }
 }
 
-/// `POST /models/prompts/answer`: `id` (the prompt's) and `button` (its index; absent or -1 when
-/// closed without one: Back, a tap outside). Answers `window` (an egui window to open), `open` (a
+/// The prompts' actions (`POST /models/prompts/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum PromptsAct {
+    /// Answers the prompt `id` with its `button` (its index; none when closed without one: Back,
+    /// a tap outside). See [`answer`].
+    Answer { id: String, button: Option<u32> },
+}
+
+pub fn act(bot: &Arc<Bot>, act: PromptsAct) -> Result<Json, String> {
+    match act {
+        PromptsAct::Answer { id, button } => answer(bot, &id, button.map(|b| b as usize)),
+    }
+}
+
+/// Answers the prompt `id` with `button`. Answers `window` (an egui window to open), `open` (a
 /// native screen: "app_options" for Raise Tab Limit, "crashes" for Show report) and `report` (the
 /// crash report Show report opens, by its name), each empty when nothing opens.
-pub fn answer(bot: &Arc<Bot>, body: &Json) -> Result<Json, String> {
-    let id = body.get("id").and_then(Json::as_str).ok_or("id is missing")?;
-    let button = body
-        .get("button")
-        .and_then(Json::as_i64)
-        .filter(|b| *b >= 0)
-        .map(|b| b as usize);
+pub fn answer(bot: &Arc<Bot>, id: &str, button: Option<usize>) -> Result<Json, String> {
     // Only the prompt still waiting: an answer to one already gone does nothing.
     let Some(now) = current(bot) else {
         return Ok(json!({ "window": "", "open": "", "report": "" }));
@@ -449,9 +463,17 @@ mod tests {
         let bot = Bot::new();
         assert_eq!(view(&bot).prompt, None);
         assert!(native_shown());
-        let reply = answer(&bot, &json!({ "id": "box:7", "button": 0 })).unwrap();
+        let reply = answer(&bot, "box:7", Some(0)).unwrap();
         assert_eq!(reply, json!({ "window": "", "open": "", "report": "" }));
-        assert!(answer(&bot, &json!({})).is_err());
+        let read = |body: Json| serde_json::from_value::<PromptsAct>(body);
+        assert!(read(json!({ "action": "answer" })).is_err());
+        assert_eq!(
+            read(json!({ "action": "answer", "id": "box:7", "button": null })).unwrap(),
+            PromptsAct::Answer {
+                id: "box:7".into(),
+                button: None
+            }
+        );
         let (text, at_most) = tab_limit_text(4);
         assert!(at_most && text.starts_with("4 tabs are open"));
         assert_eq!(

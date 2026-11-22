@@ -3,6 +3,8 @@ package com.muktiarafi.turu
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import kotlinx.serialization.SerializationStrategy
+import kotlinx.serialization.json.Json
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -103,22 +105,29 @@ class ModelClient(
         }
     }
 
-    /** Runs `action` of `model` with `body`; `done` gets the error, or null; `answer` what it answered. */
-    fun act(
+    /**
+     * Runs `action`, one of `model`'s actions in the types generated from the Rust records (its
+     * `…Act`, written with its `JsonSerializer`); `done` gets the error, or null; `answer` what it
+     * answered.
+     */
+    fun <A> act(
         model: String,
-        action: String,
-        body: JSONObject = JSONObject(),
+        action: A,
+        serializer: SerializationStrategy<A>,
         answer: (JSONObject) -> Unit = {},
         done: (String?) -> Unit = {},
-    ) {
+    ) = post("/models/$model/do", Json.encodeToString(serializer, action), answer, done)
+
+    /** Posts `body` to `path`; `done` gets the error, or null; `answer` what it answered. */
+    private fun post(path: String, body: String, answer: (JSONObject) -> Unit, done: (String?) -> Unit) {
         actions.execute {
             var answered: JSONObject? = null
             val error = runCatching {
-                val connection = open("/models/$model/$action", "POST").apply {
+                val connection = open(path, "POST").apply {
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json")
                 }
-                connection.outputStream.use { it.write(body.toString().toByteArray()) }
+                connection.outputStream.use { it.write(body.toByteArray()) }
                 if (connection.responseCode == 200) {
                     answered = runCatching { JSONObject(connection.inputStream.bufferedReader().use { it.readText() }) }.getOrNull()
                     null

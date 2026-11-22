@@ -40,11 +40,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.AppOptionsAct
 import com.muktiarafi.turu.models.AppOptionsView
 import com.muktiarafi.turu.models.OptionValue
 import com.muktiarafi.turu.models.OptionView
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 import kotlin.math.ceil
 
 /**
@@ -80,16 +80,15 @@ class AppOptionsPanel {
         ).also { it.start() }
     }
 
-    private fun act(action: String, body: JSONObject) {
+    private fun act(action: AppOptionsAct) {
         error = null
         val client = client ?: return
-        client.act("app-options", action, body) { error = it }
+        client.act("app-options", action, AppOptionsAct.JsonSerializer) { error = it }
     }
 
-    fun set(option: OptionView, value: Any) =
-        act("set", JSONObject().put("section", option.section).put("label", option.label).put("value", value))
+    fun set(option: OptionView, value: Any) = act(AppOptionsAct.set(option.section, option.label, optionValue(value)))
 
-    fun run(option: OptionView) = act("act", JSONObject().put("label", option.label))
+    fun run(option: OptionView) = act(AppOptionsAct.run(option.label))
 }
 
 /**

@@ -46,10 +46,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.RuntimeAct
 import com.muktiarafi.turu.models.RuntimeView
 import kotlinx.serialization.json.Json
-import org.json.JSONArray
-import org.json.JSONObject
 
 /** Runtime's three parts, one on show at a time. */
 enum class RuntimePart(val label: String) { Drops("Drops"), Quests("Quests"), Boosts("Boosts") }
@@ -106,47 +105,43 @@ class RuntimePanel {
         ).also { it.start() }
     }
 
-    private fun act(action: String, body: JSONObject = JSONObject(), done: () -> Unit = {}) {
+    fun act(action: RuntimeAct, done: () -> Unit = {}) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("runtime", "do", body.put("action", action)) { failed ->
+        client.act("runtime", action, RuntimeAct.JsonSerializer) { failed ->
             error = failed
             if (failed == null) done()
         }
     }
 
-    fun set(action: String, on: Boolean) = act(action, JSONObject().put("on", on))
+    fun boost(kind: String, on: Boolean) = act(RuntimeAct.boost(kind, on))
 
-    fun boost(kind: String, on: Boolean) = act("boost", JSONObject().put("kind", kind).put("on", on))
+    fun search(bank: Boolean) = act(RuntimeAct.search(bank))
 
-    fun search(bank: Boolean) = act("search", JSONObject().put("bank", bank))
-
-    fun interval(ms: Long) = act("interval", JSONObject().put("ms", ms))
+    fun interval(ms: Long) = act(RuntimeAct.interval(ms.coerceAtLeast(0L).toULong()))
 
     fun addDrops() {
         if (dropInput.isBlank()) return
-        act("add-drops", JSONObject().put("input", dropInput))
+        act(RuntimeAct.add_drops(dropInput))
         dropInput = ""
     }
 
     fun removeDrops() {
-        act("remove-drops", JSONObject().put("items", JSONArray(drops.keys.toList())))
+        act(RuntimeAct.remove_drops(drops.keys.toList()))
         drops.clear()
     }
 
     /** Clears the fields only once the IDs are taken: a typo stays to be fixed. */
     fun addQuests() {
         if (questInput.isBlank()) return
-        val body = JSONObject().put("input", questInput)
-        rewardInput.trim().toLongOrNull()?.let { body.put("reward", it) }
-        act("add-quests", body) {
+        act(RuntimeAct.add_quests(questInput, rewardInput.trim().toLongOrNull())) {
             questInput = ""
             rewardInput = ""
         }
     }
 
     fun removeQuests() {
-        act("remove-quests", JSONObject().put("ids", JSONArray(quests.keys.toList())))
+        act(RuntimeAct.remove_quests(quests.keys.toList()))
         quests.clear()
     }
 }
@@ -222,7 +217,7 @@ private fun LazyListScope.drops(view: RuntimeView, panel: RuntimePanel, notifyDr
             if (view.picking) "Picks up the list every second" else "Off: drops wait in the stack",
             view.picking,
             strong = true,
-        ) { panel.set("picking", it) }
+        ) { panel.act(RuntimeAct.picking(it)) }
     }
     item {
         ListHead("Pickup list", view.drops.size, panel.drops.size, onRemove = panel::removeDrops)
@@ -236,8 +231,8 @@ private fun LazyListScope.drops(view: RuntimeView, panel: RuntimePanel, notifyDr
     item {
         Text("Options", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 2.dp))
     }
-    item { SwitchRow("Reject else", "Turns down every drop not on the list", view.rejectElse) { panel.set("reject-else", it) } }
-    item { SwitchRow("Accept AC drops", "Picks up items that cost AC, listed or not", view.acceptAc) { panel.set("accept-ac", it) } }
+    item { SwitchRow("Reject else", "Turns down every drop not on the list", view.rejectElse) { panel.act(RuntimeAct.reject_else(it)) } }
+    item { SwitchRow("Accept AC drops", "Picks up items that cost AC, listed or not", view.acceptAc) { panel.act(RuntimeAct.accept_ac(it)) } }
     item { IntervalRow(view.interval.toLong(), panel::interval) }
     item {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -276,7 +271,7 @@ private fun LazyListScope.boosts(view: RuntimeView, panel: RuntimePanel) {
             if (view.boosting) "Uses the boosts on below whenever theirs runs out" else "Off: no boost is used",
             view.boosting,
             strong = true,
-        ) { panel.set("boosting", it) }
+        ) { panel.act(RuntimeAct.boosting(it)) }
     }
     item { HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f), modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
     items(view.boosts, key = { "b:${it.kind}" }) { b ->

@@ -87,10 +87,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import com.muktiarafi.turu.models.AutoAct
 import com.muktiarafi.turu.models.AutoView
 import com.muktiarafi.turu.models.Control
+import com.muktiarafi.turu.models.JumpAct
 import com.muktiarafi.turu.models.MenuItem
-import org.json.JSONObject
 
 /** Why a control is off, under it (a touch screen has no tooltips). */
 @Composable
@@ -120,16 +121,16 @@ private fun Waiting(models: TabModels) {
 fun AutoPage(state: ShellState, models: TabModels) {
     val view = models.auto
     var error by remember { mutableStateOf<String?>(null) }
-    var sending by remember { mutableStateOf<String?>(null) }
-    val act = { action: String, body: JSONObject ->
+    var sending by remember { mutableStateOf<AutoAct?>(null) }
+    val act = { action: AutoAct ->
         error = null
-        models.act("auto", action, body) { error = it }
+        models.act("auto", action, AutoAct.JsonSerializer) { error = it }
     }
     // The tapped start or Stop shows a spinner until the view says it took.
-    val press = { action: String ->
+    val press = { action: AutoAct ->
         sending = action
         error = null
-        models.act("auto", action, JSONObject()) { error = it; if (it != null) sending = null }
+        models.act("auto", action, AutoAct.JsonSerializer) { error = it; if (it != null) sending = null }
     }
     LaunchedEffect(view?.running) { sending = null }
     Column(Modifier.fillMaxSize()) {
@@ -150,7 +151,7 @@ fun AutoPage(state: ShellState, models: TabModels) {
                 label = "running card",
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Running(view, stopping = sending == "stop") { press("stop") }
+                    Running(view, stopping = sending == AutoAct.stop) { press(AutoAct.stop) }
                     error?.let { Text(it, color = Turu.Danger, style = MaterialTheme.typography.bodySmall) }
                 }
             }
@@ -158,7 +159,7 @@ fun AutoPage(state: ShellState, models: TabModels) {
             val dim by animateFloatAsState(if (running) 0.6f else 1f, layout.defaultEffectsSpec(), label = "settings")
             val settings = Modifier.alpha(dim)
             Column(settings, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ClassPicker(view, onOpen = { act("reload-classes", JSONObject()) }) { act("class", JSONObject().put("class", it)) }
+                ClassPicker(view, onOpen = { act(AutoAct.reload_classes) }) { act(AutoAct.`class`(it)) }
                 Picker(
                     label = "Skills",
                     none = "Base",
@@ -166,13 +167,13 @@ fun AutoPage(state: ShellState, models: TabModels) {
                     options = view.modes.map { it to it },
                     loading = false,
                     empty = if (view.`class` == null) "Pick a class for its saved skills" else "No saved skills for this class",
-                ) { act("mode", JSONObject().put("mode", it)) }
+                ) { act(AutoAct.mode(it)) }
                 var mapIds by remember(models.tab?.id) { mutableStateOf(view.mapIds) }
                 OutlinedTextField(
                     value = mapIds,
                     onValueChange = { typed ->
                         mapIds = typed
-                        act("map-ids", JSONObject().put("mapIds", typed))
+                        act(AutoAct.map_ids(typed))
                     },
                     label = { Text("Monster IDs to fight first") },
                     placeholder = { Text("Optional, e.g. 1, 2") },
@@ -208,8 +209,8 @@ fun AutoPage(state: ShellState, models: TabModels) {
                 }
                 Text("Fights with $with", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StartButton("Attack", "Fights what's in your cell", sending == "attack", view.start.enabled && sending == null, Modifier.weight(1f)) { press("attack") }
-                    StartButton("Hunt", "Goes to the cells its targets are in", sending == "hunt", view.start.enabled && sending == null, Modifier.weight(1f)) { press("hunt") }
+                    StartButton("Attack", "Fights what's in your cell", sending == AutoAct.attack, view.start.enabled && sending == null, Modifier.weight(1f)) { press(AutoAct.attack) }
+                    StartButton("Hunt", "Goes to the cells its targets are in", sending == AutoAct.hunt, view.start.enabled && sending == null, Modifier.weight(1f)) { press(AutoAct.hunt) }
                 }
                 Reason(view.start)
                 error?.let { Text(it, color = Turu.Danger, style = MaterialTheme.typography.bodySmall) }
@@ -344,8 +345,8 @@ private fun ClassPicker(view: AutoView, onOpen: () -> Unit, onPick: (String) -> 
 @Composable
 fun JumpPage(state: ShellState, models: TabModels) {
     val view = models.jump
-    LaunchedEffect(models.tab?.id, models.tab?.api) { models.act("jump", "refresh") }
-    val act = { action: String, body: JSONObject -> models.act("jump", action, body) }
+    LaunchedEffect(models.tab?.id, models.tab?.api) { models.act("jump", JumpAct.refresh, JumpAct.JsonSerializer) }
+    val act = { action: JumpAct -> models.act("jump", action, JumpAct.JsonSerializer) }
     Column(Modifier.fillMaxSize()) {
         PageBar("Fast Map Jump", onBack = { state.back() })
         if (view == null) return@Column Waiting(models)
@@ -356,25 +357,25 @@ fun JumpPage(state: ShellState, models: TabModels) {
                 value = view.cell ?: "",
                 options = view.cells.map { it to it },
                 loading = false,
-                onOpen = { act("refresh", JSONObject()) },
+                onOpen = { act(JumpAct.refresh) },
                 empty = "No cells (not in a map?)",
-            ) { act("cell", JSONObject().put("cell", it)) }
+            ) { act(JumpAct.cell(it)) }
             Picker(
                 label = "Pad",
                 none = "Select a pad",
                 value = view.pad,
                 options = view.pads.map { it to it },
                 loading = false,
-            ) { act("pad", JSONObject().put("pad", it)) }
+            ) { act(JumpAct.pad(it)) }
             if (view.autoJump) {
                 Text("Picking a cell or pad jumps at once", style = MaterialTheme.typography.bodySmall, color = Turu.Muted)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { act("current", JSONObject()) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                OutlinedButton(onClick = { act(JumpAct.current) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
                     Text("Current")
                 }
                 Button(
-                    onClick = { act("jump", JSONObject()) },
+                    onClick = { act(JumpAct.jump) },
                     enabled = view.jump.enabled,
                     modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                 ) { Text("Jump") }

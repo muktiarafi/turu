@@ -66,10 +66,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.CoreBotsAct
 import com.muktiarafi.turu.models.CoreBotsView
 import com.muktiarafi.turu.models.RoleView
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * CoreBots Options for the tab on screen: the draft is the slot's (`models::core_bots`), opened
@@ -94,7 +94,7 @@ class CoreBotsPanel {
         // The tab before: its draft saved, as closing the window does; said when it had changes
         // and the page stays (another tab came on screen), since nothing else shows it.
         val left = view?.takeIf { it.unsaved && it.username.isNotEmpty() }?.shownName
-        client?.let { old -> old.act("core-bots", "do", JSONObject().put("action", "close")) { old.stop() } }
+        client?.let { old -> old.act("core-bots", CoreBotsAct.close, CoreBotsAct.JsonSerializer) { old.stop() } }
         if (left != null && tab != null) notice = Notice("Saved CoreBots for $left")
         following = tab
         client = null
@@ -111,24 +111,29 @@ class CoreBotsPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("core-bots", "do", JSONObject().put("action", "open"))
+            it.act("core-bots", CoreBotsAct.open, CoreBotsAct.JsonSerializer)
         }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject()) {
+    fun act(action: CoreBotsAct) {
         error = null
-        client?.act("core-bots", "do", body.put("action", action)) { error = it }
+        client?.act("core-bots", action, CoreBotsAct.JsonSerializer) { error = it }
     }
 
-    fun role(index: Int, field: String, value: Any) = act("role", JSONObject().put("index", index).put(field, value))
+    /** Changes the role at [index]: the fields given. */
+    fun role(
+        index: Int,
+        `class`: String? = null,
+        mode: String? = null,
+        equipment: Boolean? = null,
+        slot: Int? = null,
+        item: String? = null,
+    ) = act(CoreBotsAct.role(index.toUInt(), `class`, mode, equipment, slot?.toUInt(), item))
 
     /** [into] takes [from]'s class, mode, equipment switch and gear (one action, then a slot each). */
     fun copyRole(into: Int, from: RoleView) {
-        act(
-            "role",
-            JSONObject().put("index", into).put("class", from.`class`).put("mode", from.mode).put("equipment", from.useEquipment),
-        )
-        from.gear.forEachIndexed { slot, item -> act("role", JSONObject().put("index", into).put("slot", slot).put("item", item)) }
+        role(into, `class` = from.`class`, mode = from.mode, equipment = from.useEquipment)
+        from.gear.forEachIndexed { slot, item -> role(into, slot = slot, item = item) }
     }
 }
 
@@ -181,7 +186,7 @@ private fun CoreBotsActions(
                 }
             },
             enabled = editable && !view.busy,
-            onClick = { close(); panel.act("refresh") },
+            onClick = { close(); panel.act(CoreBotsAct.refresh) },
         )
         DropdownMenuItem(text = { Text("Revert changes") }, enabled = view.unsaved, onClick = { close(); onRevert() })
     }
@@ -193,8 +198,8 @@ private fun CoreBotsDialogs(view: CoreBotsView?, panel: CoreBotsPanel, askPublic
     if (askPublic) {
         // Keep private saves with Private Rooms kept on; a tap outside doesn't save.
         PublicRoomsDialog(
-            onConfirm = { onAskPublic(false); panel.act("confirm-public"); panel.act("save") },
-            onKeep = { onAskPublic(false); panel.act("save") },
+            onConfirm = { onAskPublic(false); panel.act(CoreBotsAct.confirm_public); panel.act(CoreBotsAct.save) },
+            onKeep = { onAskPublic(false); panel.act(CoreBotsAct.save) },
             onDismiss = { onAskPublic(false) },
         )
     }
@@ -203,17 +208,17 @@ private fun CoreBotsDialogs(view: CoreBotsView?, panel: CoreBotsPanel, askPublic
             onDismissRequest = { onRevert(false) },
             title = { Text("Revert your changes?") },
             text = { Text("The page goes back to the file as last saved. What you changed since is dropped.") },
-            confirmButton = { TextButton(onClick = { onRevert(false); panel.act("revert") }) { Text("Revert") } },
+            confirmButton = { TextButton(onClick = { onRevert(false); panel.act(CoreBotsAct.revert) }) { Text("Revert") } },
             dismissButton = { TextButton(onClick = { onRevert(false) }) { Text("Keep editing") } },
             containerColor = Turu.Card,
         )
     }
     view?.message?.let { (title, text) ->
         AlertDialog(
-            onDismissRequest = { panel.act("dismiss") },
+            onDismissRequest = { panel.act(CoreBotsAct.dismiss) },
             title = { Text(title) },
             text = { Text(text) },
-            confirmButton = { TextButton(onClick = { panel.act("dismiss") }) { Text("OK") } },
+            confirmButton = { TextButton(onClick = { panel.act(CoreBotsAct.dismiss) }) { Text("OK") } },
             containerColor = Turu.Card,
         )
     }
@@ -263,7 +268,7 @@ fun CoreBotsPage(state: ShellState, panel: CoreBotsPanel, fullWindow: () -> Unit
                 subtitleColor = if (line?.second == true) Turu.Warning else Turu.Muted,
             ) {
                 if (view != null) {
-                    CoreBotsActions(view, panel, fullWindow, onSave = { if (view.askPublic) askPublic = true else panel.act("save") }, onRevert = { revert = true })
+                    CoreBotsActions(view, panel, fullWindow, onSave = { if (view.askPublic) askPublic = true else panel.act(CoreBotsAct.save) }, onRevert = { revert = true })
                 } else {
                     FullWindowMenu("The same options, laid out as VibeSkua's", fullWindow)
                 }
@@ -334,7 +339,7 @@ fun CoreBotsPage(state: ShellState, panel: CoreBotsPanel, fullWindow: () -> Unit
                                             o.copy(differs = false),
                                             edited = false,
                                             inGame = true,
-                                            onSet = { panel.act("option", JSONObject().put("tag", o.group).put("value", it)) },
+                                            onSet = { panel.act(CoreBotsAct.option(o.group, optionValue(it))) },
                                             onAction = {},
                                             // Logged out: off for now, not "Coming soon" (that's for options Turu doesn't read).
                                             enabled = editable,
@@ -463,7 +468,7 @@ fun CoreBotsRolePage(state: ShellState, panel: CoreBotsPanel, index: Int, fullWi
                 subtitleColor = if (line?.second == true) Turu.Warning else Turu.Muted,
             ) {
                 if (view != null && role != null) {
-                    CoreBotsActions(view, panel, fullWindow, onSave = { if (view.askPublic) askPublic = true else panel.act("save") }, onRevert = { revert = true }) { close ->
+                    CoreBotsActions(view, panel, fullWindow, onSave = { if (view.askPublic) askPublic = true else panel.act(CoreBotsAct.save) }, onRevert = { revert = true }) { close ->
                         view.roles.forEachIndexed { i, other ->
                             if (i != index) {
                                 DropdownMenuItem(
@@ -498,7 +503,7 @@ fun CoreBotsRolePage(state: ShellState, panel: CoreBotsPanel, index: Int, fullWi
                             none = "Not set",
                             empty = "No enhanced classes yet (⋮ > Read classes again)",
                             enabled = editable,
-                        ) { panel.role(index, "class", it) }
+                        ) { panel.role(index, `class` = it) }
                     }
                     Box(Modifier.weight(1f)) {
                         Picker(
@@ -509,7 +514,7 @@ fun CoreBotsRolePage(state: ShellState, panel: CoreBotsPanel, index: Int, fullWi
                             none = if (role.`class`.isEmpty()) "Pick a class" else "Base",
                             // A mode means nothing until there's a class to use it with.
                             enabled = editable && role.`class`.isNotEmpty(),
-                        ) { panel.role(index, "mode", it) }
+                        ) { panel.role(index, mode = it) }
                     }
                 }
                 Row(
@@ -517,7 +522,7 @@ fun CoreBotsRolePage(state: ShellState, panel: CoreBotsPanel, index: Int, fullWi
                         value = role.useEquipment,
                         enabled = editable,
                         role = Role.Switch,
-                        onValueChange = { panel.role(index, "equipment", it) },
+                        onValueChange = { panel.role(index, equipment = it) },
                     ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -549,7 +554,7 @@ fun CoreBotsRolePage(state: ShellState, panel: CoreBotsPanel, index: Int, fullWi
                                     options = listOf("" to "None") + s.items.map { it to it },
                                     loading = false,
                                     enabled = editable,
-                                ) { panel.act("role", JSONObject().put("index", index).put("slot", slot).put("item", it)) }
+                                ) { panel.role(index, slot = slot, item = it) }
                             }
                         }
                         if (pair.size == 1) Spacer(Modifier.weight(1f))

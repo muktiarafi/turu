@@ -9,7 +9,7 @@
 use super::Control;
 use super::tab_state::{PerTab, lock};
 use crate::map_pads::MapCells;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 use turu_bot::Bot;
@@ -211,6 +211,39 @@ fn jump_to(bot: &Arc<Bot>, cell: String, pad: String, auto: bool) {
         lock(&state).status = Some(status);
         Ok(())
     });
+}
+
+/// Jump's actions (`POST /models/jump/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum JumpAct {
+    /// Reads the map's cells and pads again.
+    Refresh,
+    Cell {
+        cell: String,
+    },
+    Pad {
+        pad: String,
+    },
+    /// Picks the cell and pad the player is in.
+    Current,
+    Jump,
+}
+
+pub fn act(bot: &Arc<Bot>, act: JumpAct) {
+    match act {
+        JumpAct::Refresh => refresh(bot),
+        JumpAct::Cell { cell } => select_cell(bot, cell),
+        JumpAct::Pad { pad } => select_pad(bot, pad),
+        JumpAct::Current => current(bot),
+        JumpAct::Jump => jump(bot),
+    }
 }
 
 #[cfg(test)]

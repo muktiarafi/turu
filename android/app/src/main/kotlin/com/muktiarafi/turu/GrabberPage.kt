@@ -75,10 +75,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.GrabRowView
+import com.muktiarafi.turu.models.GrabberAct
 import com.muktiarafi.turu.models.GrabberView
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
-import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -129,22 +129,19 @@ class GrabberPanel {
         ).also { it.start() }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject(), answer: (JSONObject) -> Unit = {}) {
+    fun act(action: GrabberAct, answer: (JSONObject) -> Unit = {}) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("grabber", "do", body.put("action", action), answer) { error = it }
+        client.act("grabber", action, GrabberAct.JsonSerializer, answer) { error = it }
     }
 
-    private fun picked(): JSONObject {
-        val v = view
-        return JSONObject()
-            .put("positions", JSONArray(checked.keys.toList()))
-            .put("revision", v?.revision?.toLong() ?: 0L)
-    }
+    private fun positions(): List<UInt> = checked.keys.map { it.toUInt() }
 
-    fun run(label: String) = act("run", picked().put("label", label))
+    private fun revision(): ULong = view?.revision ?: 0u
 
-    fun copy(context: Context) = act("copy", picked()) { answer ->
+    fun run(label: String) = act(GrabberAct.run(kind = null, label = label, positions = positions(), revision = revision()))
+
+    fun copy(context: Context) = act(GrabberAct.copy(kind = null, positions = positions(), revision = revision())) { answer ->
         val text = answer.optString("text").takeIf { !answer.isNull("text") && it.isNotEmpty() } ?: return@act
         context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Grabber", text))
     }
@@ -196,7 +193,7 @@ fun GrabberPage(state: ShellState, panel: GrabberPanel, fullWindow: () -> Unit) 
         LaunchedEffect(search) {
             if (search != view.search) {
                 delay(300)
-                panel.act("search", JSONObject().put("search", search))
+                panel.act(GrabberAct.search(search = search))
             }
         }
         val list = rememberLazyListState()
@@ -220,10 +217,10 @@ fun GrabberPage(state: ShellState, panel: GrabberPanel, fullWindow: () -> Unit) 
                             value = view.kind,
                             options = view.lists.map { it.title to if (it.count > 0u) "${it.title} - ${it.count} grabbed" else it.title },
                             loading = false,
-                        ) { panel.act("select", JSONObject().put("kind", it)) }
+                        ) { panel.act(GrabberAct.select(kind = it)) }
                     }
                     Spacer(Modifier.width(8.dp))
-                    Button(onClick = { panel.act("grab") }, enabled = !view.busy, modifier = Modifier.fillMaxHeight().padding(top = labelHalf)) { Text("Grab") }
+                    Button(onClick = { panel.act(GrabberAct.grab()) }, enabled = !view.busy, modifier = Modifier.fillMaxHeight().padding(top = labelHalf)) { Text("Grab") }
                 }
             }
             if (view.grabbed > 0u) {
@@ -271,10 +268,10 @@ fun GrabberPage(state: ShellState, panel: GrabberPanel, fullWindow: () -> Unit) 
                             color = Turu.Muted,
                             modifier = Modifier.weight(1f).padding(start = 8.dp),
                         )
-                        IconButton(onClick = { panel.act("search", JSONObject().put("page", (view.page - 1u).toLong())) }, enabled = view.page > 0u) {
+                        IconButton(onClick = { panel.act(GrabberAct.search(page = view.page - 1u)) }, enabled = view.page > 0u) {
                             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = "Previous page")
                         }
-                        IconButton(onClick = { panel.act("search", JSONObject().put("page", (view.page + 1u).toLong())) }, enabled = view.page + 1u < view.pages) {
+                        IconButton(onClick = { panel.act(GrabberAct.search(page = view.page + 1u)) }, enabled = view.page + 1u < view.pages) {
                             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "Next page")
                         }
                     }
@@ -302,7 +299,7 @@ private fun GrabRow(row: GrabRowView, on: Boolean, view: GrabberView, panel: Gra
         Text(row.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Spacer(Modifier.width(8.dp))
         Text("${row.id}", style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"), color = Turu.Muted)
-        IconButton(onClick = { panel.act("detail", JSONObject().put("position", row.position.toLong())) }) {
+        IconButton(onClick = { panel.act(GrabberAct.detail(position = row.position)) }) {
             Icon(Icons.Rounded.Info, contentDescription = "${row.text}: its fields", tint = Turu.Muted)
         }
     }
@@ -339,7 +336,7 @@ private fun Foot(view: GrabberView, panel: GrabberPanel) {
                 modifier = Modifier.weight(1f),
             )
             if (view.busy) {
-                TextButton(onClick = { panel.act("cancel") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel", color = Turu.Danger) }
+                TextButton(onClick = { panel.act(GrabberAct.cancel()) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel", color = Turu.Danger) }
             }
         }
     }
@@ -387,7 +384,7 @@ private fun Dialogs(view: GrabberView, panel: GrabberPanel) {
         val focus = remember { FocusRequester() }
         LaunchedEffect(ask) { focus.requestFocus() }
         AlertDialog(
-            onDismissRequest = { panel.act("cancel-ask") },
+            onDismissRequest = { panel.act(GrabberAct.cancel_ask()) },
             title = { Text(ask.title) },
             text = {
                 Column {
@@ -398,27 +395,27 @@ private fun Dialogs(view: GrabberView, panel: GrabberPanel) {
                         singleLine = true,
                         colors = fieldColors(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { panel.act("quantity", JSONObject().put("value", text)) }),
+                        keyboardActions = KeyboardActions(onDone = { panel.act(GrabberAct.quantity(value = text)) }),
                         modifier = Modifier.padding(top = 8.dp).focusRequester(focus),
                     )
                 }
             },
-            confirmButton = { TextButton(onClick = { panel.act("quantity", JSONObject().put("value", text)) }, enabled = text.isNotEmpty()) { Text("OK") } },
-            dismissButton = { TextButton(onClick = { panel.act("cancel-ask") }) { Text("Cancel") } },
+            confirmButton = { TextButton(onClick = { panel.act(GrabberAct.quantity(value = text)) }, enabled = text.isNotEmpty()) { Text("OK") } },
+            dismissButton = { TextButton(onClick = { panel.act(GrabberAct.cancel_ask()) }) { Text("Cancel") } },
             containerColor = Turu.Card,
         )
     }
     view.notice?.let { notice ->
         AlertDialog(
-            onDismissRequest = { panel.act("dismiss") },
+            onDismissRequest = { panel.act(GrabberAct.dismiss()) },
             title = { Text(notice.title) },
             text = { Text(notice.text) },
-            confirmButton = { TextButton(onClick = { panel.act("dismiss") }) { Text("OK") } },
+            confirmButton = { TextButton(onClick = { panel.act(GrabberAct.dismiss()) }) { Text("OK") } },
             containerColor = Turu.Card,
         )
     }
     view.details?.let { d ->
-        val close = { panel.act("detail", JSONObject()) }
+        val close = { panel.act(GrabberAct.detail()) }
         AlertDialog(
             onDismissRequest = close,
             title = { Text(d.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },

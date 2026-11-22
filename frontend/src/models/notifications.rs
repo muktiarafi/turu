@@ -3,7 +3,7 @@
 //! words a shell shows when a filter has nothing. Which events are selected is each window's own
 //! state; Copy and Share take the entries' `line`s, oldest first, as the feed's `to_text` does.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use turu_bot::Bot;
 use turu_bot::notifications::{Notification, NotificationKind};
@@ -135,6 +135,25 @@ pub fn view(bot: &Arc<Bot>) -> NotificationsView {
 /// Clear: every event of the tab's feed goes.
 pub fn clear(bot: &Arc<Bot>) {
     bot.notifications.clear();
+}
+
+/// Notifications' actions (`POST /models/notifications/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum NotificationsAct {
+    Clear,
+}
+
+pub fn act(bot: &Arc<Bot>, act: NotificationsAct) {
+    match act {
+        NotificationsAct::Clear => clear(bot),
+    }
 }
 
 #[cfg(test)]

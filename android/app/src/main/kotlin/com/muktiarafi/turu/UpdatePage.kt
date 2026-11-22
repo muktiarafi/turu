@@ -35,11 +35,11 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.ClientUpdateAct
 import com.muktiarafi.turu.models.ClientUpdateView
 import com.muktiarafi.turu.models.InstallWay
 import com.muktiarafi.turu.models.UpdateStep
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * Update Turu's copy (`turu_frontend::models::client_update`), read from the tab on screen while
@@ -90,7 +90,7 @@ class UpdatePanel {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
         starting = onQuit
-        client.act("client-update", "install", JSONObject().put("onQuit", onQuit)) { e ->
+        client.act("client-update", ClientUpdateAct.install(later = onQuit), ClientUpdateAct.JsonSerializer) { e ->
             if (e != null) {
                 error = e
                 starting = null

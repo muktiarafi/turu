@@ -183,7 +183,7 @@ impl ArmyWindow {
                 if action == ModelAction::Close {
                     self.checked.remove(&row.key);
                 }
-                model::act(row, action);
+                model::act_on(row, action);
             }
         }
     }

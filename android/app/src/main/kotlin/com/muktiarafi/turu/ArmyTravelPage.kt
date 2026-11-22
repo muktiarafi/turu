@@ -55,11 +55,13 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.ArmyCommand
 import com.muktiarafi.turu.models.ArmyRow
+import com.muktiarafi.turu.models.ArmyTravelAct
 import com.muktiarafi.turu.models.ArmyTravelView
+import com.muktiarafi.turu.models.Place
 import com.muktiarafi.turu.models.TravelDest
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * Army travel's copy (`turu_frontend::models::army_travel`): the last jump, the clients' visited
@@ -104,10 +106,10 @@ class ArmyTravelPanel {
         ).also { it.start() }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject(), done: (String?) -> Unit = {}) {
+    fun act(action: ArmyTravelAct, done: (String?) -> Unit = {}) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("army-travel", "do", body.put("action", action)) { e ->
+        client.act("army-travel", action, ArmyTravelAct.JsonSerializer) { e ->
             error = e
             done(e)
         }
@@ -142,8 +144,7 @@ private fun targets(army: ArmyPanel): Pair<List<ArmyRow>, Boolean> {
 private fun currentKey(state: ShellState, army: ArmyPanel): String? =
     army.checked.keys.singleOrNull() ?: army.view?.rows?.firstOrNull { it.shellTab == state.tabs.shown.toLong() }?.key
 
-private fun jumpBody(d: TravelDest) =
-    JSONObject().put("map", d.map).put("room", d.room).put("cell", d.cell).put("pad", d.pad)
+private fun placeOf(d: TravelDest, name: String = "") = Place(name = name, map = d.map, room = d.room, cell = d.cell, pad = d.pad)
 
 /** "map-room · cell, pad" for a status line. */
 private fun place(d: TravelDest): String {
@@ -189,7 +190,7 @@ fun ArmyTravelPage(state: ShellState, army: ArmyPanel, travel: ArmyTravelPanel) 
             val (targets, everyone) = targets(army)
             var goTo by remember { mutableStateOf(view.goTo) }
             val here = currentKey(state, army)?.let { key -> view.here.firstOrNull { it.key == key }?.here }
-            val jump = { d: TravelDest -> army.send("jump", jumpBody(d)) }
+            val jump = { d: TravelDest -> army.send(ArmyCommand.jump(placeOf(d))) }
             LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 12.dp)) {
                 item { ArmyTarget(targets, everyone) }
                 item {
@@ -207,8 +208,8 @@ fun ArmyTravelPage(state: ShellState, army: ArmyPanel, travel: ArmyTravelPanel) 
                         TextButton(
                             onClick = {
                                 val n = view.history.size
-                                travel.act("clear-history") { e ->
-                                    if (e == null) notice = Notice(if (n == 1) "Cleared 1 visited map" else "Cleared $n visited maps") { travel.act("undo-clear-history") }
+                                travel.act(ArmyTravelAct.clear_history) { e ->
+                                    if (e == null) notice = Notice(if (n == 1) "Cleared 1 visited map" else "Cleared $n visited maps") { travel.act(ArmyTravelAct.undo_clear_history) }
                                 }
                             },
                             enabled = view.history.isNotEmpty(),
@@ -261,7 +262,7 @@ fun ArmyTravelPage(state: ShellState, army: ArmyPanel, travel: ArmyTravelPanel) 
             onDismissRequest = { deleting = null },
             title = { Text("Delete ${d.name}?") },
             text = { Text("The preset goes; the clients stay where they are.", color = Turu.Muted) },
-            confirmButton = { TextButton(onClick = { deleting = null; travel.act("delete-preset", JSONObject().put("name", d.name)) }) { Text("Delete", color = Turu.Danger) } },
+            confirmButton = { TextButton(onClick = { deleting = null; travel.act(ArmyTravelAct.delete_preset(d.name)) }) { Text("Delete", color = Turu.Danger) } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
             containerColor = Turu.Card,
         )
@@ -402,8 +403,7 @@ fun ArmyPresetPage(state: ShellState, army: ArmyPanel, travel: ArmyTravelPanel, 
                 onClick = {
                     val p = preset ?: return@TextButton
                     saving = true
-                    val body = jumpBody(p).put("name", p.name).put("editing", editing?.name.orEmpty())
-                    travel.act("save-preset", body) { e ->
+                    travel.act(ArmyTravelAct.save_preset(editing?.name, placeOf(p, p.name))) { e ->
                         saving = false
                         if (e == null) state.back() else error = e
                     }
@@ -490,13 +490,13 @@ fun PlayerDialog(state: ShellState, army: ArmyPanel, travel: ArmyTravelPanel, cl
                     singleLine = true,
                     colors = fieldColors(),
                     keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { if (text.isNotBlank()) { army.send("jump-player", JSONObject().put("name", text.trim())); close() } }),
+                    keyboardActions = KeyboardActions(onGo = { if (text.isNotBlank()) { army.send(ArmyCommand.jump_player(text.trim())); close() } }),
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = { army.send("jump-player", JSONObject().put("name", text.trim())); close() }, enabled = text.isNotBlank()) { Text("Jump") }
+            TextButton(onClick = { army.send(ArmyCommand.jump_player(text.trim())); close() }, enabled = text.isNotBlank()) { Text("Jump") }
         },
         dismissButton = { TextButton(onClick = close) { Text("Cancel") } },
         containerColor = Turu.Card,
@@ -510,8 +510,8 @@ fun ServerDialog(state: ShellState, army: ArmyPanel, travel: ArmyTravelPanel, cl
     val view = travel.view
     var picked by remember { mutableStateOf("") }
     // Ask for the list once the tab answers; forget it when the picker goes.
-    LaunchedEffect(view != null) { if (view != null) travel.act("servers") }
-    DisposableEffect(Unit) { onDispose { travel.act("forget-servers") } }
+    LaunchedEffect(view != null) { if (view != null) travel.act(ArmyTravelAct.servers) }
+    DisposableEffect(Unit) { onDispose { travel.act(ArmyTravelAct.forget_servers) } }
     val servers = view?.servers
     AlertDialog(
         onDismissRequest = close,
@@ -542,7 +542,7 @@ fun ServerDialog(state: ShellState, army: ArmyPanel, travel: ArmyTravelPanel, cl
             }
         },
         confirmButton = {
-            TextButton(onClick = { army.send("change-server", JSONObject().put("server", picked)); close() }, enabled = picked.isNotEmpty()) { Text("Change server") }
+            TextButton(onClick = { army.send(ArmyCommand.change_server(picked)); close() }, enabled = picked.isNotEmpty()) { Text("Change server") }
         },
         dismissButton = { TextButton(onClick = close) { Text("Cancel") } },
         containerColor = Turu.Card,

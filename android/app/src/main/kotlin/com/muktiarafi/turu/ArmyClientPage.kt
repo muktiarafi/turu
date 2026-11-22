@@ -50,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.ArmyClientAct
 import com.muktiarafi.turu.models.ArmyGearView
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
@@ -90,9 +91,9 @@ class ArmyClientPanel {
     val ready get() = client != null
 
     /** An action for the row `key`; `answer` gets its JSON. */
-    fun act(key: String, action: String, body: JSONObject = JSONObject(), quiet: Boolean = false, answer: (JSONObject) -> Unit = {}) {
+    fun act(action: ArmyClientAct, quiet: Boolean = false, answer: (JSONObject) -> Unit = {}) {
         val client = client ?: run { if (!quiet) error = "The tab isn't answering: it's starting again"; return }
-        client.act("army-client", "do", body.put("action", action).put("key", key), answer) { e ->
+        client.act("army-client", action, ArmyClientAct.JsonSerializer, answer) { e ->
             if (e != null || !quiet) error = e
         }
     }
@@ -123,7 +124,7 @@ fun ArmyGearPage(state: ShellState, panel: ArmyClientPanel, key: String, label: 
     LaunchedEffect(key, state.tabs.active?.api) {
         while (true) {
             if (panel.ready) {
-                panel.act(key, "gear", quiet = true) { answer ->
+                panel.act(ArmyClientAct.gear(key), quiet = true) { answer ->
                     runCatching { json.decodeFromString<ArmyGearView>(answer.toString()) }
                         .onSuccess { view = it }
                         .onFailure { Log.e(ModelClient.TAG, "army-client gear doesn't decode: $it") }
@@ -148,7 +149,7 @@ fun ArmyGearPage(state: ShellState, panel: ArmyClientPanel, key: String, label: 
                     Text(if (v.online) "Online" else "Offline", style = MaterialTheme.typography.bodyMedium)
                     Text(v.bank, style = MaterialTheme.typography.bodySmall, color = Turu.Muted)
                 }
-                TextButton(onClick = { panel.act(key, "refresh") }, enabled = v.online && !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh") }
+                TextButton(onClick = { panel.act(ArmyClientAct.refresh(key)) }, enabled = v.online && !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Refresh") }
             }
             if (v.script.isNotEmpty()) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -185,7 +186,7 @@ fun ArmyGearPage(state: ShellState, panel: ArmyClientPanel, key: String, label: 
                         onClick = {
                             val c = choice ?: return@FilledTonalButton
                             picked.remove(slot.slot)
-                            panel.act(key, "equip", JSONObject().put("item", c.id).put("name", c.label.substringBefore(" (")).put("stop", stop))
+                            panel.act(ArmyClientAct.equip(key, c.id, c.label.substringBefore(" ("), stop))
                         },
                         enabled = canEquip && choice != null && choice.id != worn?.id,
                         modifier = Modifier.heightIn(min = 48.dp),
@@ -231,7 +232,7 @@ fun ArmyLogsPage(state: ShellState, panel: ArmyClientPanel, key: String, label: 
         var next = 0L
         while (true) {
             if (panel.ready) {
-                panel.act(key, "logs", JSONObject().put("kind", kind).put("since", next), quiet = true) { answer ->
+                panel.act(ArmyClientAct.logs(key, kind, next.coerceAtLeast(0L).toULong()), quiet = true) { answer ->
                     val got = answer.optJSONArray("lines") ?: JSONArray()
                     for (i in 0 until got.length()) lines.add(got.optString(i))
                     val over = lines.size - LOG_LINES

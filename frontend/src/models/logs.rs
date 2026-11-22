@@ -3,7 +3,7 @@
 //! time: `GET /log?type=<kind>&since=<next>` and `event: log` on `/events?logs=...`, which the
 //! control API already serves (a full buffer is 5,000 lines, about 1 MB). Clear is the action.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use turu_bot::Bot;
 use turu_bot::log::LogKind;
 
@@ -61,4 +61,24 @@ pub fn clear(bot: &Bot, kind: &str) -> Result<(), String> {
         .ok_or_else(|| format!("no log named {kind}"))?;
     bot.logs.get(*kind).clear();
     Ok(())
+}
+
+/// The logs' actions (`POST /models/logs/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum LogsAct {
+    /// Clears the log of `kind` ("script", "debug", ...).
+    Clear { kind: String },
+}
+
+pub fn act(bot: &Bot, act: LogsAct) -> Result<(), String> {
+    match act {
+        LogsAct::Clear { kind } => clear(bot, &kind),
+    }
 }

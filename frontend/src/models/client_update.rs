@@ -7,7 +7,7 @@
 //! update state; [`view`] gathers them.
 
 use super::Control;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use turu_bot::updates::{self, Install, Release};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -272,6 +272,26 @@ pub fn install(on_quit: bool) -> Result<(), String> {
         return Err(e);
     }
     Ok(())
+}
+
+/// The client update's actions (`POST /models/client-update/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum ClientUpdateAct {
+    /// Installs the update now, or (`later`) when Turu quits.
+    Install { later: bool },
+}
+
+pub fn act(act: ClientUpdateAct) -> Result<(), String> {
+    match act {
+        ClientUpdateAct::Install { later } => install(later),
+    }
 }
 
 #[cfg(test)]

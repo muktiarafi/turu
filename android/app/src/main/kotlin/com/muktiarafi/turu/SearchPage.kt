@@ -64,6 +64,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.ArmyAct
+import com.muktiarafi.turu.models.ArmyCommand
+import com.muktiarafi.turu.models.RepoAct
+import com.muktiarafi.turu.models.RepoQuery
 import com.muktiarafi.turu.models.RepoView
 import com.muktiarafi.turu.models.RowView
 import com.muktiarafi.turu.models.Tone
@@ -104,16 +108,16 @@ class SearchPanel {
         ).also { it.start() }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject(), done: (String?) -> Unit = {}) {
+    fun act(action: RepoAct, done: (String?) -> Unit = {}) {
         error = null
         val client = client ?: return done("The tab isn't up yet")
-        client.act("repo", action, body) { failed ->
+        client.act("repo", action, RepoAct.JsonSerializer) { failed ->
             error = failed
             done(failed)
         }
     }
 
-    fun query(field: String, value: Any) = act("query", JSONObject().put(field, value))
+    fun query(change: RepoQuery) = act(RepoAct.query(change))
 
     /**
      * Hands the script at `path` to the page that asked (`pick`), downloading it first if needed.
@@ -123,14 +127,15 @@ class SearchPanel {
     fun pick(path: String, pick: ScriptPick, done: (String?, Boolean) -> Unit) {
         error = null
         val client = client ?: return done("The tab isn't up yet", false)
-        val (model, action, body) = when (pick) {
-            is ScriptPick.Army -> Triple("army", "send", JSONObject().put("command", "script").put("path", path).put("keys", org.json.JSONArray(pick.keys)))
-            ScriptPick.Launch -> Triple("repo", "launch", JSONObject().put("path", path))
-        }
         var ready = true
-        client.act(model, action, body, answer = { ready = it.optBoolean("ready", true) }) { failed ->
+        val answer = { a: JSONObject -> ready = a.optBoolean("ready", true) }
+        val finish = { failed: String? ->
             error = failed
             done(failed, ready)
+        }
+        when (pick) {
+            is ScriptPick.Army -> client.act("army", ArmyAct.send(pick.keys, ArmyCommand.script(path)), ArmyAct.JsonSerializer, answer, finish)
+            ScriptPick.Launch -> client.act("repo", RepoAct.launch(path), RepoAct.JsonSerializer, answer, finish)
         }
     }
 }
@@ -246,7 +251,7 @@ fun SearchPage(state: ShellState, search: SearchPanel, fullWindow: () -> Unit) {
                             modifier = Modifier.padding(top = 4.dp),
                         )
                         if (view.query.activeFilters > 0UL) {
-                            TextButton(onClick = { search.act("query", JSONObject().put("clearFilters", true)) }) { Text("Clear the filters") }
+                            TextButton(onClick = { search.query(RepoQuery(clearFilters = true)) }) { Text("Clear the filters") }
                         }
                     }
                 }
@@ -290,7 +295,7 @@ private fun SearchBox(view: RepoView, search: SearchPanel) {
     LaunchedEffect(text) {
         if (text != view.query.search) {
             delay(250)
-            search.query("search", text)
+            search.query(RepoQuery(search = text))
         }
     }
     val focus = LocalFocusManager.current
@@ -312,7 +317,7 @@ private fun SearchBox(view: RepoView, search: SearchPanel) {
         colors = fieldColors(),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         // Search shows the results: the keyboard hides them on a landscape phone.
-        keyboardActions = KeyboardActions(onSearch = { search.query("search", text); focus.clearFocus() }),
+        keyboardActions = KeyboardActions(onSearch = { search.query(RepoQuery(search = text)); focus.clearFocus() }),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
     )
 }
@@ -335,7 +340,7 @@ private fun ScopeButton(view: RepoView, search: SearchPanel) {
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = Turu.Card) {
             Text("Search in", style = MaterialTheme.typography.labelMedium, color = Turu.Muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
             for ((value, label) in view.scopes) {
-                DropdownMenuItem(text = { Text(label) }, onClick = { open = false; search.query("scope", value) })
+                DropdownMenuItem(text = { Text(label) }, onClick = { open = false; search.query(RepoQuery(scope = value)) })
             }
         }
     }
@@ -359,7 +364,7 @@ private fun Filters(view: RepoView, search: SearchPanel) {
     ) {
         item {
             MenuChip(if (q.category == "All") "All folders" else q.category, q.category != "All", view.categories.map { it to (if (it == "All") "All folders" else it) }) {
-                search.query("category", it)
+                search.query(RepoQuery(category = it))
             }
         }
         item {
@@ -372,11 +377,11 @@ private fun Filters(view: RepoView, search: SearchPanel) {
             }
             MenuChip(now, selected = false, SORTS.mapIndexed { i, it -> "$i" to it.second }) { picked ->
                 val (sort, descending) = SORTS[picked.toInt()].first
-                search.act("query", JSONObject().put("sort", sort).put("descending", descending))
+                search.query(RepoQuery(sort = sort, descending = descending))
             }
         }
-        item { ToggleChip("Pinned", q.pinnedOnly) { search.query("pinnedOnly", !q.pinnedOnly) } }
-        item { ToggleChip("On this device", q.localOnly) { search.query("localOnly", !q.localOnly) } }
+        item { ToggleChip("Pinned", q.pinnedOnly) { search.query(RepoQuery(pinnedOnly = !q.pinnedOnly)) } }
+        item { ToggleChip("On this device", q.localOnly) { search.query(RepoQuery(localOnly = !q.localOnly)) } }
     }
 }
 
@@ -491,8 +496,7 @@ private fun RowScope.RowText(row: RowView) {
 @Composable
 private fun ScriptRow(row: RowView, topHit: Boolean, search: SearchPanel, started: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
-    val body = JSONObject().put("path", row.path)
-    val start = { search.act("start", body) { if (it == null) started() } }
+    val start = { search.act(RepoAct.start(row.path)) { if (it == null) started() } }
     Row(
         Modifier
             .fillMaxWidth()
@@ -519,17 +523,17 @@ private fun ScriptRow(row: RowView, topHit: Boolean, search: SearchPanel, starte
                 }
                 // A touch screen has no tooltips: why an item rests, under it.
                 MenuAction("Start", row.start) { menu = false; start() }
-                MenuAction("Load", row.load) { menu = false; search.act("load", body) }
-                MenuAction("Add to the queue", row.queue) { menu = false; search.act("queue", body) }
+                MenuAction("Load", row.load) { menu = false; search.act(RepoAct.load(row.path)) }
+                MenuAction("Add to the queue", row.queue) { menu = false; search.act(RepoAct.queue(row.path)) }
                 row.download?.let { label ->
                     MenuAction(label, com.muktiarafi.turu.models.Control(true, "")) {
                         menu = false
-                        search.act(if (label.startsWith("Replace")) "replace" else "download", body)
+                        search.act(if (label.startsWith("Replace")) RepoAct.replace(row.path) else RepoAct.download(row.path))
                     }
                 }
                 MenuAction(if (row.pinned) "Unpin" else "Pin", com.muktiarafi.turu.models.Control(true, "")) {
                     menu = false
-                    search.act("pin", JSONObject().put("path", row.path).put("pinned", !row.pinned))
+                    search.act(RepoAct.pin(row.path, !row.pinned))
                 }
             }
         }
@@ -583,7 +587,7 @@ private fun Footer(view: RepoView, search: SearchPanel) {
                         )
                     }
                 }
-                TextButton(onClick = { search.act("cancel") }) { Text("Cancel") }
+                TextButton(onClick = { search.act(RepoAct.cancel) }) { Text("Cancel") }
             }
         } else if (shown != null) {
             Text(
@@ -608,9 +612,9 @@ private fun RepoMenu(view: RepoView, search: SearchPanel, fullWindow: () -> Unit
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = Turu.Card) {
             val update = if (view.outdated.toLong() > 0) "Update all (${view.outdated})" else "Update all"
-            MenuAction(update, view.updateAll) { open = false; search.act("update-all") }
-            MenuAction("Download all", view.downloadAll) { open = false; search.act("download-all") }
-            MenuAction("Refresh the list", view.refresh) { open = false; search.act("refresh") }
+            MenuAction(update, view.updateAll) { open = false; search.act(RepoAct.update_all) }
+            MenuAction("Download all", view.downloadAll) { open = false; search.act(RepoAct.download_all) }
+            MenuAction("Refresh the list", view.refresh) { open = false; search.act(RepoAct.refresh) }
             HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
             DropdownMenuItem(
                 text = {

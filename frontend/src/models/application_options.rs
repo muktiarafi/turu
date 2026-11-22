@@ -7,7 +7,7 @@
 //! window ([`KindView::Elsewhere`]).
 
 use super::form::{KindView, OptionValue, OptionView, SectionView};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 use turu_bot::Bot;
@@ -737,7 +737,7 @@ pub fn set(bot: &Arc<Bot>, section: &str, label: &str, value: &Value) -> Result<
 
 /// Runs the action labelled `label`: Test (the webhook), Clear (the Flash cache; the shell asks
 /// first), Check Now, Free (memory), Open (the log's folder).
-pub fn act(bot: &Arc<Bot>, label: &str) -> Result<(), String> {
+pub fn run(bot: &Arc<Bot>, label: &str) -> Result<(), String> {
     let list = entries();
     let entry = list
         .iter()
@@ -771,4 +771,31 @@ pub fn act(bot: &Arc<Bot>, label: &str) -> Result<(), String> {
         _ => return Err(format!("{label} isn't an action")),
     }
     Ok(())
+}
+
+/// Application Options' actions (`POST /models/app-options/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum AppOptionsAct {
+    /// Sets the option labelled `label` in the section whose chip is `section` ([`set`]).
+    Set {
+        section: String,
+        label: String,
+        value: OptionValue,
+    },
+    /// Runs the action labelled `label` ([`run`]).
+    Run { label: String },
+}
+
+pub fn act(bot: &Arc<Bot>, act: AppOptionsAct) -> Result<(), String> {
+    match act {
+        AppOptionsAct::Set { section, label, value } => set(bot, &section, &label, &value.to_json()),
+        AppOptionsAct::Run { label } => run(bot, &label),
+    }
 }

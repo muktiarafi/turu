@@ -8,12 +8,40 @@ use facet_generate::generation::json::JsonPlugin;
 use facet_generate::generation::kotlin;
 use facet_generate::reflection::RegistryBuilder;
 use turu_frontend::models::{
-    application_options::AppOptionsView, army::ArmyView, army_client::ArmyGearView, army_travel::ArmyTravelView, auto::AutoView, bank::BankView, butler::ButlerView, client_update::ClientUpdateView,
-    core_bots::CoreBotsView, cosmetics::CosmeticsView, crashes::CrashesView, drops::DropsView, fast_travel::FastTravelView,
-    game_options::GameOptionsView, grabber::GrabberView, hotkeys::HotKeysView, console::ConsoleView, jump::JumpView, junk::JunkView, loader::LoaderView, loadouts::LoadoutsView,
-    logs::LogsView, notifications::NotificationsView, notify_drop::NotifyDropView, packets::{InterceptorView, PacketLoggerView, SpammerView}, prompts::PromptsView, rail::RailView, repo::RepoView,
-    runtime::RuntimeView, scheduler::SchedulerView, script_options::ScriptOptionsView, scripts::ScriptsView,
-    skills::SkillsView, stats::StatsView,
+    application_options::{AppOptionsAct, AppOptionsView},
+    army::{ArmyAct, ArmyView},
+    army_client::{ArmyClientAct, ArmyGearView},
+    army_travel::{ArmyTravelAct, ArmyTravelView},
+    auto::{AutoAct, AutoView},
+    bank::{BankAct, BankView},
+    butler::{ButlerAct, ButlerView},
+    client_update::{ClientUpdateAct, ClientUpdateView},
+    console::{ConsoleAct, ConsoleView},
+    core_bots::{CoreBotsAct, CoreBotsView},
+    cosmetics::{CosmeticsAct, CosmeticsView},
+    crashes::{CrashesAct, CrashesView},
+    drops::{DropsAct, DropsView},
+    fast_travel::{FastTravelAct, FastTravelView},
+    game_options::{GameOptionsAct, GameOptionsView},
+    grabber::{GrabberAct, GrabberView},
+    hotkeys::{HotKeysAct, HotKeysView},
+    jump::{JumpAct, JumpView},
+    junk::{JunkAct, JunkView},
+    loader::{LoaderAct, LoaderView},
+    loadouts::{LoadoutsAct, LoadoutsView},
+    logs::{LogsAct, LogsView},
+    notifications::{NotificationsAct, NotificationsView},
+    notify_drop::{NotifyDropAct, NotifyDropView},
+    packets::{InterceptorAct, InterceptorView, PacketLoggerAct, PacketLoggerView, SpammerAct, SpammerView},
+    prompts::{PromptsAct, PromptsView},
+    rail::{RailAct, RailView},
+    repo::{RepoAct, RepoView},
+    runtime::{RuntimeAct, RuntimeView},
+    scheduler::{SchedulerAct, SchedulerView},
+    script_options::{ScriptOptionsAct, ScriptOptionsView},
+    scripts::{ScriptsAct, ScriptsView},
+    skills::{SkillsAct, SkillsView},
+    stats::{StatsAct, StatsView},
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -55,6 +83,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_type::<NotificationsView>()?
         .add_type::<StatsView>()?
         .add_type::<DropsView>()?
+        // Each model's actions: what a shell sends to `POST /models/<name>/do`.
+        .add_type::<AppOptionsAct>()?
+        .add_type::<ArmyAct>()?
+        .add_type::<ArmyClientAct>()?
+        .add_type::<ArmyTravelAct>()?
+        .add_type::<AutoAct>()?
+        .add_type::<BankAct>()?
+        .add_type::<ButlerAct>()?
+        .add_type::<ClientUpdateAct>()?
+        .add_type::<ConsoleAct>()?
+        .add_type::<CoreBotsAct>()?
+        .add_type::<CosmeticsAct>()?
+        .add_type::<CrashesAct>()?
+        .add_type::<DropsAct>()?
+        .add_type::<FastTravelAct>()?
+        .add_type::<GameOptionsAct>()?
+        .add_type::<GrabberAct>()?
+        .add_type::<HotKeysAct>()?
+        .add_type::<InterceptorAct>()?
+        .add_type::<JumpAct>()?
+        .add_type::<JunkAct>()?
+        .add_type::<LoaderAct>()?
+        .add_type::<LoadoutsAct>()?
+        .add_type::<LogsAct>()?
+        .add_type::<NotificationsAct>()?
+        .add_type::<NotifyDropAct>()?
+        .add_type::<PacketLoggerAct>()?
+        .add_type::<PromptsAct>()?
+        .add_type::<RailAct>()?
+        .add_type::<RepoAct>()?
+        .add_type::<RuntimeAct>()?
+        .add_type::<SchedulerAct>()?
+        .add_type::<ScriptOptionsAct>()?
+        .add_type::<ScriptsAct>()?
+        .add_type::<SkillsAct>()?
+        .add_type::<SpammerAct>()?
+        .add_type::<StatsAct>()?
         .build()?;
     kotlin::Installer::new("com.muktiarafi.turu.models", std::path::Path::new(&out))
         .plugin(JsonPlugin)

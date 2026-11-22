@@ -45,10 +45,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.DropView
+import com.muktiarafi.turu.models.DropsAct
 import com.muktiarafi.turu.models.DropsView
 import kotlinx.serialization.json.Json
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Current Drops' copy of the tab on screen (`turu_frontend::models::drops`), read while the page
@@ -94,16 +93,16 @@ class DropsPanel {
         ).also { it.start() }
     }
 
-    private fun act(action: String, body: JSONObject = JSONObject()) {
+    private fun act(action: DropsAct) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("drops", action, body) { error = it }
+        client.act("drops", action, DropsAct.JsonSerializer) { error = it }
     }
 
-    fun pickupAll() = act("pickup-all")
+    fun pickupAll() = act(DropsAct.pickup_all)
 
     fun pickupSelected() {
-        act("pickup", JSONObject().put("ids", JSONArray(selected.keys.toList())))
+        act(DropsAct.pickup(selected.keys.toList()))
         selected.clear()
     }
 

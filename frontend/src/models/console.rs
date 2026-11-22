@@ -9,8 +9,7 @@
 
 use super::Control;
 use super::tab_state::{PerTab, Shared, lock};
-use serde::Serialize;
-use serde_json::Value as Json;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use turu_bot::Bot;
 use turu_bot::script::{self, RunError};
@@ -179,13 +178,29 @@ pub fn copy_text(bot: &Arc<Bot>) -> String {
     text.join("\n")
 }
 
-/// The control API's actions (`POST /models/console/do`, `action` in the body).
-pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
-    match action {
-        "run" => run(bot, body.get("code").and_then(Json::as_str).ok_or("code is missing")?)?,
-        "stop" => stop(bot),
-        "clear" => clear(bot),
-        other => return Err(format!("no action {other}")),
+/// The Console's actions (`POST /models/console/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum ConsoleAct {
+    /// Runs `code` as a snippet.
+    Run {
+        code: String,
+    },
+    Stop,
+    Clear,
+}
+
+pub fn act(bot: &Arc<Bot>, act: ConsoleAct) -> Result<(), String> {
+    match act {
+        ConsoleAct::Run { code } => run(bot, &code)?,
+        ConsoleAct::Stop => stop(bot),
+        ConsoleAct::Clear => clear(bot),
     }
     Ok(())
 }
@@ -209,7 +224,7 @@ mod tests {
         let v = view(&bot);
         assert_eq!((v.output.len(), v.dropped), (0, MAX_OUTPUT as u64 + 5));
         assert_eq!(v.code, DEFAULT_CODE);
-        assert!(act(&bot, "run", &json!({ "code": "  " })).is_err());
-        assert!(act(&bot, "nope", &Json::Null).is_err());
+        assert!(act(&bot, ConsoleAct::Run { code: "  ".into() }).is_err());
+        assert!(serde_json::from_value::<ConsoleAct>(json!({ "action": "nope" })).is_err());
     }
 }

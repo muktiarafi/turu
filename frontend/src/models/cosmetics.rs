@@ -12,8 +12,7 @@
 
 use super::scheduler::{Note, Tint};
 use super::tab_state::{PerTab, lock};
-use serde::Serialize;
-use serde_json::Value as Json;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use turu_bot::Bot;
@@ -656,48 +655,97 @@ fn outfit(library: &Library, index: usize, name: &str) -> Result<CosmeticSet, St
     }
 }
 
-/// `open`, `players`, `copy-player` (`name`), `copy-target`, `copy-page` (`name`), `reset`,
-/// `gender` (`gender`: "F", "M" or "" to swap), `query` (any of `query`, `category`,
-/// `weaponKind`, `sort`, `page`), `equip` / `favorite` (`key`), `check-updates`, `save-look`
-/// (`name`), `equip-set` / `delete-set` (`index`, `name`), `colors` (`hex`: six strings),
-/// `read-colors`.
-pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
-    let text = |key: &str| {
-        body.get(key)
-            .and_then(Json::as_str)
-            .map(str::to_owned)
-            .ok_or_else(|| format!("{key} is missing"))
-    };
-    let index = || {
-        body.get("index")
-            .and_then(Json::as_u64)
-            .map(|i| i as usize)
-            .ok_or_else(|| "index is missing".to_owned())
-    };
+/// A change to the item list's filter from a shell: the fields given (`category` and `sort` by
+/// their words). A new search, category or weapon kind starts at page 1 unless `page` is given.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+pub struct CosmeticsQuery {
+    pub query: Option<String>,
+    pub category: Option<String>,
+    pub weapon_kind: Option<String>,
+    pub sort: Option<String>,
+    pub page: Option<u32>,
+}
+
+/// Cosmetics' actions (`POST /models/cosmetics/do`). `key` is an item's; an outfit is named by
+/// its `position` and its `name`, so a list changed meanwhile isn't changed in the wrong place.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum CosmeticsAct {
+    Open,
+    /// Reads the players in the map.
+    Players,
+    CopyPlayer {
+        name: String,
+    },
+    CopyTarget,
+    /// Copies the character page of `name`.
+    CopyPage {
+        name: String,
+    },
+    Reset,
+    /// "F", "M", or "" to swap.
+    Gender {
+        gender: String,
+    },
+    Query(CosmeticsQuery),
+    Equip {
+        key: String,
+    },
+    Favorite {
+        key: String,
+    },
+    CheckUpdates,
+    /// Saves what's worn as the outfit `name`.
+    SaveLook {
+        name: String,
+    },
+    EquipSet {
+        position: u32,
+        name: String,
+    },
+    DeleteSet {
+        position: u32,
+        name: String,
+    },
+    /// The six colors, as #RRGGBB ("" for none).
+    Colors {
+        hex: Vec<String>,
+    },
+    ReadColors,
+}
+
+pub fn act(bot: &Arc<Bot>, act: CosmeticsAct) -> Result<(), String> {
     let library = Library::shared(&bot.paths);
-    match action {
-        "open" => on_open(bot, &library),
-        "players" => read_players(bot, true),
-        "copy-player" => copy_player(bot, &library, text("name")?),
-        "copy-target" => copy_target(bot, &library),
-        "copy-page" => {
-            let name = text("name")?;
+    match act {
+        CosmeticsAct::Open => on_open(bot, &library),
+        CosmeticsAct::Players => read_players(bot, true),
+        CosmeticsAct::CopyPlayer { name } => copy_player(bot, &library, name),
+        CosmeticsAct::CopyTarget => copy_target(bot, &library),
+        CosmeticsAct::CopyPage { name } => {
             if name.trim().is_empty() {
                 return Err("Name the character".into());
             }
             copy_page(bot, name.trim().to_owned());
         }
-        "reset" => reset_gear(bot),
-        "gender" => gender(bot, text("gender")?.chars().next()),
-        "query" => {
+        CosmeticsAct::Reset => reset_gear(bot),
+        CosmeticsAct::Gender { gender: g } => gender(bot, g.chars().next()),
+        CosmeticsAct::Query(change) => {
             let state = STATE.of(bot);
             let mut s = lock(&state);
             let before = s.page.filter.clone();
             let f = &mut s.page.filter;
-            if let Some(q) = body.get("query").and_then(Json::as_str) {
-                f.query = q.to_owned();
+            if let Some(q) = change.query {
+                f.query = q;
             }
-            if let Some(c) = body.get("category").and_then(Json::as_str) {
+            if let Some(c) = change.category {
                 f.category = CATEGORIES
                     .iter()
                     .find(|(_, w)| *w == c)
@@ -707,10 +755,10 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
                     f.weapon_kind = None;
                 }
             }
-            if let Some(k) = body.get("weaponKind").and_then(Json::as_str) {
+            if let Some(k) = change.weapon_kind {
                 f.weapon_kind = WEAPON_KINDS.iter().find(|w| **w == k).copied();
             }
-            if let Some(o) = body.get("sort").and_then(Json::as_str) {
+            if let Some(o) = change.sort {
                 f.sort = SORTS
                     .iter()
                     .find(|(_, w)| *w == o)
@@ -720,36 +768,28 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
             // A new search or category starts at page 1.
             let new_view =
                 before.query != f.query || before.category != f.category || before.weapon_kind != f.weapon_kind;
-            if let Some(p) = body.get("page").and_then(Json::as_u64) {
+            if let Some(p) = change.page {
                 s.page.page = p as usize;
             } else if new_view {
                 s.page.page = 0;
             }
         }
-        "equip" => equip(bot, item(&library, &text("key")?)?),
-        "favorite" => library.toggle_favorite(&item(&library, &text("key")?)?),
-        "check-updates" => check_updates(bot, &library),
-        "save-look" => {
-            let name = text("name")?;
+        CosmeticsAct::Equip { key } => equip(bot, item(&library, &key)?),
+        CosmeticsAct::Favorite { key } => library.toggle_favorite(&item(&library, &key)?),
+        CosmeticsAct::CheckUpdates => check_updates(bot, &library),
+        CosmeticsAct::SaveLook { name } => {
             if name.trim().is_empty() {
                 return Err("Name the outfit".into());
             }
             save_look(bot, &library, name.trim().to_owned());
         }
-        "equip-set" => equip_set(bot, outfit(&library, index()?, &text("name")?)?),
-        "delete-set" => {
-            let i = index()?;
-            outfit(&library, i, &text("name")?)?;
+        CosmeticsAct::EquipSet { position, name } => equip_set(bot, outfit(&library, position as usize, &name)?),
+        CosmeticsAct::DeleteSet { position, name } => {
+            let i = position as usize;
+            outfit(&library, i, &name)?;
             library.remove_set(i);
         }
-        "colors" => {
-            let hex: Vec<String> = body
-                .get("hex")
-                .and_then(Json::as_array)
-                .ok_or("hex is missing")?
-                .iter()
-                .map(|h| h.as_str().unwrap_or("").to_owned())
-                .collect();
+        CosmeticsAct::Colors { hex } => {
             let hex: [String; 6] = hex.try_into().map_err(|_| "hex takes six colors".to_owned())?;
             if let Some(bad) = hex.iter().find(|h| !h.trim().is_empty() && parse_hex(h).is_none()) {
                 return Err(format!("{bad} isn't a color (#RRGGBB)"));
@@ -757,8 +797,7 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
             set_colors(bot, &hex);
             lock(&STATE.of(bot)).cc_status = "Applied the palette.".into();
         }
-        "read-colors" => read_colors(bot, true),
-        other => return Err(format!("no action {other}")),
+        CosmeticsAct::ReadColors => read_colors(bot, true),
     }
     Ok(())
 }
@@ -779,6 +818,12 @@ pub fn outcome(status: &str) -> Option<Note> {
 mod tests {
     use super::*;
 
+    /// A query as a shell's JSON is read.
+    fn query(mut body: serde_json::Value) -> CosmeticsAct {
+        body["action"] = "query".into();
+        serde_json::from_value(body).unwrap()
+    }
+
     #[test]
     fn hex_reads_with_or_without_a_hash() {
         assert_eq!(parse_hex("#FF0000"), Some(0xFF0000));
@@ -790,28 +835,28 @@ mod tests {
     #[test]
     fn a_query_starts_at_page_one_unless_it_names_a_page() {
         let bot = Arc::new(Bot::new());
-        act(&bot, "query", &serde_json::json!({ "page": 3 })).unwrap();
+        act(&bot, query(serde_json::json!({ "page": 3 }))).unwrap();
         assert_eq!(lock(&STATE.of(&bot)).page.page, 3);
-        act(&bot, "query", &serde_json::json!({ "query": "questwalker" })).unwrap();
+        act(&bot, query(serde_json::json!({ "query": "questwalker" }))).unwrap();
         assert_eq!(lock(&STATE.of(&bot)).page.page, 0);
         act(
             &bot,
-            "query",
-            &serde_json::json!({ "category": "Weapon", "weaponKind": "Sword" }),
+            query(serde_json::json!({ "category": "Weapon", "weaponKind": "Sword" })),
         )
         .unwrap();
-        act(&bot, "query", &serde_json::json!({ "category": "Helm" })).unwrap();
+        act(&bot, query(serde_json::json!({ "category": "Helm" }))).unwrap();
         assert_eq!(
             lock(&STATE.of(&bot)).page.filter.weapon_kind,
             None,
             "a kind is Weapon's only"
         );
-        assert!(act(&bot, "query", &serde_json::json!({ "sort": "Sideways" })).is_err());
+        assert!(act(&bot, query(serde_json::json!({ "sort": "Sideways" }))).is_err());
         assert!(
             act(
                 &bot,
-                "colors",
-                &serde_json::json!({ "hex": ["#12", "", "", "", "", "nope"] })
+                CosmeticsAct::Colors {
+                    hex: ["#12", "", "", "", "", "nope"].map(String::from).to_vec()
+                }
             )
             .is_err()
         );

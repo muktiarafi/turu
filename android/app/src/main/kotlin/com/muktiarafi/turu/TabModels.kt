@@ -8,10 +8,11 @@ import androidx.compose.runtime.setValue
 import com.muktiarafi.turu.models.AutoView
 import com.muktiarafi.turu.models.BankView
 import com.muktiarafi.turu.models.JumpView
+import com.muktiarafi.turu.models.LogsAct
 import com.muktiarafi.turu.models.RailView
 import com.muktiarafi.turu.models.ScriptsView
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
+import kotlinx.serialization.SerializationStrategy
 
 /**
  * The tab on screen's view models, read from its slot's control API (`turu_frontend::models`,
@@ -98,14 +99,14 @@ class TabModels {
         }.onFailure { Log.e(ModelClient.TAG, "/models/$model doesn't decode: $it") }
     }
 
-    /** Runs `action` of `model`; `done` gets the error, or null. */
-    fun act(model: String, action: String, body: JSONObject = JSONObject(), done: (String?) -> Unit = {}) {
+    /** Runs `action`, one of `model`'s generated `…Act` types, written with `serializer`; `done` gets the error, or null. */
+    fun <A> act(model: String, action: A, serializer: SerializationStrategy<A>, done: (String?) -> Unit = {}) {
         val client = client ?: return done("The tab isn't up yet")
-        client.act(model, action, body, done = done)
+        client.act(model, action, serializer, done = done)
     }
 
     fun clearLog(kind: String) {
-        act("logs", "clear", JSONObject().put("kind", kind)) { if (it == null) log(kind)?.clear() }
+        act("logs", LogsAct.clear(kind), LogsAct.JsonSerializer) { if (it == null) log(kind)?.clear() }
     }
 
     companion object {

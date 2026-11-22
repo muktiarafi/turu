@@ -53,9 +53,9 @@ import com.muktiarafi.turu.models.GearSlotView
 import com.muktiarafi.turu.models.ItemPlace
 import com.muktiarafi.turu.models.LoadoutView
 import com.muktiarafi.turu.models.LoadoutWork
+import com.muktiarafi.turu.models.LoadoutsAct
 import com.muktiarafi.turu.models.LoadoutsView
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * Loadouts for the tab on screen (`turu_frontend::models::loadouts`): the character's list and
@@ -90,16 +90,14 @@ class LoadoutsPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("loadouts", "do", JSONObject().put("action", "open"))
+            it.act("loadouts", LoadoutsAct.open, LoadoutsAct.JsonSerializer)
         }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject()) {
+    fun act(action: LoadoutsAct) {
         error = null
-        client?.act("loadouts", "do", body.put("action", action)) { error = it }
+        client?.act("loadouts", action, LoadoutsAct.JsonSerializer) { error = it }
     }
-
-    fun on(action: String, loadout: LoadoutView, body: JSONObject = JSONObject()) = act(action, body.put("name", loadout.name))
 }
 
 /** The page's open loadout: the live entry, or a saved one by name. */
@@ -172,7 +170,7 @@ fun LoadoutsPage(state: ShellState, panel: LoadoutsPanel, fullWindow: () -> Unit
                 if (shown != null && open is Open.Saved && view != null) {
                     LoadoutItems(shown, view, panel, close) { ask = it }
                 }
-                DropdownMenuItem(text = { Text("Read again") }, onClick = { close(); panel.act("open") })
+                DropdownMenuItem(text = { Text("Read again") }, onClick = { close(); panel.act(LoadoutsAct.open) })
                 HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
             }
         }
@@ -213,14 +211,14 @@ fun LoadoutsPage(state: ShellState, panel: LoadoutsPanel, fullWindow: () -> Unit
             ask = null
             if (name != a.loadout.name) {
                 renamedTo = name
-                panel.on("rename", a.loadout, JSONObject().put("to", name))
+                panel.act(LoadoutsAct.rename(a.loadout.name, name))
             }
         }
         is Ask.Delete -> AlertDialog(
             onDismissRequest = { ask = null },
             title = { Text("Delete this loadout?") },
             text = { Text("${a.loadout.name}. Its items stay in your inventory and bank.") },
-            confirmButton = { TextButton(onClick = { ask = null; open = null; renamedTo = null; panel.on("delete", a.loadout) }) { Text("Delete", color = Turu.Danger) } },
+            confirmButton = { TextButton(onClick = { ask = null; open = null; renamedTo = null; panel.act(LoadoutsAct.delete(a.loadout.name)) }) { Text("Delete", color = Turu.Danger) } },
             dismissButton = { TextButton(onClick = { ask = null }) { Text("Cancel") } },
             containerColor = Turu.Card,
         )
@@ -229,7 +227,7 @@ fun LoadoutsPage(state: ShellState, panel: LoadoutsPanel, fullWindow: () -> Unit
             title = { Text("Stop ${a.script} and equip?") },
             text = { Text("Equipping changes gear the script may rely on, so it stops first, and stays stopped.") },
             confirmButton = {
-                TextButton(onClick = { ask = null; panel.on("equip", a.loadout, JSONObject().put("stop", true)) }) { Text("Stop and equip", color = Turu.Danger) }
+                TextButton(onClick = { ask = null; panel.act(LoadoutsAct.equip(a.loadout.name, stop = true)) }) { Text("Stop and equip", color = Turu.Danger) }
             },
             dismissButton = { TextButton(onClick = { ask = null }) { Text("Cancel") } },
             containerColor = Turu.Card,
@@ -243,7 +241,7 @@ fun LoadoutsPage(state: ShellState, panel: LoadoutsPanel, fullWindow: () -> Unit
                         "CoreAdvanced may travel to the enhancement shops and spend gold, then comes back here. Stop in the Script Loader stops it.",
                 )
             },
-            confirmButton = { TextButton(onClick = { ask = null; panel.on("enhance", a.loadout) }) { Text("Enhance") } },
+            confirmButton = { TextButton(onClick = { ask = null; panel.act(LoadoutsAct.enhance(a.loadout.name)) }) { Text("Enhance") } },
             dismissButton = { TextButton(onClick = { ask = null }) { Text("Cancel") } },
             containerColor = Turu.Card,
         )
@@ -263,7 +261,7 @@ private fun LoadoutItems(loadout: LoadoutView, view: LoadoutsView, panel: Loadou
             }
         },
         enabled = idle,
-        onClick = { close(); panel.on("replace", loadout) },
+        onClick = { close(); panel.act(LoadoutsAct.replace(loadout.name)) },
     )
     DropdownMenuItem(text = { Text("Delete…", color = if (idle) Turu.Danger else Turu.Muted) }, enabled = idle, onClick = { close(); onAsk(Ask.Delete(loadout)) })
     HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
@@ -441,7 +439,7 @@ private fun Footer(loadout: LoadoutView?, saved: Boolean, view: LoadoutsView, pa
         Spacer(Modifier.weight(1f))
         when {
             loadout == null || !saved -> Button(
-                onClick = { panel.act("save-current") },
+                onClick = { panel.act(LoadoutsAct.save_current) },
                 enabled = idle && !view.reading,
                 modifier = Modifier.heightIn(min = 48.dp),
             ) {
@@ -458,7 +456,7 @@ private fun Footer(loadout: LoadoutView?, saved: Boolean, view: LoadoutsView, pa
                     ) { Text("Enhance") }
                 }
                 Button(
-                    onClick = { if (view.script.isNotEmpty()) onAsk(Ask.StopAndEquip(loadout, view.script)) else panel.on("equip", loadout) },
+                    onClick = { if (view.script.isNotEmpty()) onAsk(Ask.StopAndEquip(loadout, view.script)) else panel.act(LoadoutsAct.equip(loadout.name, stop = false)) },
                     enabled = idle && loadout.items > 0u,
                     modifier = Modifier.heightIn(min = 48.dp),
                 ) { Text("Equip", fontWeight = FontWeight.SemiBold) }

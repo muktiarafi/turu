@@ -49,9 +49,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.CrashRow
+import com.muktiarafi.turu.models.CrashesAct
 import com.muktiarafi.turu.models.CrashesView
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /** A crash report's text, as `models::crashes`' `text` answers it. */
 class CrashText(val name: String, val text: String, val subject: String, val cut: Boolean)
@@ -116,7 +116,7 @@ class CrashesPanel {
         report = null
         error = null
         val client = client ?: return
-        client.act("crashes", "text", JSONObject().put("name", name), { a ->
+        client.act("crashes", CrashesAct.text(name), CrashesAct.JsonSerializer, { a ->
             report = CrashText(name, a.optString("text"), a.optString("subject"), a.optBoolean("cut"))
         }) { e -> if (e != null) error = e }
     }
@@ -125,7 +125,7 @@ class CrashesPanel {
     fun delete(row: CrashRow, done: () -> Unit) {
         error = null
         val client = client ?: return
-        client.act("crashes", "delete", JSONObject().put("name", row.name)) { e ->
+        client.act("crashes", CrashesAct.delete(row.name), CrashesAct.JsonSerializer) { e ->
             if (e != null) {
                 error = e
                 return@act
@@ -137,7 +137,7 @@ class CrashesPanel {
     }
 
     private fun restore(name: String) {
-        client?.act("crashes", "restore", JSONObject().put("name", name)) { e -> if (e != null) error = e }
+        client?.act("crashes", CrashesAct.restore(name), CrashesAct.JsonSerializer) { e -> if (e != null) error = e }
     }
 }
 

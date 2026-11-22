@@ -54,6 +54,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.ButlerAccount
+import com.muktiarafi.turu.models.ButlerAct
 import com.muktiarafi.turu.models.ButlerView
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
@@ -91,12 +92,10 @@ class ButlerPanel {
         ).also { it.start() }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject(), answer: (JSONObject) -> Unit = {}) {
+    fun act(action: ButlerAct, answer: (JSONObject) -> Unit = {}) {
         error = null
-        client?.act("butler", "do", body.put("action", action), answer) { error = it }
+        client?.act("butler", action, ButlerAct.JsonSerializer, answer) { error = it }
     }
-
-    fun on(action: String, account: ButlerAccount) = act(action, JSONObject().put("name", account.username))
 }
 
 private enum class ButlerTab(val label: String) { Accounts("Accounts"), Settings("Settings"), Log("Log") }
@@ -130,15 +129,15 @@ fun ButlerPage(state: ShellState, panel: ButlerPanel, fullWindow: () -> Unit) {
                     enabled = (view?.logCount ?: 0u) > 0u,
                     onClick = {
                         close()
-                        panel.act("copy-log") { answer ->
+                        panel.act(ButlerAct.copy_log) { answer ->
                             val text = answer.optString("text")
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("Butler log", text))
                         }
                     },
                 )
-                DropdownMenuItem(text = { Text("Save the log") }, enabled = (view?.logCount ?: 0u) > 0u, onClick = { close(); panel.act("save-log") })
-                DropdownMenuItem(text = { Text("Clear the log") }, enabled = (view?.logCount ?: 0u) > 0u, onClick = { close(); panel.act("clear-log") })
+                DropdownMenuItem(text = { Text("Save the log") }, enabled = (view?.logCount ?: 0u) > 0u, onClick = { close(); panel.act(ButlerAct.save_log) })
+                DropdownMenuItem(text = { Text("Clear the log") }, enabled = (view?.logCount ?: 0u) > 0u, onClick = { close(); panel.act(ButlerAct.clear_log) })
                 HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
             }
         }
@@ -173,10 +172,10 @@ private fun Header(view: ButlerView, panel: ButlerPanel) {
             Text(h.state, style = MaterialTheme.typography.bodySmall, color = h.tint.color(), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (h.summoning) {
-            TextButton(onClick = { panel.act("release-all") }, enabled = h.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Release all") }
+            TextButton(onClick = { panel.act(ButlerAct.release_all) }, enabled = h.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Release all") }
         }
         if (h.following) {
-            TextButton(onClick = { panel.act("stop-follow") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Stop following", color = Turu.Danger) }
+            TextButton(onClick = { panel.act(ButlerAct.stop_follow) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Stop following", color = Turu.Danger) }
         }
     }
     (panel.error?.let { it to Turu.Danger } ?: view.message?.let { it.text to it.tint.color() })?.let { (text, color) ->
@@ -217,7 +216,7 @@ private fun Accounts(view: ButlerView, panel: ButlerPanel, modifier: Modifier) {
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(12.dp))
-            Button(onClick = { panel.act("summon-all") }, enabled = view.summonAll.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Summon all") }
+            Button(onClick = { panel.act(ButlerAct.summon_all) }, enabled = view.summonAll.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Summon all") }
         }
     }
 }
@@ -248,14 +247,14 @@ private fun AccountRow(a: ButlerAccount, panel: ButlerPanel) {
         }
         Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (a.followed) {
-                OutlinedButton(onClick = { panel.act("stop-follow") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Stop", color = Turu.Danger) }
+                OutlinedButton(onClick = { panel.act(ButlerAct.stop_follow) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Stop", color = Turu.Danger) }
             } else {
-                OutlinedButton(onClick = { panel.on("follow", a) }, enabled = a.follow.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Follow") }
+                OutlinedButton(onClick = { panel.act(ButlerAct.follow(a.username)) }, enabled = a.follow.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Follow") }
             }
             if (a.summoned) {
-                OutlinedButton(onClick = { panel.on("release", a) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Release") }
+                OutlinedButton(onClick = { panel.act(ButlerAct.release(a.username)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Release") }
             } else {
-                FilledTonalButton(onClick = { panel.on("summon", a) }, enabled = a.summon.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Summon") }
+                FilledTonalButton(onClick = { panel.act(ButlerAct.summon(a.username)) }, enabled = a.summon.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Summon") }
             }
         }
         val reasons = listOfNotNull(
@@ -290,7 +289,7 @@ private fun Settings(view: ButlerView, panel: ButlerPanel, modifier: Modifier) {
             }
             items(rows, key = { it.label }) { o ->
                 OptionRow(o, edited = false, inGame = true, onSet = { value ->
-                    panel.act("set", JSONObject().put("label", o.label).put("value", value))
+                    panel.act(ButlerAct.set(o.label, optionValue(value)))
                 }, onAction = {})
             }
         }
@@ -333,7 +332,7 @@ private fun LogLines(view: ButlerView, modifier: Modifier) {
 @Composable
 private fun SendDialog(view: ButlerView, panel: ButlerPanel, onClose: () -> Unit) {
     var name by remember { mutableStateOf("") }
-    val send = { if (name.isNotBlank()) { panel.act("send", JSONObject().put("player", name.trim())); onClose() } }
+    val send = { if (name.isNotBlank()) { panel.act(ButlerAct.send(name.trim())); onClose() } }
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text("Send to player") },

@@ -73,13 +73,16 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.InterceptedRow
+import com.muktiarafi.turu.models.InterceptorAct
 import com.muktiarafi.turu.models.InterceptorView
 import com.muktiarafi.turu.models.PacketFilter
+import com.muktiarafi.turu.models.PacketLoggerAct
 import com.muktiarafi.turu.models.PacketLoggerView
+import com.muktiarafi.turu.models.SpammerAct
 import com.muktiarafi.turu.models.SpammerView
 import kotlinx.coroutines.delay
+import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.json.Json
-import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -133,10 +136,11 @@ class PacketPanel<V : Any>(private val model: String, private val decode: (Json,
         if (lines.size > KEEP) lines.removeRange(0, lines.size - KEEP)
     }
 
-    fun act(action: String, body: JSONObject = JSONObject(), answer: (JSONObject) -> Unit = {}, done: () -> Unit = {}) {
+    /** Runs `action`, one of this model's generated `…Act` types (see the `act` for each below). */
+    fun <A> send(action: A, serializer: SerializationStrategy<A>, answer: (JSONObject) -> Unit = {}, done: () -> Unit = {}) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act(model, "do", body.put("action", action), answer) { e ->
+        client.act(model, action, serializer, answer) { e ->
             error = e
             if (e == null) done()
         }
@@ -147,6 +151,15 @@ class PacketPanel<V : Any>(private val model: String, private val decode: (Json,
         const val KEEP = 1000
     }
 }
+
+fun PacketPanel<PacketLoggerView>.act(action: PacketLoggerAct, answer: (JSONObject) -> Unit = {}, done: () -> Unit = {}) =
+    send(action, PacketLoggerAct.JsonSerializer, answer, done)
+
+fun PacketPanel<SpammerView>.act(action: SpammerAct, answer: (JSONObject) -> Unit = {}, done: () -> Unit = {}) =
+    send(action, SpammerAct.JsonSerializer, answer, done)
+
+fun PacketPanel<InterceptorView>.act(action: InterceptorAct, answer: (JSONObject) -> Unit = {}, done: () -> Unit = {}) =
+    send(action, InterceptorAct.JsonSerializer, answer, done)
 
 @Composable
 private fun <V : Any> Follow(state: ShellState, panel: PacketPanel<V>) {
@@ -294,9 +307,9 @@ fun PacketLoggerPage(state: ShellState, panel: PacketPanel<PacketLoggerView>, fu
                     DropdownMenuItem(text = { Text("Clear") }, enabled = panel.lines.isNotEmpty(), onClick = {
                     close()
                     val n = panel.lines.size
-                    panel.act("clear") {
+                    panel.act(PacketLoggerAct.clear) {
                         panel.lines.clear()
-                        notice = Notice(if (n == 1) "Cleared 1 packet" else "Cleared $n packets") { panel.act("undo-clear") { panel.reloadLog() } }
+                        notice = Notice(if (n == 1) "Cleared 1 packet" else "Cleared $n packets") { panel.act(PacketLoggerAct.undo_clear) { panel.reloadLog() } }
                     }
                 })
                     HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
@@ -310,12 +323,12 @@ fun PacketLoggerPage(state: ShellState, panel: PacketPanel<PacketLoggerView>, fu
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (view.logging) {
                         Button(
-                            onClick = { panel.act("logging", JSONObject().put("on", false)) },
+                            onClick = { panel.act(PacketLoggerAct.logging(false)) },
                             colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = Turu.Text),
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) { Text("Stop logging") }
                     } else {
-                        Button(onClick = { panel.act("logging", JSONObject().put("on", true)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Start logging") }
+                        Button(onClick = { panel.act(PacketLoggerAct.logging(true)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Start logging") }
                     }
                     Spacer(Modifier.width(12.dp))
                     Box(Modifier.weight(1f)) { StateDot(if (view.logging) "Logging" else "Stopped", view.logging) }
@@ -333,7 +346,7 @@ fun PacketLoggerPage(state: ShellState, panel: PacketPanel<PacketLoggerView>, fu
     }
     if (filtering && view != null) {
         FiltersDialog(view.filters, "A kind turned off isn't logged from then on; what's logged stays.", { filtering = false }) { ticks ->
-            panel.act("filters", JSONObject().put("shown", JSONArray(ticks)))
+            panel.act(PacketLoggerAct.filters(ticks))
         }
     }
 }
@@ -384,7 +397,7 @@ fun SpammerPage(state: ShellState, panel: PacketPanel<SpammerView>, fullWindow: 
                     onClick = {
                         close()
                         val n = view?.packets?.size ?: 0
-                        panel.act("clear") { notice = Notice(if (n == 1) "Cleared 1 packet from the queue" else "Cleared $n packets from the queue") { panel.act("undo-clear") } }
+                        panel.act(SpammerAct.clear) { notice = Notice(if (n == 1) "Cleared 1 packet from the queue" else "Cleared $n packets from the queue") { panel.act(SpammerAct.undo_clear) } }
                     },
                 )
                     HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
@@ -403,13 +416,13 @@ fun SpammerPage(state: ShellState, panel: PacketPanel<SpammerView>, fullWindow: 
                     itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (view.running) {
-                        Button(onClick = { panel.act("stop") }, colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = Turu.Text), modifier = Modifier.heightIn(min = 48.dp)) { Text("Stop") }
+                        Button(onClick = { panel.act(SpammerAct.stop) }, colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = Turu.Text), modifier = Modifier.heightIn(min = 48.dp)) { Text("Stop") }
                     } else {
-                        Button(onClick = { panel.act("start") }, enabled = view.start.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Start") }
+                        Button(onClick = { panel.act(SpammerAct.start) }, enabled = view.start.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Start") }
                     }
-                    DelayBox(view.delayMs.toLong()) { panel.act("delay", JSONObject().put("ms", it)) }
+                    DelayBox(view.delayMs.toLong()) { panel.act(SpammerAct.delay(it.coerceAtLeast(0L).toULong())) }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Switch(checked = view.toClient, onCheckedChange = { panel.act("to-client", JSONObject().put("on", it)) })
+                        Switch(checked = view.toClient, onCheckedChange = { panel.act(SpammerAct.to_client(it)) })
                         Spacer(Modifier.width(8.dp))
                         Text("Send to client")
                     }
@@ -437,7 +450,7 @@ fun SpammerPage(state: ShellState, panel: PacketPanel<SpammerView>, fullWindow: 
                         ) {
                             Text("${i + 1}", style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"), color = Turu.Muted, modifier = Modifier.width(28.dp))
                             Text(p, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            IconButton(onClick = { panel.act("remove", JSONObject().put("index", i).put("packet", p)) }) {
+                            IconButton(onClick = { panel.act(SpammerAct.remove(i.toUInt(), p)) }) {
                                 Icon(Icons.Rounded.Close, contentDescription = "Remove packet ${i + 1}", tint = Turu.Muted)
                             }
                         }
@@ -458,9 +471,9 @@ fun SpammerPage(state: ShellState, panel: PacketPanel<SpammerView>, fullWindow: 
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick = { panel.act("add", JSONObject().put("packet", packet)) { packet = "" } }, enabled = packet.isNotBlank(), modifier = Modifier.heightIn(min = 48.dp)) { Text("Add") }
+                OutlinedButton(onClick = { panel.act(SpammerAct.add(packet)) { packet = "" } }, enabled = packet.isNotBlank(), modifier = Modifier.heightIn(min = 48.dp)) { Text("Add") }
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = { panel.act("send", JSONObject().put("packet", packet)) { notice = Notice(if (view.toClient) "Sent to the client" else "Sent to the server") } }, enabled = packet.isNotBlank(), modifier = Modifier.heightIn(min = 48.dp)) { Text("Send now") }
+                Button(onClick = { panel.act(SpammerAct.send(packet)) { notice = Notice(if (view.toClient) "Sent to the client" else "Sent to the server") } }, enabled = packet.isNotBlank(), modifier = Modifier.heightIn(min = 48.dp)) { Text("Send now") }
             }
         }
         NoticeHost(notice, Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) { notice = null }
@@ -524,14 +537,14 @@ fun InterceptorPage(state: ShellState, panel: PacketPanel<InterceptorView>, full
                     DropdownMenuItem(
                         text = { Text(if (n > 0uL) "Copy $n selected" else "Copy all shown") },
                         enabled = view != null && view.matches > 0uL,
-                        onClick = { close(); panel.act("copy", answer = { copy(context, "Packets", it.optString("text")) }) },
+                        onClick = { close(); panel.act(InterceptorAct.copy, answer = { copy(context, "Packets", it.optString("text")) }) },
                     )
                     DropdownMenuItem(
                     text = { Text("Clear") },
                     enabled = view != null && view.matches > 0uL,
                     onClick = {
                         close()
-                        panel.act("clear") { notice = Notice("Cleared the captured packets") { panel.act("undo-clear") } }
+                        panel.act(InterceptorAct.clear) { notice = Notice("Cleared the captured packets") { panel.act(InterceptorAct.undo_clear) } }
                     },
                 )
                     HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
@@ -545,7 +558,7 @@ fun InterceptorPage(state: ShellState, panel: PacketPanel<InterceptorView>, full
             LaunchedEffect(search) {
                 if (search != view.search) {
                     delay(300)
-                    panel.act("search", JSONObject().put("text", search))
+                    panel.act(InterceptorAct.search(search))
                 }
             }
             if (!WindowInsets.isImeVisible) {
@@ -557,10 +570,10 @@ fun InterceptorPage(state: ShellState, panel: PacketPanel<InterceptorView>, full
                             options = listOf("" to "Current server") + view.servers.map { it to it },
                             loading = view.refreshing,
                             none = "Current server",
-                            onOpen = { panel.act("refresh-servers") },
-                        ) { panel.act("server", JSONObject().put("name", it)) }
+                            onOpen = { panel.act(InterceptorAct.refresh_servers) },
+                        ) { panel.act(InterceptorAct.server(it)) }
                     }
-                    IconButton(onClick = { panel.act("refresh-servers") }, enabled = !view.refreshing) {
+                    IconButton(onClick = { panel.act(InterceptorAct.refresh_servers) }, enabled = !view.refreshing) {
                         Icon(Icons.Rounded.Refresh, contentDescription = "Refresh the server list", tint = Turu.Muted)
                     }
                 }
@@ -570,12 +583,12 @@ fun InterceptorPage(state: ShellState, panel: PacketPanel<InterceptorView>, full
                     itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (view.running) {
-                        Button(onClick = { panel.act("disconnect") }, colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = Turu.Text), modifier = Modifier.heightIn(min = 48.dp)) { Text("Disconnect") }
+                        Button(onClick = { panel.act(InterceptorAct.disconnect) }, colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = Turu.Text), modifier = Modifier.heightIn(min = 48.dp)) { Text("Disconnect") }
                     } else {
-                        Button(onClick = { panel.act("connect") }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (view.server.isEmpty()) "Connect" else "Connect and relog") }
+                        Button(onClick = { panel.act(InterceptorAct.connect) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (view.server.isEmpty()) "Connect" else "Connect and relog") }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Switch(checked = view.logging, onCheckedChange = { panel.act("logging", JSONObject().put("on", it)) })
+                        Switch(checked = view.logging, onCheckedChange = { panel.act(InterceptorAct.logging(it)) })
                         Spacer(Modifier.width(8.dp))
                         Text("Log packets")
                     }
@@ -606,7 +619,7 @@ fun InterceptorPage(state: ShellState, panel: PacketPanel<InterceptorView>, full
                         val selected = picks[r.number] ?: r.selected
                         val toggle = {
                             picks[r.number] = !selected
-                            panel.act("select", JSONObject().put("number", r.number.toLong()).put("on", !selected))
+                            panel.act(InterceptorAct.select(r.number, !selected))
                         }
                         Row(
                             Modifier
@@ -641,14 +654,14 @@ fun InterceptorPage(state: ShellState, panel: PacketPanel<InterceptorView>, full
                 val count = if (view.matches == 1uL) "1 packet" else "${view.matches} packets"
                 val more = if (view.matches > view.rows.size.toULong()) " · the newest ${view.rows.size} shown" else ""
                 Text(count + more + if (view.selected > 0uL) " · ${view.selected} selected" else "", style = MaterialTheme.typography.bodySmall, color = Turu.Muted, modifier = Modifier.weight(1f))
-                if (view.selected > 0uL) TextButton(onClick = { panel.act("unselect") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Unselect") }
+                if (view.selected > 0uL) TextButton(onClick = { panel.act(InterceptorAct.unselect) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Unselect") }
             }
         }
         NoticeHost(notice, Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) { notice = null }
     }
     if (filtering && view != null) {
         FiltersDialog(view.filters, "Only the kinds checked show; the capture keeps them all.", { filtering = false }) { ticks ->
-            panel.act("filters", JSONObject().put("shown", JSONArray(ticks)))
+            panel.act(InterceptorAct.filters(ticks))
         }
     }
     reading?.let { r ->
@@ -668,7 +681,7 @@ fun InterceptorPage(state: ShellState, panel: PacketPanel<InterceptorView>, full
             confirmButton = { TextButton(onClick = { copy(context, "Packet", r.packet); reading = null; notice = Notice("Copied the packet") }) { Text("Copy") } },
             dismissButton = {
                 Row {
-                    TextButton(onClick = { panel.act("select", JSONObject().put("number", r.number.toLong()).put("on", true)); reading = null }) { Text("Select") }
+                    TextButton(onClick = { panel.act(InterceptorAct.select(r.number, true)); reading = null }) { Text("Select") }
                     TextButton(onClick = { reading = null }) { Text("Close") }
                 }
             },

@@ -9,8 +9,7 @@
 //! state only briefly and never while calling the bot, so a shell may call them from a frame.
 
 use super::tab_state::{PerTab, Shared, lock};
-use serde::Serialize;
-use serde_json::Value as Json;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -336,44 +335,76 @@ pub fn load_quests(bot: &Arc<Bot>, ids: Vec<i64>) {
     crate::turu::spawn_action_for(bot.clone(), "Load quests", move |bot| quests::load(bot, &ids));
 }
 
-/// The control API's actions (`POST /models/loader/do`, `action` in the body).
-pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
-    let text = |key: &str| {
-        body.get(key)
-            .and_then(Json::as_str)
-            .map(str::to_owned)
-            .ok_or_else(|| format!("{key} is missing"))
-    };
-    match action {
-        "open" => open(bot),
-        "search" => {
+/// The Loader's actions (`POST /models/loader/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum LoaderAct {
+    Open,
+    /// Searches the quests (back to the first page), and or turns to `page`.
+    Search {
+        search: Option<String>,
+        page: Option<u32>,
+    },
+    /// Loads the shop whose ID is `input`.
+    LoadShop {
+        input: String,
+    },
+    /// Loads the quests `ids`, or else those typed in `input` (digits, commas and spaces).
+    LoadQuests {
+        ids: Option<Vec<i64>>,
+        input: Option<String>,
+    },
+    Download,
+    AddMissing,
+    RebuildAll,
+    /// Updates the cache for the range typed in `input`.
+    UpdateRange {
+        input: String,
+    },
+    Cancel,
+    /// Completes quest `id` (a fake turn-in).
+    FakeComplete {
+        id: i64,
+    },
+}
+
+pub fn act(bot: &Arc<Bot>, act: LoaderAct) -> Result<(), String> {
+    match act {
+        LoaderAct::Open => open(bot),
+        LoaderAct::Search { search, page } => {
             let state = STATE.of(bot);
             let mut s = lock(&state);
-            if let Some(search) = body.get("search").and_then(Json::as_str)
+            if let Some(search) = search
                 && search != s.page.search
             {
-                s.page.search = search.to_owned();
+                s.page.search = search;
                 s.page.page = 0;
             }
-            if let Some(page) = body.get("page").and_then(Json::as_u64) {
+            if let Some(page) = page {
                 s.page.page = page as usize;
             }
         }
-        "load-shop" => load_shop(bot, &text("input")?)?,
-        "load-quests" => {
-            let ids = match body.get("ids").and_then(Json::as_array) {
-                Some(ids) => ids.iter().filter_map(Json::as_i64).collect(),
-                None => quest_cache::parse_ids(&text("input")?).ok_or("Quest IDs are digits, commas and spaces")?,
+        LoaderAct::LoadShop { input } => load_shop(bot, &input)?,
+        LoaderAct::LoadQuests { ids, input } => {
+            let ids = match ids {
+                Some(ids) => ids,
+                None => quest_cache::parse_ids(&input.ok_or("input is missing")?)
+                    .ok_or("Quest IDs are digits, commas and spaces")?,
             };
             load_quests(bot, ids);
         }
-        "download" => download_cache(bot),
-        "add-missing" => update_cache(bot, UpdateMode::AddMissing),
-        "rebuild-all" => update_cache(bot, UpdateMode::RebuildAll),
-        "update-range" => update_range(bot, &text("input")?),
-        "cancel" => cancel(bot),
-        "fake-complete" => fake_complete(bot, body.get("id").and_then(Json::as_i64).ok_or("id is missing")?),
-        other => return Err(format!("no action {other}")),
+        LoaderAct::Download => download_cache(bot),
+        LoaderAct::AddMissing => update_cache(bot, UpdateMode::AddMissing),
+        LoaderAct::RebuildAll => update_cache(bot, UpdateMode::RebuildAll),
+        LoaderAct::UpdateRange { input } => update_range(bot, &input),
+        LoaderAct::Cancel => cancel(bot),
+        LoaderAct::FakeComplete { id } => fake_complete(bot, id),
     }
     Ok(())
 }
@@ -396,10 +427,24 @@ mod tests {
         take(&state, (1..=120).map(|i| quest(i, &format!("Quest {i}"))).collect());
         let v = view(&bot);
         assert_eq!((v.total, v.matches, v.pages, v.quests.len()), (120, 120, 3, PAGE_SIZE));
-        act(&bot, "search", &serde_json::json!({ "page": 2 })).unwrap();
+        act(
+            &bot,
+            LoaderAct::Search {
+                search: None,
+                page: Some(2),
+            },
+        )
+        .unwrap();
         assert_eq!(view(&bot).quests.len(), 20);
         // A new search starts on its first page.
-        act(&bot, "search", &serde_json::json!({ "search": "quest 11" })).unwrap();
+        act(
+            &bot,
+            LoaderAct::Search {
+                search: Some("quest 11".into()),
+                page: None,
+            },
+        )
+        .unwrap();
         let v = view(&bot);
         assert_eq!((v.page, v.matches), (0, 11)); // 11, 110 to 119
         take(&state, vec![quest(11, "Quest 11")]);
@@ -412,6 +457,10 @@ mod tests {
         update_range(&bot, "12");
         assert!(status(&bot).notice.is_some_and(|n| !n.ok));
         assert!(load_shop(&bot, "1, 2").is_err());
-        assert!(act(&bot, "load-quests", &serde_json::json!({ "input": "12a" })).is_err());
+        let typed = LoaderAct::LoadQuests {
+            ids: None,
+            input: Some("12a".into()),
+        };
+        assert!(act(&bot, typed).is_err());
     }
 }

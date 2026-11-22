@@ -2,7 +2,7 @@
 //! and the scripts the script chip lists to start with a tap (favourites and recent,
 //! `quick_scripts`; Script Loader's star adds one).
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use turu_bot::Bot;
 
@@ -195,4 +195,24 @@ pub fn menus(bot: &Bot) -> Vec<MenuView> {
         });
     }
     list
+}
+
+/// The rail's actions (`POST /models/rail/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum RailAct {
+    /// Loads and starts the quick script at `path`.
+    StartQuick { path: String },
+}
+
+pub fn act(bot: &Arc<Bot>, act: RailAct) -> Result<(), String> {
+    match act {
+        RailAct::StartQuick { path } => start_quick(bot, &path),
+    }
 }

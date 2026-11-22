@@ -1,7 +1,8 @@
 //! View models (docs/NATIVE_UI_PROPOSAL.md, L2): what a user can see and do about one feature,
 //! as plain data and actions, with no UI in them. The egui windows draw them; a native shell reads
 //! the same views over the tab's control API (`GET /models/<name>`, `event: model` on `/events`)
-//! and sends the actions back as routes.
+//! and sends the actions back (`POST /models/<name>/do`), each model's as one enum the shells'
+//! types are generated from.
 //!
 //! Rules (the proposal's "The shape of the API"):
 //!
@@ -113,578 +114,133 @@ pub fn replace_word(text: &str, word: &str, with: &str) -> String {
 }
 
 /// Adds every model's view and actions to the control API (before it starts), for a native
-/// shell's screens: `GET /models/<name>`, `POST /models/<name>/<action>`.
+/// shell's screens: `GET /models/<name>`, and `POST /models/<name>/do` with one of its actions.
 pub fn register() {
     use serde_json::{Value, json};
+    use std::sync::Arc;
+    use turu_bot::Bot;
     use turu_bot::control_api::{add_model, add_model_action};
-    fn text(body: &Value, name: &str) -> Result<String, String> {
-        body.get(name)
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-            .ok_or_else(|| format!("{name} is missing"))
-    }
     fn done() -> Result<Value, String> {
         Ok(json!({}))
     }
+    /// Model `name`'s actions, as one enum `A` (`POST /models/<name>/do`, the action's name in the
+    /// body's `action`): the shells send `A` in the types generated from it, so an action or a
+    /// field changed here fails their build, not a tap.
+    fn acts<A: serde::de::DeserializeOwned>(
+        name: &'static str,
+        run: impl Fn(&Arc<Bot>, A) -> Result<Value, String> + Send + Sync + 'static,
+    ) {
+        add_model_action(
+            name,
+            "do",
+            Box::new(move |bot, body| {
+                run(
+                    bot,
+                    A::deserialize(body).map_err(|e| format!("not a {name} action: {e}"))?,
+                )
+            }),
+        );
+    }
 
     add_model("scripts", Box::new(|bot| to_json(&scripts::view(bot))));
-    add_model_action(
-        "scripts",
-        "start",
-        Box::new(|bot, _| scripts::start(bot).and_then(|()| done())),
-    );
-    add_model_action(
-        "scripts",
-        "stop",
-        Box::new(|bot, _| {
-            scripts::stop(bot);
-            done()
-        }),
-    );
-    add_model_action(
-        "scripts",
-        "pause",
-        Box::new(|bot, _| {
-            scripts::set_paused(bot, true);
-            done()
-        }),
-    );
-    add_model_action(
-        "scripts",
-        "resume",
-        Box::new(|bot, _| {
-            scripts::set_paused(bot, false);
-            done()
-        }),
-    );
-    add_model_action(
-        "scripts",
-        "favourite",
-        Box::new(|bot, _| {
-            scripts::toggle_favourite(bot);
-            done()
-        }),
-    );
-    add_model_action(
-        "scripts",
-        "load",
-        Box::new(|bot, body| scripts::load(bot, std::path::Path::new(&text(body, "path")?)).and_then(|()| done())),
-    );
-
+    acts("scripts", |bot, act| scripts::act(bot, act).and_then(|()| done()));
     add_model("logs", Box::new(|bot| to_json(&logs::view(bot))));
-    add_model_action(
-        "logs",
-        "clear",
-        Box::new(|bot, body| logs::clear(bot, &text(body, "kind")?).and_then(|()| done())),
-    );
-
+    acts("logs", |bot, act| logs::act(bot, act).and_then(|()| done()));
     add_model("crashes", Box::new(|_| to_json(&crashes::view())));
-    add_model_action(
-        "crashes",
-        "text",
-        Box::new(|_, body| {
-            let read = crashes::text(&text(body, "name")?)?;
-            Ok(json!({ "text": read.text, "subject": read.subject, "cut": read.cut }))
-        }),
-    );
-    add_model_action(
-        "crashes",
-        "delete",
-        Box::new(|_, body| crashes::delete(&text(body, "name")?).and_then(|()| done())),
-    );
-    add_model_action(
-        "crashes",
-        "restore",
-        Box::new(|_, body| crashes::restore(&text(body, "name")?).and_then(|()| done())),
-    );
-
+    acts("crashes", |_, act| crashes::act(act));
     add_model("notifications", Box::new(|bot| to_json(&notifications::view(bot))));
-    add_model_action(
-        "notifications",
-        "clear",
-        Box::new(|bot, _| {
-            notifications::clear(bot);
-            done()
-        }),
-    );
-
+    acts("notifications", |bot, act| {
+        notifications::act(bot, act);
+        done()
+    });
     add_model("drops", Box::new(|bot| to_json(&drops::view(bot))));
-    add_model_action(
-        "drops",
-        "pickup-all",
-        Box::new(|bot, _| {
-            drops::pickup_all(bot);
-            done()
-        }),
-    );
-    add_model_action(
-        "drops",
-        "pickup",
-        Box::new(|bot, body| {
-            let ids: Vec<i64> = body
-                .get("ids")
-                .and_then(Value::as_array)
-                .ok_or("ids is missing")?
-                .iter()
-                .filter_map(Value::as_i64)
-                .collect();
-            drops::pickup(bot, ids);
-            done()
-        }),
-    );
-
+    acts("drops", |bot, act| {
+        drops::act(bot, act);
+        done()
+    });
     add_model("stats", Box::new(|bot| to_json(&stats::view(bot))));
-    for (action, work) in [
-        ("reset", stats::reset as fn(&std::sync::Arc<turu_bot::Bot>)),
-        ("save", stats::save_snapshot),
-        ("clear", stats::clear_history),
-        ("dismiss", stats::dismiss_note),
-    ] {
-        add_model_action(
-            "stats",
-            action,
-            Box::new(move |bot, _| {
-                work(bot);
-                done()
-            }),
-        );
-    }
-    add_model_action(
-        "stats",
-        "advanced",
-        Box::new(|bot, body| {
-            let on = body.get("on").and_then(Value::as_bool).ok_or("on is missing")?;
-            stats::set_advanced(bot, on);
-            done()
-        }),
-    );
-    add_model_action(
-        "stats",
-        "unit",
-        Box::new(|bot, body| stats::set_unit(bot, &text(body, "unit")?).and_then(|()| done())),
-    );
-    add_model_action(
-        "stats",
-        "export",
-        Box::new(|bot, _| Ok(json!({ "csv": stats::export(bot) }))),
-    );
-
+    acts("stats", stats::act);
     add_model("auto", Box::new(|bot| to_json(&auto::view(bot))));
-    add_model_action(
-        "auto",
-        "reload-classes",
-        Box::new(|bot, _| {
-            auto::reload_classes(bot);
-            done()
-        }),
-    );
-    add_model_action(
-        "auto",
-        "class",
-        Box::new(|bot, body| {
-            auto::pick_class(bot, text(body, "class")?);
-            done()
-        }),
-    );
-    add_model_action(
-        "auto",
-        "mode",
-        Box::new(|bot, body| {
-            auto::pick_mode(bot, text(body, "mode")?);
-            done()
-        }),
-    );
-    add_model_action(
-        "auto",
-        "map-ids",
-        Box::new(|bot, body| {
-            auto::set_map_ids(bot, text(body, "mapIds")?);
-            done()
-        }),
-    );
-    add_model_action(
-        "auto",
-        "attack",
-        Box::new(|bot, _| auto::start(bot, auto::AutoMode::Attack).and_then(|()| done())),
-    );
-    add_model_action(
-        "auto",
-        "hunt",
-        Box::new(|bot, _| auto::start(bot, auto::AutoMode::Hunt).and_then(|()| done())),
-    );
-    add_model_action(
-        "auto",
-        "stop",
-        Box::new(|bot, _| {
-            auto::stop(bot);
-            done()
-        }),
-    );
-
+    acts("auto", |bot, act| auto::act(bot, act).and_then(|()| done()));
     add_model("jump", Box::new(|bot| to_json(&jump::view(bot))));
-    add_model_action(
-        "jump",
-        "refresh",
-        Box::new(|bot, _| {
-            jump::refresh(bot);
-            done()
-        }),
-    );
-    add_model_action(
-        "jump",
-        "cell",
-        Box::new(|bot, body| {
-            jump::select_cell(bot, text(body, "cell")?);
-            done()
-        }),
-    );
-    add_model_action(
-        "jump",
-        "pad",
-        Box::new(|bot, body| {
-            jump::select_pad(bot, text(body, "pad")?);
-            done()
-        }),
-    );
-    add_model_action(
-        "jump",
-        "current",
-        Box::new(|bot, _| {
-            jump::current(bot);
-            done()
-        }),
-    );
-    add_model_action(
-        "jump",
-        "jump",
-        Box::new(|bot, _| {
-            jump::jump(bot);
-            done()
-        }),
-    );
-
+    acts("jump", |bot, act| {
+        jump::act(bot, act);
+        done()
+    });
     add_model("bank", Box::new(|bot| to_json(&bank::view(bot))));
-    add_model_action(
-        "bank",
-        "open",
-        Box::new(|bot, _| {
-            bank::open(bot);
-            done()
-        }),
-    );
-
+    acts("bank", |bot, act| {
+        bank::act(bot, act);
+        done()
+    });
     add_model("client-update", Box::new(|_| to_json(&client_update::view())));
-    add_model_action(
-        "client-update",
-        "install",
-        Box::new(|_, body| {
-            let on_quit = body.get("onQuit").and_then(Value::as_bool).unwrap_or(false);
-            client_update::install(on_quit).and_then(|()| done())
-        }),
-    );
-
+    acts("client-update", |_, act| client_update::act(act).and_then(|()| done()));
     add_model("rail", Box::new(|bot| to_json(&rail::view(bot))));
-    add_model_action(
-        "rail",
-        "start-quick",
-        Box::new(|bot, body| rail::start_quick(bot, &text(body, "path")?).and_then(|()| done())),
-    );
-
+    acts("rail", |bot, act| rail::act(bot, act).and_then(|()| done()));
     add_model("repo", Box::new(|bot| to_json(&repo::view(bot))));
-    add_model_action(
-        "repo",
-        "query",
-        Box::new(|bot, body| repo::set_query(bot, body).and_then(|()| done())),
-    );
-    for (action, work) in [
-        ("start", repo::Work::Start),
-        ("load", repo::Work::Load),
-        ("queue", repo::Work::Queue),
-        ("download", repo::Work::Download),
-        ("replace", repo::Work::Replace),
-    ] {
-        add_model_action(
-            "repo",
-            action,
-            Box::new(move |bot, body| repo::work(bot, &text(body, "path")?, work).and_then(|()| done())),
-        );
-    }
-    add_model_action(
-        "repo",
-        "launch",
-        Box::new(|bot, body| {
-            let ready = repo::set_launch_script(bot, &text(body, "path")?)?;
-            Ok(json!({ "ready": ready }))
-        }),
-    );
-    add_model_action(
-        "repo",
-        "pin",
-        Box::new(|_, body| {
-            let pinned = body.get("pinned").and_then(Value::as_bool).ok_or("pinned is missing")?;
-            repo::set_pinned(&text(body, "path")?, pinned);
-            done()
-        }),
-    );
-    for task in ["update-all", "download-all", "refresh", "cancel"] {
-        add_model_action(
-            "repo",
-            task,
-            Box::new(move |_, _| repo::task(task).and_then(|()| done())),
-        );
-    }
-
+    acts("repo", repo::act);
     add_model("scheduler", Box::new(|bot| to_json(&scheduler::view(bot))));
-    add_model_action(
-        "scheduler",
-        "toggle",
-        Box::new(|bot, _| {
-            scheduler::toggle(bot);
-            done()
-        }),
-    );
-    add_model_action(
-        "scheduler",
-        "load",
-        Box::new(|bot, body| scheduler::load(bot, &text(body, "name")?).and_then(|()| done())),
-    );
-    add_model_action(
-        "scheduler",
-        "save",
-        Box::new(|bot, body| scheduler::save(bot, &text(body, "name")?).and_then(|()| done())),
-    );
-    add_model_action(
-        "scheduler",
-        "move",
-        Box::new(|bot, body| {
-            let by = body.get("by").and_then(Value::as_i64).ok_or("by is missing")?;
-            scheduler::move_by(bot, &text(body, "id")?, by as isize);
-            done()
-        }),
-    );
-    add_model_action(
-        "scheduler",
-        "remove",
-        Box::new(|bot, body| {
-            scheduler::remove(bot, &text(body, "id")?);
-            done()
-        }),
-    );
-    add_model_action(
-        "scheduler",
-        "rename",
-        Box::new(|bot, body| {
-            scheduler::rename(bot, &text(body, "id")?, &text(body, "name")?);
-            done()
-        }),
-    );
-    add_model_action(
-        "scheduler",
-        "options",
-        Box::new(|bot, body| {
-            scheduler::options(bot, &text(body, "id")?);
-            done()
-        }),
-    );
-
+    acts("scheduler", |bot, act| scheduler::act(bot, act).and_then(|()| done()));
     add_model("army", Box::new(|_| to_json(&army::view())));
-    add_model_action(
-        "army",
-        "send",
-        Box::new(|_, body| army::command(body).and_then(|()| done())),
-    );
-    add_model_action("army", "row", Box::new(|_, body| army::row(body).and_then(|()| done())));
-    add_model_action(
-        "army-client",
-        "do",
-        Box::new(|_, body| army_client::act(&text(body, "action")?, body)),
-    );
+    acts("army", |_, act| army::act(act).and_then(|()| done()));
+    acts("army-client", |_, act| army_client::act(act));
     add_model("army-travel", Box::new(|_| to_json(&army_travel::view())));
-    add_model_action(
-        "army-travel",
-        "do",
-        Box::new(|_, body| army_travel::act(&army_travel::TRAVEL, &text(body, "action")?, body).and_then(|()| done())),
-    );
-    for (action, work) in [
-        ("clear-ended", army::clear_ended as fn()),
-        ("close-all", army::close_all),
-        ("clear-results", army::clear_results),
-    ] {
-        add_model_action(
-            "army",
-            action,
-            Box::new(move |_, _| {
-                work();
-                done()
-            }),
-        );
-    }
-
+    acts("army-travel", |_, act| {
+        army_travel::act(&army_travel::TRAVEL, act).and_then(|()| done())
+    });
     add_model("app-options", Box::new(|bot| to_json(&application_options::view(bot))));
-    add_model_action(
-        "app-options",
-        "set",
-        Box::new(|bot, body| {
-            let value = body.get("value").ok_or("value is missing")?;
-            application_options::set(bot, &text(body, "section")?, &text(body, "label")?, value).and_then(|()| done())
-        }),
-    );
-    add_model_action(
-        "app-options",
-        "act",
-        Box::new(|bot, body| application_options::act(bot, &text(body, "label")?).and_then(|()| done())),
-    );
-
+    acts("app-options", |bot, act| {
+        application_options::act(bot, act).and_then(|()| done())
+    });
     add_model("core-bots", Box::new(|bot| to_json(&core_bots::view(bot))));
-    add_model_action(
-        "core-bots",
-        "do",
-        Box::new(|bot, body| core_bots::act(bot, &text(body, "action")?, body).and_then(|()| done())),
-    );
-
+    acts("core-bots", |bot, act| core_bots::act(bot, act).and_then(|()| done()));
     add_model("script-options", Box::new(|bot| to_json(&script_options::view(bot))));
-    add_model_action(
-        "script-options",
-        "do",
-        Box::new(|bot, body| script_options::act(bot, &text(body, "action")?, body).and_then(|()| done())),
-    );
-
+    acts("script-options", |bot, act| {
+        script_options::act(bot, act).and_then(|()| done())
+    });
     add_model("cosmetics", Box::new(|bot| to_json(&cosmetics::view(bot))));
-    add_model_action(
-        "cosmetics",
-        "do",
-        Box::new(|bot, body| cosmetics::act(bot, &text(body, "action")?, body).and_then(|()| done())),
-    );
-
+    acts("cosmetics", |bot, act| cosmetics::act(bot, act).and_then(|()| done()));
     add_model("butler", Box::new(|bot| to_json(&butler::view(bot))));
-    add_model_action(
-        "butler",
-        "do",
-        Box::new(|bot, body| butler::act(bot, &text(body, "action")?, body)),
-    );
-
+    acts("butler", butler::act);
     add_model("grabber", Box::new(|bot| to_json(&grabber::view(bot))));
-    add_model_action(
-        "grabber",
-        "do",
-        Box::new(|bot, body| grabber::act(bot, &text(body, "action")?, body)),
-    );
-
+    acts("grabber", grabber::act);
     add_model("console", Box::new(|bot| to_json(&console::view(bot))));
-    add_model_action(
-        "console",
-        "do",
-        Box::new(|bot, body| console::act(bot, &text(body, "action")?, body).and_then(|()| done())),
-    );
-
+    acts("console", |bot, act| console::act(bot, act).and_then(|()| done()));
     add_model("packet-logger", Box::new(|bot| to_json(&packets::logger_view(bot))));
-    add_model_action(
-        "packet-logger",
-        "do",
-        Box::new(|bot, body| packets::logger_act(bot, &text(body, "action")?, body).and_then(|()| done())),
-    );
+    acts("packet-logger", |bot, act| {
+        packets::logger_act(bot, act).and_then(|()| done())
+    });
     add_model("spammer", Box::new(|bot| to_json(&packets::spammer_view(bot))));
-    add_model_action(
-        "spammer",
-        "do",
-        Box::new(|bot, body| packets::spammer_act(bot, &text(body, "action")?, body).and_then(|()| done())),
-    );
+    acts("spammer", |bot, act| {
+        packets::spammer_act(bot, act).and_then(|()| done())
+    });
     add_model("interceptor", Box::new(|bot| to_json(&packets::interceptor_view(bot))));
-    add_model_action(
-        "interceptor",
-        "do",
-        Box::new(|bot, body| packets::interceptor_act(bot, &text(body, "action")?, body)),
-    );
-
+    acts("interceptor", packets::interceptor_act);
     add_model("hotkeys", Box::new(|_| to_json(&hotkeys::view())));
-    add_model_action(
-        "hotkeys",
-        "do",
-        Box::new(|_, body| hotkeys::act(&hotkeys::STORE, &text(body, "action")?, body)),
-    );
-
+    acts("hotkeys", |_, act| hotkeys::act(&hotkeys::STORE, act));
     add_model("prompts", Box::new(|bot| to_json(&prompts::view(bot))));
-    add_model_action("prompts", "answer", Box::new(prompts::answer));
-
+    acts("prompts", prompts::act);
     add_model("junk", Box::new(|bot| to_json(&junk::view(bot))));
-    add_model_action(
-        "junk",
-        "do",
-        Box::new(|bot, body| junk::act(bot, &text(body, "action")?, body).and_then(|()| done())),
-    );
-
+    acts("junk", |bot, act| junk::act(bot, act).and_then(|()| done()));
     add_model("loader", Box::new(|bot| to_json(&loader::view(bot))));
-    add_model_action(
-        "loader",
-        "do",
-        Box::new(|bot, body| loader::act(bot, &text(body, "action")?, body).and_then(|()| done())),
-    );
-
+    acts("loader", |bot, act| loader::act(bot, act).and_then(|()| done()));
     add_model("notify-drop", Box::new(|bot| to_json(&notify_drop::view(bot))));
-    add_model_action(
-        "notify-drop",
-        "do",
-        Box::new(|bot, body| notify_drop::act(bot, &text(body, "action")?, body).and_then(|()| done())),
-    );
-
+    acts("notify-drop", |bot, act| {
+        notify_drop::act(bot, act).and_then(|()| done())
+    });
     add_model("runtime", Box::new(|bot| to_json(&runtime::view(bot))));
-    add_model_action(
-        "runtime",
-        "do",
-        Box::new(|bot, body| runtime::act(bot, &text(body, "action")?, body).and_then(|()| done())),
-    );
-
+    acts("runtime", |bot, act| runtime::act(bot, act).and_then(|()| done()));
     add_model("fast-travel", Box::new(|bot| to_json(&fast_travel::view(bot))));
-    add_model_action(
-        "fast-travel",
-        "do",
-        Box::new(|bot, body| fast_travel::act(bot, &text(body, "action")?, body).and_then(|()| done())),
-    );
-
+    acts("fast-travel", |bot, act| {
+        fast_travel::act(bot, act).and_then(|()| done())
+    });
     add_model("loadouts", Box::new(|bot| to_json(&loadouts::view(bot))));
-    add_model_action(
-        "loadouts",
-        "do",
-        Box::new(|bot, body| loadouts::act(bot, &text(body, "action")?, body).and_then(|()| done())),
-    );
-
+    acts("loadouts", |bot, act| loadouts::act(bot, act).and_then(|()| done()));
     add_model("skills", Box::new(|bot| to_json(&skills::view(bot))));
-    add_model_action(
-        "skills",
-        "do",
-        Box::new(|bot, body| skills::act(bot, &text(body, "action")?, body).and_then(|()| done())),
-    );
-
+    acts("skills", |bot, act| skills::act(bot, act).and_then(|()| done()));
     add_model("game-options", Box::new(|bot| to_json(&game_options::view(bot))));
-    add_model_action(
-        "game-options",
-        "set",
-        Box::new(|bot, body| {
-            let value = body.get("value").ok_or("value is missing")?;
-            game_options::set(bot, &text(body, "label")?, value).and_then(|()| done())
-        }),
-    );
-    add_model_action(
-        "game-options",
-        "save",
-        Box::new(|bot, _| game_options::save(bot).and_then(|()| done())),
-    );
-    add_model_action(
-        "game-options",
-        "revert",
-        Box::new(|bot, _| {
-            game_options::revert(bot, None);
-            done()
-        }),
-    );
-    add_model_action(
-        "game-options",
-        "reset",
-        Box::new(|bot, _| {
-            game_options::reset(bot);
-            done()
-        }),
-    );
+    acts("game-options", |bot, act| {
+        game_options::act(bot, act).and_then(|()| done())
+    });
 }
 
 fn to_json(view: &impl Serialize) -> serde_json::Value {
@@ -759,7 +315,13 @@ mod tests {
             super::replace_word(text, "Questwalker", "Account 1"),
             "Account 1 follows questwalker2; Account 1 is on Twig."
         );
-        assert_eq!(super::replace_word("Nobody here", "Questwalker", "Account 1"), "Nobody here");
-        assert_eq!(super::replace_word("Questwalker", "Questwalker", "Account 1"), "Account 1");
+        assert_eq!(
+            super::replace_word("Nobody here", "Questwalker", "Account 1"),
+            "Nobody here"
+        );
+        assert_eq!(
+            super::replace_word("Questwalker", "Questwalker", "Account 1"),
+            "Account 1"
+        );
     }
 }

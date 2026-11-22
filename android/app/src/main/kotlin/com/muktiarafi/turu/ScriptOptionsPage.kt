@@ -57,13 +57,13 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.OptionValue
 import com.muktiarafi.turu.models.ScriptOptionGroupView
 import com.muktiarafi.turu.models.ScriptOptionKind
 import com.muktiarafi.turu.models.ScriptOptionRowView
+import com.muktiarafi.turu.models.ScriptOptionsAct
 import com.muktiarafi.turu.models.ScriptOptionsView
 import kotlinx.serialization.json.Json
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Script Options for the tab on screen (`turu_frontend::models::script_options`): the draft, the
@@ -85,7 +85,7 @@ class ScriptOptionsPanel {
         following = tab
         // The tab before: the page left it. With its script waiting, its own window takes the
         // editor back; else the draft goes (`leave`).
-        client?.let { old -> old.act("script-options", "do", JSONObject().put("action", "leave")) { old.stop() } }
+        client?.let { old -> old.act("script-options", ScriptOptionsAct.leave, ScriptOptionsAct.JsonSerializer) { old.stop() } }
         client = null
         view = null
         val api = tab?.api ?: return
@@ -100,20 +100,20 @@ class ScriptOptionsPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("script-options", "do", JSONObject().put("action", "open"))
+            it.act("script-options", ScriptOptionsAct.open, ScriptOptionsAct.JsonSerializer)
         }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject(), done: () -> Unit = {}) {
+    fun act(action: ScriptOptionsAct, done: () -> Unit = {}) {
         error = null
-        client?.act("script-options", "do", body.put("action", action)) { failed ->
+        client?.act("script-options", action, ScriptOptionsAct.JsonSerializer) { failed ->
             error = failed
             if (failed == null) done()
         }
     }
 
     fun set(group: ScriptOptionGroupView, row: ScriptOptionRowView, value: Any) =
-        act("set", JSONObject().put("category", group.name).put("name", row.name).put("value", value))
+        act(ScriptOptionsAct.set(group.name, row.name, optionValue(value)))
 }
 
 /** From this many rows on, the page has a filter box. */
@@ -136,7 +136,7 @@ fun ScriptOptionsPage(state: ShellState, panel: ScriptOptionsPanel, fullWindow: 
     var filter by rememberSaveable { mutableStateOf("") }
     var resetting by remember { mutableStateOf(false) }
     var filterFocused by remember { mutableStateOf(false) }
-    val cancel = { panel.act("cancel") { state.back() } }
+    val cancel = { panel.act(ScriptOptionsAct.cancel) { state.back() } }
     BackHandler(enabled = view?.editing == true) { cancel() }
 
     Column(Modifier.fillMaxSize()) {
@@ -227,7 +227,7 @@ fun ScriptOptionsPage(state: ShellState, panel: ScriptOptionsPanel, fullWindow: 
             Spacer(Modifier.weight(1f))
             TextButton(onClick = cancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
             Spacer(Modifier.width(8.dp))
-            Button(onClick = { panel.act("save") { state.back() } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Save") }
+            Button(onClick = { panel.act(ScriptOptionsAct.save) { state.back() } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Save") }
         }
     }
 
@@ -236,7 +236,7 @@ fun ScriptOptionsPage(state: ShellState, panel: ScriptOptionsPanel, fullWindow: 
             onDismissRequest = { resetting = false },
             title = { Text("Reset to defaults?") },
             text = { Text("Every option goes back to the script's default. Nothing is saved until you press Save.") },
-            confirmButton = { TextButton(onClick = { resetting = false; panel.act("reset") }) { Text("Reset") } },
+            confirmButton = { TextButton(onClick = { resetting = false; panel.act(ScriptOptionsAct.reset) }) { Text("Reset") } },
             dismissButton = { TextButton(onClick = { resetting = false }) { Text("Cancel") } },
             containerColor = Turu.Card,
         )
@@ -259,7 +259,7 @@ private fun ChecklistHead(group: ScriptOptionGroupView, rows: List<ScriptOptionR
             ) {
                 Text(group.unusedNote, style = MaterialTheme.typography.bodySmall, color = Turu.Warning, modifier = Modifier.weight(1f))
                 TextButton(
-                    onClick = { panel.act("set", JSONObject().put("category", group.useCategory).put("name", group.useOption).put("value", group.useChoice)) },
+                    onClick = { panel.act(ScriptOptionsAct.set(group.useCategory, group.useOption, OptionValue.text(group.useChoice))) },
                     modifier = Modifier.heightIn(min = 48.dp),
                 ) { Text("Use ${group.useChoice.replace('_', ' ')}") }
             }
@@ -271,14 +271,14 @@ private fun ChecklistHead(group: ScriptOptionGroupView, rows: List<ScriptOptionR
                 color = if (group.picked > 0u) Turu.Text else Turu.Muted,
                 modifier = Modifier.weight(1f),
             )
-            val names = { on: Boolean -> JSONArray(rows.filter { it.on != on }.map { it.name }) }
-            TextButton(onClick = { panel.act("set-all", JSONObject().put("category", group.name).put("names", names(true)).put("value", true)) }, enabled = rows.any { !it.on }, modifier = Modifier.heightIn(min = 48.dp)) { Text("All") }
-            TextButton(onClick = { panel.act("set-all", JSONObject().put("category", group.name).put("names", names(false)).put("value", false)) }, enabled = rows.any { it.on }, modifier = Modifier.heightIn(min = 48.dp)) { Text("None") }
+            val names = { on: Boolean -> rows.filter { it.on != on }.map { it.name } }
+            TextButton(onClick = { panel.act(ScriptOptionsAct.set_all(group.name, names(true), OptionValue.switch(true))) }, enabled = rows.any { !it.on }, modifier = Modifier.heightIn(min = 48.dp)) { Text("All") }
+            TextButton(onClick = { panel.act(ScriptOptionsAct.set_all(group.name, names(false), OptionValue.switch(false))) }, enabled = rows.any { it.on }, modifier = Modifier.heightIn(min = 48.dp)) { Text("None") }
         }
         if (group.owned > 0u) {
             FilterChip(
                 selected = group.hidingOwned,
-                onClick = { panel.act("hide-owned", JSONObject().put("category", group.name).put("on", !group.hidingOwned)) },
+                onClick = { panel.act(ScriptOptionsAct.hide_owned(group.name, !group.hidingOwned)) },
                 label = { Text("Hide owned (${group.owned})") },
                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Turu.AccentTint, selectedLabelColor = Turu.Text),
                 modifier = Modifier.heightIn(min = 48.dp),

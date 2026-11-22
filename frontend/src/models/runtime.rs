@@ -6,8 +6,7 @@
 //! only briefly, never while calling the bot, so a shell may call any function here from a frame.
 
 use super::tab_state::{PerTab, lock};
-use serde::Serialize;
-use serde_json::Value as Json;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use turu_bot::Bot;
@@ -191,55 +190,73 @@ pub fn set_boosting(bot: &Arc<Bot>, on: bool) {
     }
 }
 
-/// The control API's actions (`POST /models/runtime/do`, `action` in the body).
-pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
-    let flag = |key: &str| {
-        body.get(key)
-            .and_then(Json::as_bool)
-            .ok_or_else(|| format!("{key} is missing"))
-    };
-    let text = |key: &str| {
-        body.get(key)
-            .and_then(Json::as_str)
-            .map(str::to_owned)
-            .ok_or_else(|| format!("{key} is missing"))
-    };
-    let list = |key: &str| {
-        body.get(key)
-            .and_then(Json::as_array)
-            .ok_or_else(|| format!("{key} is missing"))
-    };
-    match action {
-        "add-drops" => {
-            add_drops(bot, &text("input")?);
+/// Runtime's actions (`POST /models/runtime/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum RuntimeAct {
+    /// Adds the drops typed in `input`.
+    AddDrops {
+        input: String,
+    },
+    RemoveDrops {
+        items: Vec<String>,
+    },
+    /// Milliseconds between pickups.
+    Interval {
+        ms: u64,
+    },
+    RejectElse {
+        on: bool,
+    },
+    AcceptAc {
+        on: bool,
+    },
+    Picking {
+        on: bool,
+    },
+    /// Registers the quests typed in `input`, with `reward` (an item ID) when given.
+    AddQuests {
+        input: String,
+        reward: Option<i64>,
+    },
+    RemoveQuests {
+        ids: Vec<i64>,
+    },
+    /// Turns the boost of `kind` on or off.
+    Boost {
+        kind: String,
+        on: bool,
+    },
+    /// Searches the bank, or (`bank` false) the inventory, for boosts.
+    Search {
+        bank: bool,
+    },
+    Boosting {
+        on: bool,
+    },
+}
+
+pub fn act(bot: &Arc<Bot>, act: RuntimeAct) -> Result<(), String> {
+    match act {
+        RuntimeAct::AddDrops { input } => {
+            add_drops(bot, &input);
         }
-        "remove-drops" => {
-            let items: Vec<String> = list("items")?
-                .iter()
-                .filter_map(Json::as_str)
-                .map(str::to_owned)
-                .collect();
-            remove_drops(bot, &items);
-        }
-        "interval" => {
-            let ms = body.get("ms").and_then(Json::as_u64).ok_or("ms is missing")?;
-            bot.drops.set_interval(ms);
-        }
-        "reject-else" => bot.drops.set_reject_else(flag("on")?),
-        "accept-ac" => bot.options.write().accept_ac_drops = flag("on")?,
-        "picking" => set_picking(bot, flag("on")?),
-        "add-quests" => {
-            let reward = body.get("reward").and_then(Json::as_i64).unwrap_or(-1);
-            add_quests(bot, &text("input")?, reward)?;
-        }
-        "remove-quests" => {
-            let ids: Vec<i64> = list("ids")?.iter().filter_map(Json::as_i64).collect();
-            bot.quests.unregister(&ids);
-        }
-        "boost" => set_boost(bot, &text("kind")?, flag("on")?)?,
-        "search" => search(bot, flag("bank")?),
-        "boosting" => set_boosting(bot, flag("on")?),
-        other => return Err(format!("no action {other}")),
+        RuntimeAct::RemoveDrops { items } => remove_drops(bot, &items),
+        RuntimeAct::Interval { ms } => bot.drops.set_interval(ms),
+        RuntimeAct::RejectElse { on } => bot.drops.set_reject_else(on),
+        RuntimeAct::AcceptAc { on } => bot.options.write().accept_ac_drops = on,
+        RuntimeAct::Picking { on } => set_picking(bot, on),
+        RuntimeAct::AddQuests { input, reward } => add_quests(bot, &input, reward.unwrap_or(-1))?,
+        RuntimeAct::RemoveQuests { ids } => bot.quests.unregister(&ids),
+        RuntimeAct::Boost { kind, on } => set_boost(bot, &kind, on)?,
+        RuntimeAct::Search { bank } => search(bot, bank),
+        RuntimeAct::Boosting { on } => set_boosting(bot, on),
     }
     Ok(())
 }

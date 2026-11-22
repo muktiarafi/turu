@@ -6,7 +6,7 @@
 
 use super::scheduler::Tint;
 use super::tab_state::{PerTab, lock};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use turu_bot::Bot;
@@ -374,6 +374,47 @@ pub fn view_note(bot: &Arc<Bot>) -> Option<String> {
 /// Closes the note a failure left.
 pub fn dismiss_note(bot: &Arc<Bot>) {
     lock(&STATE.of(bot)).note = None;
+}
+
+/// Stats' actions (`POST /models/stats/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum StatsAct {
+    Reset,
+    /// Saves a snapshot to the history.
+    Save,
+    /// Clears the history.
+    Clear,
+    /// Dismisses the note.
+    Dismiss,
+    Advanced {
+        on: bool,
+    },
+    /// The rates' unit, by its key.
+    Unit {
+        unit: String,
+    },
+    /// Answers the stats as CSV: `{ "csv": ... }` (null when there are none).
+    Export,
+}
+
+pub fn act(bot: &Arc<Bot>, act: StatsAct) -> Result<serde_json::Value, String> {
+    match act {
+        StatsAct::Reset => reset(bot),
+        StatsAct::Save => save_snapshot(bot),
+        StatsAct::Clear => clear_history(bot),
+        StatsAct::Dismiss => dismiss_note(bot),
+        StatsAct::Advanced { on } => set_advanced(bot, on),
+        StatsAct::Unit { unit } => set_unit(bot, &unit)?,
+        StatsAct::Export => return Ok(serde_json::json!({ "csv": export(bot) })),
+    }
+    Ok(serde_json::json!({}))
 }
 
 #[cfg(test)]

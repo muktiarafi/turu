@@ -10,8 +10,7 @@
 //! bot, so a shell may call them from a frame.
 
 use super::tab_state::{PerTab, Shared, lock};
-use serde::Serialize;
-use serde_json::Value as Json;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::Arc;
 use turu_bot::Bot;
@@ -302,34 +301,77 @@ fn selected(bot: &Arc<Bot>) -> HashSet<Key> {
     lock(&STATE.of(bot)).native.selected.clone()
 }
 
-/// The control API's actions (`POST /models/junk/do`, `action` in the body), on the native page's
-/// selection.
-pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
-    let text = |key: &str| body.get(key).and_then(Json::as_str);
-    let flag = |key: &str| {
-        body.get(key)
-            .and_then(Json::as_bool)
-            .ok_or_else(|| format!("{key} is missing"))
-    };
+/// Junk's actions (`POST /models/junk/do`), on the native page's selection.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum JunkAct {
+    Refresh,
+    /// Changes the filter's fields given (`ac` and `highlight` by their labels), back to page 1.
+    Filter {
+        search: Option<String>,
+        category: Option<String>,
+        ac: Option<String>,
+        highlight: Option<String>,
+    },
+    Page {
+        page: u32,
+    },
+    /// Selects or unselects an item (by its ID and category).
+    Select {
+        id: i64,
+        category: String,
+        on: bool,
+    },
+    /// On, selects the shown items; off, clears the selection.
+    SelectShown {
+        on: bool,
+    },
+    Mark,
+    Unmark,
+    UnmarkAll,
+    /// Sets the selection's goal to `input` (a whole number above 0).
+    Goal {
+        input: String,
+    },
+    ClearGoal,
+    SellSelected,
+    SellAll,
+    SkipWarning {
+        on: bool,
+    },
+}
+
+pub fn act(bot: &Arc<Bot>, act: JunkAct) -> Result<(), String> {
     let state = STATE.of(bot);
-    match action {
-        "refresh" => refresh(bot),
-        "filter" => {
+    match act {
+        JunkAct::Refresh => refresh(bot),
+        JunkAct::Filter {
+            search,
+            category,
+            ac,
+            highlight,
+        } => {
             let mut s = lock(&state);
             let f = &mut s.native.filter;
-            if let Some(search) = text("search") {
-                f.search = search.to_owned();
+            if let Some(search) = search {
+                f.search = search;
             }
-            if let Some(category) = text("category") {
-                f.category = category.to_owned();
+            if let Some(category) = category {
+                f.category = category;
             }
-            if let Some(ac) = text("ac") {
+            if let Some(ac) = ac {
                 f.ac = AcFilter::ALL
                     .into_iter()
                     .find(|a| a.label() == ac)
                     .ok_or("no such AC filter")?;
             }
-            if let Some(highlight) = text("highlight") {
+            if let Some(highlight) = highlight {
                 f.highlight = Highlight::ALL
                     .into_iter()
                     .find(|h| h.label() == highlight)
@@ -337,24 +379,20 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
             }
             s.native.page = 0;
         }
-        "page" => {
-            let page = body.get("page").and_then(Json::as_u64).ok_or("page is missing")?;
-            lock(&state).native.page = page as usize;
-        }
-        "select" => {
-            let id = body.get("id").and_then(Json::as_i64).ok_or("id is missing")?;
-            let item = (id, text("category").ok_or("category is missing")?.to_owned());
+        JunkAct::Page { page } => lock(&state).native.page = page as usize,
+        JunkAct::Select { id, category, on } => {
+            let item = (id, category);
             let mut s = lock(&state);
-            if flag("on")? {
+            if on {
                 s.native.selected.insert(item);
             } else {
                 s.native.selected.remove(&item);
             }
         }
         // An unchecked box selects the shown items; a checked or partly checked one clears all.
-        "select-shown" => {
+        JunkAct::SelectShown { on } => {
             let mut s = lock(&state);
-            if flag("on")? {
+            if on {
                 let shown: Vec<Key> = s
                     .entries
                     .iter()
@@ -366,25 +404,23 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
                 s.native.selected.clear();
             }
         }
-        "mark" => mark(bot, &selected(bot), true),
-        "unmark" => {
+        JunkAct::Mark => mark(bot, &selected(bot), true),
+        JunkAct::Unmark => {
             let keys = std::mem::take(&mut lock(&state).native.selected);
             mark(bot, &keys, false);
         }
-        "unmark-all" => {
+        JunkAct::UnmarkAll => {
             lock(&state).native.selected.clear();
             unmark_all(bot);
         }
-        "goal" => {
-            let quantity =
-                junk::parse_goal(text("input").unwrap_or_default()).ok_or("A goal is a whole number above 0.")?;
+        JunkAct::Goal { input } => {
+            let quantity = junk::parse_goal(&input).ok_or("A goal is a whole number above 0.")?;
             set_goal(bot, &selected(bot), Some(quantity));
         }
-        "clear-goal" => set_goal(bot, &selected(bot), None),
-        "sell-selected" => sell_selected(bot, &selected(bot)),
-        "sell-all" => sell_all(bot),
-        "skip-warning" => set_skip_warning(bot, flag("on")?),
-        other => return Err(format!("no action {other}")),
+        JunkAct::ClearGoal => set_goal(bot, &selected(bot), None),
+        JunkAct::SellSelected => sell_selected(bot, &selected(bot)),
+        JunkAct::SellAll => sell_all(bot),
+        JunkAct::SkipWarning { on } => set_skip_warning(bot, on),
     }
     Ok(())
 }
@@ -419,24 +455,41 @@ mod tests {
                 entry(3, "Ash", "Item"),
             ],
         );
-        act(&bot, "filter", &json!({ "category": "Item" })).unwrap();
+        act(
+            &bot,
+            JunkAct::Filter {
+                search: None,
+                category: Some("Item".into()),
+                ac: None,
+                highlight: None,
+            },
+        )
+        .unwrap();
         let v = view(&bot);
         assert_eq!((v.total, v.matches, v.selected, v.all_shown), (3, 2, 0, false));
-        act(&bot, "select-shown", &json!({ "on": true })).unwrap();
+        act(&bot, JunkAct::SelectShown { on: true }).unwrap();
         assert!(view(&bot).all_shown);
-        act(&bot, "mark", &Json::Null).unwrap();
+        act(&bot, JunkAct::Mark).unwrap();
         let v = view(&bot);
         assert_eq!((v.junk, v.selected), (2, 2));
         let saved: Vec<i64> = junk::load(&bot.paths.junk_items_file()).iter().map(|j| j.id).collect();
         assert_eq!(saved, [1, 3]);
-        act(&bot, "select", &json!({ "id": 1, "category": "Item", "on": false })).unwrap();
-        act(&bot, "unmark", &Json::Null).unwrap();
+        act(
+            &bot,
+            JunkAct::Select {
+                id: 1,
+                category: "Item".into(),
+                on: false,
+            },
+        )
+        .unwrap();
+        act(&bot, JunkAct::Unmark).unwrap();
         let v = view(&bot);
         assert_eq!((v.junk, v.selected), (1, 0));
         // A refresh drops the category when it's gone.
         take(&STATE.of(&bot), vec![entry(2, "Void Aura", "Resource")]);
         assert_eq!(view(&bot).category, junk::ALL_CATEGORIES);
-        assert!(act(&bot, "goal", &json!({ "input": "0" })).is_err());
-        assert!(act(&bot, "nope", &Json::Null).is_err());
+        assert!(act(&bot, JunkAct::Goal { input: "0".into() }).is_err());
+        assert!(serde_json::from_value::<JunkAct>(json!({ "action": "nope" })).is_err());
     }
 }

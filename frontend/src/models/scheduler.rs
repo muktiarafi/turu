@@ -5,7 +5,7 @@
 
 use super::Control;
 use super::tab_state::{PerTab, lock};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use turu_bot::Bot;
@@ -278,6 +278,57 @@ pub fn take_read(bot: &Arc<Bot>) -> Option<turu_bot::script::options::ScriptOpti
             None
         }
     }
+}
+
+/// The Scheduler's actions (`POST /models/scheduler/do`); `id` is an entry's.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum SchedulerAct {
+    /// Starts or stops it.
+    Toggle,
+    /// Loads the schedule named `name`.
+    Load {
+        name: String,
+    },
+    /// Saves the schedule as `name`.
+    Save {
+        name: String,
+    },
+    /// Moves an entry `by` places (negative: up).
+    Move {
+        id: String,
+        by: i32,
+    },
+    Remove {
+        id: String,
+    },
+    Rename {
+        id: String,
+        name: String,
+    },
+    /// Opens an entry's script options.
+    Options {
+        id: String,
+    },
+}
+
+pub fn act(bot: &Arc<Bot>, act: SchedulerAct) -> Result<(), String> {
+    match act {
+        SchedulerAct::Toggle => toggle(bot),
+        SchedulerAct::Load { name } => return load(bot, &name),
+        SchedulerAct::Save { name } => return save(bot, &name),
+        SchedulerAct::Move { id, by } => move_by(bot, &id, by as isize),
+        SchedulerAct::Remove { id } => remove(bot, &id),
+        SchedulerAct::Rename { id, name } => rename(bot, &id, &name),
+        SchedulerAct::Options { id } => options(bot, &id),
+    }
+    Ok(())
 }
 
 #[cfg(test)]

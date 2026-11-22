@@ -3,7 +3,7 @@
 //! map loads), why, for a few seconds.
 
 use super::tab_state::{PerTab, lock};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use turu_bot::Bot;
@@ -75,4 +75,23 @@ pub fn open(bot: &Arc<Bot>) {
         };
         Ok(())
     });
+}
+
+/// The bank's actions (`POST /models/bank/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum BankAct {
+    Open,
+}
+
+pub fn act(bot: &Arc<Bot>, act: BankAct) {
+    match act {
+        BankAct::Open => open(bot),
+    }
 }

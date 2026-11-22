@@ -2,7 +2,7 @@
 //! with Pick up all and Pick up selected. The search, AC only and which are selected are each
 //! window's own.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 use turu_bot::Bot;
@@ -70,6 +70,30 @@ pub fn pickup(bot: &Arc<Bot>, ids: Vec<i64>) {
     crate::turu::spawn_action_for(bot.clone(), "Pick up selected", move |bot| {
         dispatch(bot, "drops.pickup", &[json!(ids)]).map(|_| ())
     });
+}
+
+/// Drops' actions (`POST /models/drops/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum DropsAct {
+    PickupAll,
+    /// Picks up the drops with these item IDs.
+    Pickup {
+        ids: Vec<i64>,
+    },
+}
+
+pub fn act(bot: &Arc<Bot>, act: DropsAct) {
+    match act {
+        DropsAct::PickupAll => pickup_all(bot),
+        DropsAct::Pickup { ids } => pickup(bot, ids),
+    }
 }
 
 #[cfg(test)]

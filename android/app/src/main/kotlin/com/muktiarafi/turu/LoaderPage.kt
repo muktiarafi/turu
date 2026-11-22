@@ -60,12 +60,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.LoaderAct
 import com.muktiarafi.turu.models.LoaderQuest
 import com.muktiarafi.turu.models.LoaderView
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * The Loader's copy of the tab on screen (`turu_frontend::models::loader`), read while the page
@@ -110,22 +109,22 @@ class LoaderPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("loader", "do", JSONObject().put("action", "open"))
+            it.act("loader", LoaderAct.open, LoaderAct.JsonSerializer)
         }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject()) {
+    fun act(action: LoaderAct) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("loader", "do", body.put("action", action)) { error = it }
+        client.act("loader", action, LoaderAct.JsonSerializer) { error = it }
     }
 
     fun load() {
         if (ids.isBlank()) return
-        act(if (quests) "load-quests" else "load-shop", JSONObject().put("input", ids))
+        act(if (quests) LoaderAct.load_quests(input = ids) else LoaderAct.load_shop(ids))
     }
 
-    fun loadChecked() = act("load-quests", JSONObject().put("ids", JSONArray(checked.keys.toList())))
+    fun loadChecked() = act(LoaderAct.load_quests(ids = checked.keys.toList()))
 
     fun toggle(q: LoaderQuest) {
         if (checked.remove(q.id) == null) checked[q.id] = q.name
@@ -160,9 +159,9 @@ fun LoaderPage(state: ShellState, panel: LoaderPanel, fullWindow: () -> Unit) {
             view?.let { Text("%,d cached".format(it.total.toLong()), style = MaterialTheme.typography.labelMedium, color = Turu.Muted) }
             FullWindowMenu("The list and its tools side by side", fullWindow) { close ->
                 val idle = view?.status?.busy == false
-                DropdownMenuItem(text = { Text("Download community cache") }, enabled = idle, onClick = { close(); panel.act("download") })
-                DropdownMenuItem(text = { Text("Add missing quests") }, enabled = idle, onClick = { close(); panel.act("add-missing") })
-                DropdownMenuItem(text = { Text("Rebuild all") }, enabled = idle, onClick = { close(); panel.act("rebuild-all") })
+                DropdownMenuItem(text = { Text("Download community cache") }, enabled = idle, onClick = { close(); panel.act(LoaderAct.download) })
+                DropdownMenuItem(text = { Text("Add missing quests") }, enabled = idle, onClick = { close(); panel.act(LoaderAct.add_missing) })
+                DropdownMenuItem(text = { Text("Rebuild all") }, enabled = idle, onClick = { close(); panel.act(LoaderAct.rebuild_all) })
                 DropdownMenuItem(text = { Text("Update range…") }, enabled = idle, onClick = { close(); ranging = true })
                 HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
             }
@@ -180,7 +179,7 @@ fun LoaderPage(state: ShellState, panel: LoaderPanel, fullWindow: () -> Unit) {
         LaunchedEffect(search) {
             if (search != view.search) {
                 delay(300)
-                panel.act("search", JSONObject().put("search", search))
+                panel.act(LoaderAct.search(search = search))
             }
         }
         // A landscape phone has no height to pin the fields: they scroll away with the quests.
@@ -256,10 +255,10 @@ fun LoaderPage(state: ShellState, panel: LoaderPanel, fullWindow: () -> Unit) {
                             color = Turu.Muted,
                             modifier = Modifier.weight(1f).padding(start = 8.dp),
                         )
-                        IconButton(onClick = { panel.act("search", JSONObject().put("page", (view.page - 1u).toLong())) }, enabled = view.page > 0u) {
+                        IconButton(onClick = { panel.act(LoaderAct.search(page = view.page - 1u)) }, enabled = view.page > 0u) {
                             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = "Previous page")
                         }
-                        IconButton(onClick = { panel.act("search", JSONObject().put("page", (view.page + 1u).toLong())) }, enabled = view.page + 1u < view.pages) {
+                        IconButton(onClick = { panel.act(LoaderAct.search(page = view.page + 1u)) }, enabled = view.page + 1u < view.pages) {
                             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "Next page")
                         }
                     }
@@ -277,7 +276,7 @@ fun LoaderPage(state: ShellState, panel: LoaderPanel, fullWindow: () -> Unit) {
             onDismiss = { ranging = false },
         ) {
             ranging = false
-            panel.act("update-range", JSONObject().put("input", it))
+            panel.act(LoaderAct.update_range(it))
         }
     }
 }
@@ -327,7 +326,7 @@ private fun Foot(view: LoaderView, panel: LoaderPanel) {
             }
             Text(text, style = MaterialTheme.typography.bodySmall, color = color, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             if (status.cancellable) {
-                TextButton(onClick = { panel.act("cancel") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel", color = Turu.Danger) }
+                TextButton(onClick = { panel.act(LoaderAct.cancel) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel", color = Turu.Danger) }
             }
         }
     }
@@ -342,7 +341,7 @@ private fun Foot(view: LoaderView, panel: LoaderPanel) {
             // For one quest at a time (VibeSkua fakes the one clicked last).
             panel.checked.keys.singleOrNull()?.let { id ->
                 OutlinedButton(
-                    onClick = { panel.act("fake-complete", JSONObject().put("id", id)) },
+                    onClick = { panel.act(LoaderAct.fake_complete(id)) },
                     enabled = !status.busy,
                     modifier = Modifier.heightIn(min = 48.dp),
                 ) { Text("Fake complete", maxLines = 1) }

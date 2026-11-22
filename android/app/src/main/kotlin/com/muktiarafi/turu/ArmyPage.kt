@@ -64,11 +64,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.ArmyAct
+import com.muktiarafi.turu.models.ArmyCommand
 import com.muktiarafi.turu.models.ArmyRow
 import com.muktiarafi.turu.models.ArmyView
+import com.muktiarafi.turu.models.RowAction
 import kotlinx.serialization.json.Json
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Army Control's copy (`turu_frontend::models::army`), read from the tab on screen while the page
@@ -126,19 +127,16 @@ class ArmyPanel {
         ).also { it.start() }
     }
 
-    private fun act(action: String, body: JSONObject = JSONObject()) {
+    fun act(action: ArmyAct) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("army", action, body) { error = it }
+        client.act("army", action, ArmyAct.JsonSerializer) { error = it }
     }
 
     /** A command to the checked rows, or to every row still running. */
-    fun send(command: String, body: JSONObject = JSONObject()) =
-        act("send", body.put("command", command).put("keys", JSONArray(checked.keys.toList())))
+    fun send(command: ArmyCommand) = act(ArmyAct.send(checked.keys.toList(), command))
 
-    fun row(row: ArmyRow, action: String) = act("row", JSONObject().put("key", row.key).put("action", action))
-
-    fun task(action: String) = act(action)
+    fun row(row: ArmyRow, button: RowAction) = act(ArmyAct.row(row.key, button))
 
     fun toggle(row: ArmyRow) {
         if (row.ended) return
@@ -174,10 +172,10 @@ fun ArmyPage(
         PageBar("Army Control", onBack = { state.back() }) {
             FullWindowMenu("Save a client's logs to a file", fullWindow) { close ->
                 if (view?.launched == true) {
-                    DropdownMenuItem(text = { Text("Clear ended") }, onClick = { close(); panel.task("clear-ended") })
+                    DropdownMenuItem(text = { Text("Clear ended") }, onClick = { close(); panel.act(ArmyAct.clear_ended) })
                     DropdownMenuItem(
                         text = { Text("Close all launched clients", color = Turu.Danger) },
-                        onClick = { close(); asking = "Close all launched clients?" to { panel.task("close-all") } },
+                        onClick = { close(); asking = "Close all launched clients?" to { panel.act(ArmyAct.close_all) } },
                     )
                     HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
                 }
@@ -198,7 +196,7 @@ fun ArmyPage(
         val askTwice = everyone && targets.size > 1
         val any = targets.isNotEmpty()
         // Stop script and Log out ask first when they'd go to every client.
-        fun guarded(label: String, command: String) {
+        fun guarded(label: String, command: ArmyCommand) {
             if (askTwice) asking = "$label in all ${targets.size} clients?" to { panel.send(command) } else panel.send(command)
         }
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 12.dp)) {
@@ -232,8 +230,8 @@ fun ArmyPage(
                 Group("Script") {
                     ButtonGrid(
                         listOf(
-                            Action("Start script", primary = true, enabled = any) { panel.send("start-script") },
-                            Action("Stop script", enabled = any) { guarded("Stop the script", "stop-script") },
+                            Action("Start script", primary = true, enabled = any) { panel.send(ArmyCommand.start_script) },
+                            Action("Stop script", enabled = any) { guarded("Stop the script", ArmyCommand.stop_script) },
                             Action("Search scripts…", enabled = any) {
                                 state.scriptPick = ScriptPick.Army(panel.checked.keys.toList(), targets.singleOrNull()?.label ?: "${targets.size} clients")
                                 state.push(Page.Search)
@@ -246,10 +244,10 @@ fun ArmyPage(
                 Group("Account") {
                     ButtonGrid(
                         listOf(
-                            Action("Log in", enabled = any) { panel.send("login") },
-                            Action("Log out", enabled = any) { guarded("Log out", "logout") },
-                            Action("Relog", enabled = any) { panel.send("relog") },
-                            Action("Go to house", enabled = any) { panel.send("house") },
+                            Action("Log in", enabled = any) { panel.send(ArmyCommand.login) },
+                            Action("Log out", enabled = any) { guarded("Log out", ArmyCommand.logout) },
+                            Action("Relog", enabled = any) { panel.send(ArmyCommand.relog) },
+                            Action("Go to house", enabled = any) { panel.send(ArmyCommand.house) },
                         ),
                     )
                 }
@@ -258,14 +256,14 @@ fun ArmyPage(
                 Group("Auto-Attack") {
                     ButtonGrid(
                         listOf(
-                            Action("Start Auto-Attack", enabled = any) { panel.send("auto-attack") },
-                            Action("Stop Auto-Attack", enabled = any) { panel.send("stop-auto") },
+                            Action("Start Auto-Attack", enabled = any) { panel.send(ArmyCommand.auto_attack) },
+                            Action("Stop Auto-Attack", enabled = any) { panel.send(ArmyCommand.stop_auto) },
                         ),
                     )
                     Reason("Each client's equipped class; clients running a script are skipped.")
                 }
             }
-            item { Fold("Quest") { QuestForm(any) { id, reward -> panel.send("quest", JSONObject().put("id", id).apply { reward?.let { put("reward", it) } }) } } }
+            item { Fold("Quest") { QuestForm(any) { id, reward -> panel.send(ArmyCommand.quest(id, reward)) } } }
             item {
                 Fold("Misc options") {
                     view.options.forEach { option ->
@@ -276,7 +274,7 @@ fun ArmyPage(
                                 .heightIn(min = 48.dp)
                                 .clickable(enabled = any) {
                                     panel.options[option.name] = !on
-                                    panel.send("option", JSONObject().put("name", option.name).put("on", !on))
+                                    panel.send(ArmyCommand.set_option(option.name, !on))
                                 }
                                 .padding(horizontal = 16.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -287,7 +285,7 @@ fun ArmyPage(
                                 enabled = any,
                                 onCheckedChange = {
                                     panel.options[option.name] = it
-                                    panel.send("option", JSONObject().put("name", option.name).put("on", it))
+                                    panel.send(ArmyCommand.set_option(option.name, it))
                                 },
                             )
                         }
@@ -338,7 +336,7 @@ fun ArmyPage(
                 }
             },
             confirmButton = { TextButton(onClick = { history = false }) { Text("Close") } },
-            dismissButton = { TextButton(onClick = { history = false; panel.task("clear-results") }) { Text("Clear") } },
+            dismissButton = { TextButton(onClick = { history = false; panel.act(ArmyAct.clear_results) }) { Text("Clear") } },
             containerColor = Turu.Card,
         )
     }
@@ -459,10 +457,10 @@ private fun ClientRow(row: ArmyRow, panel: ArmyPanel, shown: Boolean, select: (I
             }
         }
         when {
-            row.ended && row.kind != "tab" -> OutlinedButton(onClick = { panel.row(row, "restart") }, border = edge(true), modifier = Modifier.heightIn(min = 48.dp)) { Text("Restart") }
+            row.ended && row.kind != "tab" -> OutlinedButton(onClick = { panel.row(row, RowAction.RESTART) }, border = edge(true), modifier = Modifier.heightIn(min = 48.dp)) { Text("Restart") }
             row.ended -> {}
-            row.running -> OutlinedButton(onClick = { panel.row(row, "stop") }, border = edge(true), modifier = Modifier.heightIn(min = 48.dp)) { Text("Stop") }
-            else -> FilledTonalButton(onClick = { panel.row(row, "start") }, enabled = row.start.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Start") }
+            row.running -> OutlinedButton(onClick = { panel.row(row, RowAction.STOP) }, border = edge(true), modifier = Modifier.heightIn(min = 48.dp)) { Text("Stop") }
+            else -> FilledTonalButton(onClick = { panel.row(row, RowAction.START) }, enabled = row.start.enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text("Start") }
         }
         // A tab that's down has nothing to offer here: the shell restarts it (Tabs).
         if (row.ended && row.kind == "tab") {
@@ -475,22 +473,22 @@ private fun ClientRow(row: ArmyRow, panel: ArmyPanel, shown: Boolean, select: (I
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Turu.Card) {
                 if (row.ended) {
-                    DropdownMenuItem(text = { Text("Remove") }, onClick = { menu = false; panel.row(row, "close") })
+                    DropdownMenuItem(text = { Text("Remove") }, onClick = { menu = false; panel.row(row, RowAction.CLOSE) })
                     return@DropdownMenu
                 }
                 if (row.shellTab >= 0 && !shown) {
                     DropdownMenuItem(text = { Text("Show its tab") }, onClick = { menu = false; select(row.shellTab.toInt()) })
                 }
                 if (row.loggedIn) {
-                    DropdownMenuItem(text = { Text("Log out") }, onClick = { menu = false; panel.row(row, "logout") })
+                    DropdownMenuItem(text = { Text("Log out") }, onClick = { menu = false; panel.row(row, RowAction.LOGOUT) })
                 } else {
-                    DropdownMenuItem(text = { Text("Log in") }, onClick = { menu = false; panel.row(row, "login") })
+                    DropdownMenuItem(text = { Text("Log in") }, onClick = { menu = false; panel.row(row, RowAction.LOGIN) })
                 }
-                DropdownMenuItem(text = { Text("Relog") }, onClick = { menu = false; panel.row(row, "relog") })
+                DropdownMenuItem(text = { Text("Relog") }, onClick = { menu = false; panel.row(row, RowAction.RELOG) })
                 DropdownMenuItem(text = { Text("Gear…") }, onClick = { menu = false; open(Page.ArmyGear(row.key, row.label)) })
                 DropdownMenuItem(text = { Text("Logs…") }, onClick = { menu = false; open(Page.ArmyLogs(row.key, row.label)) })
                 if (row.auto.isNotEmpty()) {
-                    DropdownMenuItem(text = { Text("Stop ${row.auto}") }, onClick = { menu = false; panel.row(row, "stop-auto") })
+                    DropdownMenuItem(text = { Text("Stop ${row.auto}") }, onClick = { menu = false; panel.row(row, RowAction.STOP_AUTO) })
                 } else {
                     DropdownMenuItem(
                         text = {
@@ -500,13 +498,13 @@ private fun ClientRow(row: ArmyRow, panel: ArmyPanel, shown: Boolean, select: (I
                             }
                         },
                         enabled = row.autoAttack.enabled,
-                        onClick = { menu = false; panel.row(row, "auto-attack") },
+                        onClick = { menu = false; panel.row(row, RowAction.AUTO_ATTACK) },
                     )
                 }
                 if (row.kind != "tab") {
                     HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
-                    DropdownMenuItem(text = { Text("Restart") }, onClick = { menu = false; panel.row(row, "restart") })
-                    DropdownMenuItem(text = { Text("Close", color = Turu.Danger) }, onClick = { menu = false; panel.row(row, "close") })
+                    DropdownMenuItem(text = { Text("Restart") }, onClick = { menu = false; panel.row(row, RowAction.RESTART) })
+                    DropdownMenuItem(text = { Text("Close", color = Turu.Danger) }, onClick = { menu = false; panel.row(row, RowAction.CLOSE) })
                 }
                 if (!row.start.enabled && !row.running) {
                     Text(

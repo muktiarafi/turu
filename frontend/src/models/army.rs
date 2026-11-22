@@ -9,7 +9,7 @@
 
 use super::Control;
 use super::scheduler::Tint;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -224,7 +224,10 @@ impl Peer {
 }
 
 /// What a row's own buttons ask for (Gear and Logs are windows: each shell opens its own).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "kebab-case"))]
+#[serde(rename_all = "kebab-case")]
+#[repr(C)]
 pub enum RowAction {
     Start,
     Stop,
@@ -235,25 +238,6 @@ pub enum RowAction {
     Close,
     AutoAttack,
     StopAuto,
-}
-
-impl RowAction {
-    /// The action named `name` (`start`, `stop`, `login`, `logout`, `relog`, `restart`, `close`,
-    /// `auto-attack`, `stop-auto`).
-    pub fn named(name: &str) -> Option<Self> {
-        Some(match name {
-            "start" => Self::Start,
-            "stop" => Self::Stop,
-            "login" => Self::Login,
-            "logout" => Self::Logout,
-            "relog" => Self::Relog,
-            "restart" => Self::Restart,
-            "close" => Self::Close,
-            "auto-attack" => Self::AutoAttack,
-            "stop-auto" => Self::StopAuto,
-            _ => return None,
-        })
-    }
 }
 
 /// One line of the list: a tab or a launched client.
@@ -585,7 +569,7 @@ pub fn send(rows: &[Row], checked: &HashSet<String>, command: Command) {
 }
 
 /// A row's own button; returns at once (the command runs on a thread of its own).
-pub fn act(row: &Row, action: RowAction) {
+pub fn act_on(row: &Row, action: RowAction) {
     let peer = row.peer.clone();
     let command = match action {
         RowAction::Close => {
@@ -826,82 +810,149 @@ fn row_view(row: &Row) -> ArmyRow {
 }
 
 /// The checked keys in a shell's action (`keys`: none means every row still running).
-fn checked(body: &Value) -> HashSet<String> {
-    body.get("keys")
-        .and_then(Value::as_array)
-        .map(|keys| keys.iter().filter_map(Value::as_str).map(str::to_owned).collect())
-        .unwrap_or_default()
+/// A command Army Control sends to its clients.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "kind", rename_all = "kebab-case")
+)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum ArmyCommand {
+    StartScript,
+    StopScript,
+    Login,
+    Logout,
+    Relog,
+    House,
+    AutoAttack,
+    StopAuto,
+    /// Loads Search Scripts' script at `path`, downloaded first when it needs it.
+    Script {
+        path: String,
+    },
+    /// Accepts quest `id`, with `reward` (an item ID) when it has a choice.
+    Quest {
+        id: i64,
+        reward: Option<i64>,
+    },
+    /// Turns the misc option `name` on or off.
+    SetOption {
+        name: String,
+        on: bool,
+    },
+    /// Jumps to `place`, remembered for Map Travel.
+    Jump {
+        place: super::army_travel::Place,
+    },
+    /// Jumps to the player `name`.
+    JumpPlayer {
+        name: String,
+    },
+    ChangeServer {
+        server: String,
+    },
 }
 
-/// `send`: a command to the checked rows (`keys`), or to every row still running. `command` is
-/// `start-script`, `stop-script`, `login`, `logout`, `relog`, `house`, `auto-attack`,
-/// `stop-auto`, `script` (`path`: a Search Scripts path, downloaded first when it needs it),
-/// `quest` (`id`, optional `reward`), `option`
-/// (`name`, `on`), `jump` (`map`, `room`, `cell`, `pad`: remembered for Map Travel), `jump-player`
-/// (`name`) or `change-server` (`server`).
-pub fn command(body: &Value) -> Result<(), String> {
-    let name = body
-        .get("command")
-        .and_then(Value::as_str)
-        .ok_or("command is missing")?;
+/// Army Control's actions (`POST /models/army/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum ArmyAct {
+    /// `command` to the checked rows (`keys`), or to every row still running.
+    Send {
+        keys: Vec<String>,
+        command: ArmyCommand,
+    },
+    /// One row's own button.
+    Row {
+        key: String,
+        button: RowAction,
+    },
+    ClearEnded,
+    CloseAll,
+    ClearResults,
+}
+
+pub fn act(act: ArmyAct) -> Result<(), String> {
+    match act {
+        ArmyAct::Send { keys, command: c } => return command(&keys.into_iter().collect(), c),
+        ArmyAct::Row { key, button } => {
+            let rows = rows();
+            let row = rows.iter().find(|r| r.key == key).ok_or("That client is gone")?;
+            self::act_on(row, button);
+        }
+        ArmyAct::ClearEnded => clear_ended(),
+        ArmyAct::CloseAll => close_all(),
+        ArmyAct::ClearResults => clear_results(),
+    }
+    Ok(())
+}
+
+/// Sends `command` to the `checked` rows, or to every row still running.
+pub fn command(checked: &HashSet<String>, command: ArmyCommand) -> Result<(), String> {
     let rows = rows();
-    let reach = !targets(&rows, &checked(body)).is_empty();
+    let reach = !targets(&rows, checked).is_empty();
     let travel = &super::army_travel::TRAVEL;
-    let command = match name {
-        "start-script" => Command::StartScript(None),
-        "stop-script" => Command::StopScript,
-        "login" => Command::Login,
-        "logout" => Command::Logout,
-        "relog" => Command::Relogin,
-        "house" => Command::JumpHouse,
-        "auto-attack" => Command::StartAutoAttack,
-        "stop-auto" => Command::StopAuto,
-        "script" => return load_from_repo(&text(body, "path")?, &checked(body)),
-        "quest" => {
-            let id = body
-                .get("id")
-                .and_then(Value::as_i64)
-                .filter(|id| *id > 0)
-                .ok_or("Enter a quest ID")?;
-            let reward = body.get("reward").and_then(Value::as_i64).unwrap_or(-1);
-            Command::AcceptQuest { id, reward }
-        }
-        "option" => {
-            let option = text(body, "name")?;
-            if !MISC_OPTIONS.iter().any(|(_, n)| *n == option) {
-                return Err(format!("no option named {option}"));
+    let command = match command {
+        ArmyCommand::StartScript => Command::StartScript(None),
+        ArmyCommand::StopScript => Command::StopScript,
+        ArmyCommand::Login => Command::Login,
+        ArmyCommand::Logout => Command::Logout,
+        ArmyCommand::Relog => Command::Relogin,
+        ArmyCommand::House => Command::JumpHouse,
+        ArmyCommand::AutoAttack => Command::StartAutoAttack,
+        ArmyCommand::StopAuto => Command::StopAuto,
+        ArmyCommand::Script { path } => return load_from_repo(&path, checked),
+        ArmyCommand::Quest { id, reward } => {
+            if id <= 0 {
+                return Err("Enter a quest ID".into());
             }
-            let on = body.get("on").and_then(Value::as_bool).ok_or("on is missing")?;
-            Command::SetOptions(json!({ option: on }))
+            Command::AcceptQuest {
+                id,
+                reward: reward.unwrap_or(-1),
+            }
         }
-        "jump" | "jump-player" | "change-server" if !reach => return Err("None of the checked clients runs".into()),
-        "jump" => {
-            let destination = super::army_travel::destination(body);
+        ArmyCommand::SetOption { name, on } => {
+            if !MISC_OPTIONS.iter().any(|(_, n)| *n == name) {
+                return Err(format!("no option named {name}"));
+            }
+            Command::SetOptions(json!({ name: on }))
+        }
+        ArmyCommand::Jump { .. } | ArmyCommand::JumpPlayer { .. } | ArmyCommand::ChangeServer { .. } if !reach => {
+            return Err("None of the checked clients runs".into());
+        }
+        ArmyCommand::Jump { place } => {
+            let destination = super::army_travel::destination(&place);
             if destination.map.is_empty() {
                 return Err("Type a map to go to".into());
             }
             travel.jump(&destination)
         }
-        "jump-player" => {
-            let player = text(body, "name")?;
-            if player.trim().is_empty() {
+        ArmyCommand::JumpPlayer { name } => {
+            if name.trim().is_empty() {
                 return Err("Enter a player's name".into());
             }
-            travel.jump_player(&player)
+            travel.jump_player(&name)
         }
-        "change-server" => {
-            let server = text(body, "server")?.trim().to_owned();
+        ArmyCommand::ChangeServer { server } => {
+            let server = server.trim().to_owned();
             if server.is_empty() {
                 return Err("Pick a server".into());
             }
             Command::ChangeServer(server)
         }
-        other => return Err(format!("no command named {other}")),
     };
     if !reach {
         return Err("None of the checked clients runs".into());
     }
-    send(&rows, &checked(body), command);
+    send(&rows, checked, command);
     Ok(())
 }
 
@@ -931,24 +982,6 @@ pub fn load_from_repo(path: &str, checked: &HashSet<String>) -> Result<(), Strin
     } else {
         Err(super::repo::wait_tip(&repo.snapshot()))
     }
-}
-
-/// `row`: one row's own button (`key`, `action`: see [`RowAction::named`]).
-pub fn row(body: &Value) -> Result<(), String> {
-    let key = text(body, "key")?;
-    let name = text(body, "action")?;
-    let action = RowAction::named(&name).ok_or_else(|| format!("no action named {name}"))?;
-    let rows = rows();
-    let row = rows.iter().find(|r| r.key == key).ok_or("That client is gone")?;
-    act(row, action);
-    Ok(())
-}
-
-fn text(body: &Value, name: &str) -> Result<String, String> {
-    body.get(name)
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .ok_or_else(|| format!("{name} is missing"))
 }
 
 #[cfg(test)]
@@ -1020,18 +1053,35 @@ mod tests {
 
     #[test]
     fn options_and_commands_are_checked() {
-        let err = command(&json!({ "command": "option", "name": "nope", "on": true }));
-        assert_eq!(err, Err("no option named nope".into()));
+        let none = HashSet::new();
+        let option = ArmyCommand::SetOption {
+            name: "nope".into(),
+            on: true,
+        };
+        assert_eq!(command(&none, option), Err("no option named nope".into()));
         assert_eq!(
-            command(&json!({ "command": "quest", "id": 0 })),
+            command(&none, ArmyCommand::Quest { id: 0, reward: None }),
             Err("Enter a quest ID".into())
         );
-        assert!(command(&json!({ "command": "dance" })).is_err());
+        let read = |body: Value| serde_json::from_value::<ArmyAct>(body);
+        assert!(read(json!({ "action": "send", "keys": [], "command": { "kind": "dance" } })).is_err());
         assert_eq!(
-            command(&json!({ "command": "jump", "map": " " })),
-            Err("Type a map to go to".into())
+            read(json!({ "action": "row", "key": "alt1", "button": "auto-attack" })).unwrap(),
+            ArmyAct::Row {
+                key: "alt1".into(),
+                button: RowAction::AutoAttack
+            }
         );
-        assert_eq!(RowAction::named("auto-attack"), Some(RowAction::AutoAttack));
-        assert_eq!(RowAction::named("gear"), None);
+        assert!(read(json!({ "action": "row", "key": "alt1", "button": "gear" })).is_err());
+        let jump = read(json!({
+            "action": "send",
+            "keys": ["alt1"],
+            "command": { "kind": "jump", "place": { "name": "", "map": " ", "room": "", "cell": "", "pad": "" } },
+        }))
+        .unwrap();
+        let ArmyAct::Send { command: jump, .. } = jump else {
+            panic!("not a send")
+        };
+        assert_eq!(command(&none, jump), Err("Type a map to go to".into()));
     }
 }

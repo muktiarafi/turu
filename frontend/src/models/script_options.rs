@@ -13,7 +13,7 @@
 //! the account's items.
 
 use super::tab_state::{PerTab, lock};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -702,53 +702,73 @@ pub fn view(bot: &Arc<Bot>) -> ScriptOptionsView {
     s.view(bot)
 }
 
-/// `open` (take the loaded script's options, unless a draft is open), `leave` (the page went), `set` (`category`, `name`,
-/// `value`), `set-all` (`category`, `names`, `value`: All and None), `hide-owned` (`category`,
-/// `on`), `reset` (every option to its default), `save`, `cancel`.
-pub fn act(bot: &Arc<Bot>, action: &str, body: &Value) -> Result<(), String> {
-    let text = |key: &str| {
-        body.get(key)
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-            .ok_or_else(|| format!("{key} is missing"))
-    };
+/// Script Options' actions (`POST /models/script-options/do`); `category` is a group's name.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum ScriptOptionsAct {
+    /// Takes the loaded script's options, unless a draft is open.
+    Open,
+    /// The page went.
+    Leave,
+    Set {
+        category: String,
+        name: String,
+        value: super::form::OptionValue,
+    },
+    /// Sets each of `names` to `value` (All and None).
+    SetAll {
+        category: String,
+        names: Vec<String>,
+        value: super::form::OptionValue,
+    },
+    HideOwned {
+        category: String,
+        on: bool,
+    },
+    /// Every option back to its default.
+    Reset,
+    Save,
+    Cancel,
+}
+
+pub fn act(bot: &Arc<Bot>, act: ScriptOptionsAct) -> Result<(), String> {
     let state = STATE.of(bot);
     let mut s = lock(&state);
-    match action {
-        "open" => {
+    match act {
+        ScriptOptionsAct::Open => {
             s.native = true;
             s.ensure_draft(bot);
         }
-        "set" => {
-            let value = body.get("value").cloned().ok_or("value is missing")?;
+        ScriptOptionsAct::Set { category, name, value } => {
             s.error = None;
-            s.set(&text("category")?, &text("name")?, value);
+            s.set(&category, &name, value.to_json());
         }
-        "set-all" => {
-            let category = text("category")?;
-            let value = body.get("value").cloned().ok_or("value is missing")?;
-            let names = body.get("names").and_then(Value::as_array).ok_or("names is missing")?;
-            for name in names.iter().filter_map(Value::as_str) {
-                s.set(&category, name, value.clone());
+        ScriptOptionsAct::SetAll { category, names, value } => {
+            for name in &names {
+                s.set(&category, name, value.to_json());
             }
         }
-        "hide-owned" => {
-            let category = text("category")?;
-            if body.get("on").and_then(Value::as_bool).unwrap_or(false) {
+        ScriptOptionsAct::HideOwned { category, on } => {
+            if on {
                 s.hide_owned.insert(category);
             } else {
                 s.hide_owned.remove(&category);
             }
         }
-        "reset" => {
+        ScriptOptionsAct::Reset => {
             if let Some(draft) = s.draft.as_mut() {
                 draft.reset();
             }
         }
-        "save" => s.save(bot)?,
-        "cancel" => s.close(bot),
-        "leave" => s.leave(bot),
-        other => return Err(format!("no action {other}")),
+        ScriptOptionsAct::Save => s.save(bot)?,
+        ScriptOptionsAct::Cancel => s.close(bot),
+        ScriptOptionsAct::Leave => s.leave(bot),
     }
     Ok(())
 }
@@ -780,6 +800,14 @@ mod tests {
                 return Ok(answer);
             }
             Ok(if name == "isLoggedIn" { "true" } else { "null" }.into())
+        }
+    }
+
+    fn set_on(on: bool) -> ScriptOptionsAct {
+        ScriptOptionsAct::Set {
+            category: MAIN.into(),
+            name: "On".into(),
+            value: super::super::form::OptionValue::Switch(on),
         }
     }
 
@@ -823,16 +851,11 @@ export default function main(): void {
         assert_eq!(lock(&state).follow_request(&bot), Request::Opened);
         hand_over(&bot);
         assert!(view(&bot).waiting && view(&bot).editing);
-        act(
-            &bot,
-            "set",
-            &serde_json::json!({ "category": MAIN, "name": "On", "value": true }),
-        )
-        .unwrap();
+        act(&bot, set_on(true)).unwrap();
         // The page going away gives the editor back to the window, still waiting.
-        act(&bot, "leave", &serde_json::json!({})).unwrap();
+        act(&bot, ScriptOptionsAct::Leave).unwrap();
         assert!(!lock(&state).native && view(&bot).waiting);
-        act(&bot, "save", &serde_json::json!({})).unwrap();
+        act(&bot, ScriptOptionsAct::Save).unwrap();
         wait("the script didn't go on", || !bot.scripts.is_running());
         assert!(
             bot.logs.script.text().contains("done true"),
@@ -847,13 +870,8 @@ export default function main(): void {
         wait("no second request", || bot.scripts.configure_request().is_some());
         assert_eq!(lock(&state).follow_request(&bot), Request::Opened);
         hand_over(&bot);
-        act(
-            &bot,
-            "set",
-            &serde_json::json!({ "category": MAIN, "name": "On", "value": false }),
-        )
-        .unwrap();
-        act(&bot, "cancel", &serde_json::json!({})).unwrap();
+        act(&bot, set_on(false)).unwrap();
+        act(&bot, ScriptOptionsAct::Cancel).unwrap();
         wait("the script didn't go on after Cancel", || !bot.scripts.is_running());
         assert_eq!(bot.logs.script.text().matches("done true").count(), 2);
     }
@@ -865,7 +883,7 @@ export default function main(): void {
         assert!(!view.editing && !view.waiting);
         assert!(view.message.contains("declares no options"));
         // Cancel with nothing open does nothing, and Save refuses.
-        assert!(act(&bot, "cancel", &serde_json::json!({})).is_ok());
-        assert!(act(&bot, "save", &serde_json::json!({})).is_err());
+        assert!(act(&bot, ScriptOptionsAct::Cancel).is_ok());
+        assert!(act(&bot, ScriptOptionsAct::Save).is_err());
     }
 }

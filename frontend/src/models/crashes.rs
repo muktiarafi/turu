@@ -5,7 +5,7 @@
 //! its file name, never a path. Not per tab: the reports are the app's, in one folder.
 
 use crate::crash_reports::{self, Report};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -172,6 +172,40 @@ pub fn restore(name: &str) -> Result<(), String> {
     let done = restore_in(&crash_reports::dir(), name);
     forget();
     done
+}
+
+/// Crash reports' actions (`POST /models/crashes/do`), each on the report named `name`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum CrashesAct {
+    /// Answers the report's text: `{ "text", "subject", "cut" }`.
+    Text {
+        name: String,
+    },
+    Delete {
+        name: String,
+    },
+    Restore {
+        name: String,
+    },
+}
+
+pub fn act(act: CrashesAct) -> Result<serde_json::Value, String> {
+    match act {
+        CrashesAct::Text { name } => {
+            let read = text(&name)?;
+            return Ok(serde_json::json!({ "text": read.text, "subject": read.subject, "cut": read.cut }));
+        }
+        CrashesAct::Delete { name } => delete(&name)?,
+        CrashesAct::Restore { name } => restore(&name)?,
+    }
+    Ok(serde_json::json!({}))
 }
 
 #[cfg(test)]

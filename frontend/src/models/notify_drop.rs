@@ -9,8 +9,7 @@
 //! them from a frame.
 
 use super::tab_state::{PerTab, Shared, lock};
-use serde::Serialize;
-use serde_json::Value as Json;
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 use turu_bot::Bot;
@@ -132,32 +131,45 @@ pub fn test(bot: &Arc<Bot>) {
     play(&STATE.of(bot));
 }
 
-/// The control API's actions (`POST /models/notify-drop/do`, `action` in the body).
-pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
-    let number = |key: &str| {
-        body.get(key)
-            .and_then(Json::as_u64)
-            .map(|n| n.min(u32::MAX.into()) as u32)
-            .ok_or_else(|| format!("{key} is missing"))
-    };
-    match action {
-        "add" => add(bot, body.get("input").and_then(Json::as_str).ok_or("input is missing")?),
-        "remove" => {
-            let names: Vec<String> = body
-                .get("items")
-                .and_then(Json::as_array)
-                .ok_or("items is missing")?
-                .iter()
-                .filter_map(Json::as_str)
-                .map(str::to_owned)
-                .collect();
-            remove(bot, &names);
-        }
-        "clear" => clear(bot),
-        "count" => set_count(bot, number("count")?),
-        "delay" => set_delay(bot, number("delay")?),
-        "test" => test(bot),
-        other => return Err(format!("no action {other}")),
+/// Notify Drop's actions (`POST /models/notify-drop/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum NotifyDropAct {
+    /// Adds the items typed in `input`.
+    Add {
+        input: String,
+    },
+    /// Removes the items named in `items`.
+    Remove {
+        items: Vec<String>,
+    },
+    Clear,
+    /// Beeps per drop.
+    Count {
+        count: u32,
+    },
+    /// Milliseconds between beeps.
+    Delay {
+        delay: u32,
+    },
+    /// Plays the beeps.
+    Test,
+}
+
+pub fn act(bot: &Arc<Bot>, act: NotifyDropAct) -> Result<(), String> {
+    match act {
+        NotifyDropAct::Add { input } => add(bot, &input),
+        NotifyDropAct::Remove { items } => remove(bot, &items),
+        NotifyDropAct::Clear => clear(bot),
+        NotifyDropAct::Count { count } => set_count(bot, count),
+        NotifyDropAct::Delay { delay } => set_delay(bot, delay),
+        NotifyDropAct::Test => test(bot),
     }
     Ok(())
 }
@@ -279,10 +291,10 @@ mod tests {
     #[test]
     fn beep_settings_stay_in_range() {
         let bot = Bot::new();
-        act(&bot, "count", &serde_json::json!({ "count": 99 })).unwrap();
-        act(&bot, "delay", &serde_json::json!({ "delay": 1 })).unwrap();
+        act(&bot, NotifyDropAct::Count { count: 99 }).unwrap();
+        act(&bot, NotifyDropAct::Delay { delay: 1 }).unwrap();
         let v = view(&bot);
         assert_eq!((v.count, v.delay), (COUNT.1, DELAY.0));
-        assert!(act(&bot, "nope", &Json::Null).is_err());
+        assert!(serde_json::from_value::<NotifyDropAct>(serde_json::json!({ "action": "nope" })).is_err());
     }
 }

@@ -7,7 +7,7 @@
 //! What a window changed itself ("Edited" against "Changed outside", Revert mine) is that window's
 //! state, not the bot's: each shell keeps its own set of edited options and passes it in.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
 use turu_bot::Bot;
@@ -742,6 +742,41 @@ pub fn view(bot: &Bot) -> GameOptionsView {
     }
 }
 
+/// Game Options' actions (`POST /models/game-options/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum GameOptionsAct {
+    /// Sets the option labelled `label`, live ([`set`]); an action's (Reload Map) runs it.
+    Set {
+        label: String,
+        value: OptionValue,
+    },
+    Save,
+    Revert,
+    Reset,
+}
+
+pub fn act(bot: &Bot, act: GameOptionsAct) -> Result<(), String> {
+    match act {
+        GameOptionsAct::Set { label, value } => set(bot, &label, &value.to_json()),
+        GameOptionsAct::Save => save(bot),
+        GameOptionsAct::Revert => {
+            revert(bot, None);
+            Ok(())
+        }
+        GameOptionsAct::Reset => {
+            reset(bot);
+            Ok(())
+        }
+    }
+}
+
 /// Sets the option labelled `label` to `value`, live.
 pub fn set(bot: &Bot, label: &str, value: &Value) -> Result<(), String> {
     let entries = entries();
@@ -786,5 +821,42 @@ pub fn reload_map(bot: &Bot) {
         crate::turu::spawn_action("Reload Map", |bot| {
             turu_bot::api::dispatch(bot, "map.reload", &[]).map(|_| ())
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// A value as the generated Kotlin writes an `OptionValue` (externally tagged; `none` alone),
+    /// inside the action, and an enum of unit variants only (a Kotlin `enum class`) as its tag.
+    #[test]
+    fn actions_read_the_shells_json() {
+        let set = |value: Value| {
+            serde_json::from_value::<GameOptionsAct>(
+                json!({ "action": "set", "label": "Skip cutscenes", "value": value }),
+            )
+            .unwrap()
+        };
+        let value = |act| match act {
+            GameOptionsAct::Set { value, .. } => value,
+            other => panic!("not a set: {other:?}"),
+        };
+        assert_eq!(value(set(json!({ "switch": true }))), OptionValue::Switch(true));
+        assert_eq!(value(set(json!({ "number": 5 }))), OptionValue::Number(5));
+        assert_eq!(
+            value(set(json!({ "text": "HighHP" }))),
+            OptionValue::Text("HighHP".into())
+        );
+        assert_eq!(value(set(json!("none"))), OptionValue::None);
+        assert_eq!(
+            serde_json::from_value::<GameOptionsAct>(json!({ "action": "save" })).unwrap(),
+            GameOptionsAct::Save
+        );
+        assert_eq!(
+            serde_json::from_value::<super::super::bank::BankAct>(json!({ "action": "open" })).unwrap(),
+            super::super::bank::BankAct::Open
+        );
     }
 }

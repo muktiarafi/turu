@@ -45,10 +45,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.NotifyDropAct
 import com.muktiarafi.turu.models.NotifyDropView
 import kotlinx.serialization.json.Json
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Notify Drop's copy of the tab on screen (`turu_frontend::models::notify_drop`), read while the
@@ -95,33 +94,33 @@ class NotifyDropPanel {
         ).also { it.start() }
     }
 
-    private fun act(action: String, body: JSONObject = JSONObject()) {
+    private fun act(action: NotifyDropAct) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("notify-drop", "do", body.put("action", action)) { error = it }
+        client.act("notify-drop", action, NotifyDropAct.JsonSerializer) { error = it }
     }
 
     fun add() {
         if (input.isBlank()) return
-        act("add", JSONObject().put("input", input))
+        act(NotifyDropAct.add(input))
         input = ""
     }
 
     fun remove() {
-        act("remove", JSONObject().put("items", JSONArray(checked.keys.toList())))
+        act(NotifyDropAct.remove(checked.keys.toList()))
         checked.clear()
     }
 
     fun clear() {
-        act("clear")
+        act(NotifyDropAct.clear)
         checked.clear()
     }
 
-    fun count(n: Long) = act("count", JSONObject().put("count", n))
+    fun count(n: Long) = act(NotifyDropAct.count(n.coerceIn(0L, UInt.MAX_VALUE.toLong()).toUInt()))
 
-    fun delay(ms: Long) = act("delay", JSONObject().put("delay", ms))
+    fun delay(ms: Long) = act(NotifyDropAct.delay(ms.coerceIn(0L, UInt.MAX_VALUE.toLong()).toUInt()))
 
-    fun test() = act("test")
+    fun test() = act(NotifyDropAct.test)
 
     fun toggle(name: String) {
         if (checked.remove(name) == null) checked[name] = Unit

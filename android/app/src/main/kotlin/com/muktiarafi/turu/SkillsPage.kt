@@ -67,12 +67,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.AuraView
+import com.muktiarafi.turu.models.EditorChange
 import com.muktiarafi.turu.models.RulesView
 import com.muktiarafi.turu.models.SetView
+import com.muktiarafi.turu.models.SkillsAct
 import com.muktiarafi.turu.models.SkillsView
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * Combat > Skills for the tab on screen (`turu_frontend::models::skills`): the editor and the
@@ -107,19 +108,18 @@ class SkillsPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("skills", "do", JSONObject().put("action", "open"))
+            it.act("skills", SkillsAct.open, SkillsAct.JsonSerializer)
         }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject()) {
+    fun act(action: SkillsAct) {
         error = null
-        client?.act("skills", "do", body.put("action", action)) { error = it }
+        client?.act("skills", action, SkillsAct.JsonSerializer) { error = it }
     }
 
-    fun editor(field: String, value: Any) = act("editor", JSONObject().put(field, value))
+    fun editor(change: EditorChange) = act(SkillsAct.editor(change))
 
-    fun rules(target: String, rules: RulesView) =
-        act("rules", JSONObject().put("target", target).put("rules", JSONObject(json.encodeToString(RulesView.serializer(), rules))))
+    fun rules(target: String, rules: RulesView) = act(SkillsAct.rules(target, rules))
 }
 
 private enum class SkillsTab(val label: String) { Edit("Edit"), Saved("Saved sets") }
@@ -163,7 +163,7 @@ fun SkillsPage(state: ShellState, panel: SkillsPanel, fullWindow: () -> Unit) {
     if (view != null && showRules) {
         val target = if (rulesFor == RulesTarget.New || editing == null) RulesTarget.New else RulesTarget.Skill
         val close = {
-            if (target == RulesTarget.Skill) panel.act("cancel-rules")
+            if (target == RulesTarget.Skill) panel.act(SkillsAct.cancel_rules)
             rulesFor = null
         }
         RulesPage(
@@ -174,7 +174,7 @@ fun SkillsPage(state: ShellState, panel: SkillsPanel, fullWindow: () -> Unit) {
             onChange = { panel.rules(if (target == RulesTarget.New) "new" else "editing", it) },
             onBack = close,
             onDone = {
-                if (target == RulesTarget.Skill) panel.act("confirm-rules")
+                if (target == RulesTarget.Skill) panel.act(SkillsAct.confirm_rules)
                 rulesFor = null
             },
             confirms = target == RulesTarget.Skill,
@@ -185,7 +185,7 @@ fun SkillsPage(state: ShellState, panel: SkillsPanel, fullWindow: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         PageBar("Skills", onBack = { state.back() }) {
             FullWindowMenu("The editor and the saved list side by side, as VibeSkua's", fullWindow) { close ->
-                DropdownMenuItem(text = { Text("Refresh saved sets") }, onClick = { close(); panel.act("refresh") })
+                DropdownMenuItem(text = { Text("Refresh saved sets") }, onClick = { close(); panel.act(SkillsAct.refresh) })
                 DropdownMenuItem(text = { Text("Reset sets…", color = Turu.Danger) }, onClick = { close(); resetting = true })
                 HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
             }
@@ -227,7 +227,7 @@ fun SkillsPage(state: ShellState, panel: SkillsPanel, fullWindow: () -> Unit) {
             )
             if (tab == SkillsTab.Edit) {
                 Spacer(Modifier.width(12.dp))
-                Button(onClick = { panel.act("save", JSONObject().apply { typedClass?.let { put("className", it) } }) }, enabled = view.save.enabled || typedClass?.isNotBlank() == true, modifier = Modifier.heightIn(min = 48.dp)) { Text("Save set") }
+                Button(onClick = { panel.act(SkillsAct.save(typedClass)) }, enabled = view.save.enabled || typedClass?.isNotBlank() == true, modifier = Modifier.heightIn(min = 48.dp)) { Text("Save set") }
             }
         }
     }
@@ -238,7 +238,7 @@ fun SkillsPage(state: ShellState, panel: SkillsPanel, fullWindow: () -> Unit) {
             title = { Text("Reset skill sets?") },
             text = { Text("Every saved set is replaced with the ones Turu ships. Sets you made or changed are lost.") },
             confirmButton = {
-                TextButton(onClick = { resetting = false; panel.act("reset-sets") }) { Text("Reset", color = Turu.Danger) }
+                TextButton(onClick = { resetting = false; panel.act(SkillsAct.reset_sets) }) { Text("Reset", color = Turu.Danger) }
             },
             dismissButton = { TextButton(onClick = { resetting = false }) { Text("Cancel") } },
             containerColor = Turu.Card,
@@ -250,7 +250,7 @@ fun SkillsPage(state: ShellState, panel: SkillsPanel, fullWindow: () -> Unit) {
             title = { Text("Remove this set?") },
             text = { Text("${set.`class`} in ${set.mode}. Scripts that ask for it use the class's other sets instead, or 0 | 1 | 2 | 3 | 4 when none is left.") },
             confirmButton = {
-                TextButton(onClick = { removing = null; panel.act("remove-set", JSONObject().put("index", set.position.toLong())) }) { Text("Remove", color = Turu.Danger) }
+                TextButton(onClick = { removing = null; panel.act(SkillsAct.remove_set(set.position)) }) { Text("Remove", color = Turu.Danger) }
             },
             dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } },
             containerColor = Turu.Card,
@@ -277,10 +277,10 @@ private fun EditTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, on
                     placeholder = "Void Highlord",
                     modifier = Modifier.weight(1f),
                     onTyping = onTyping,
-                ) { panel.editor("className", it) }
+                ) { panel.editor(EditorChange(className = it)) }
                 Spacer(Modifier.width(8.dp))
                 Box(Modifier.width(132.dp)) {
-                    Picker(label = "Mode", value = view.mode, options = view.modes.map { it to it }, loading = false) { panel.editor("mode", it) }
+                    Picker(label = "Mode", value = view.mode, options = view.modes.map { it to it }, loading = false) { panel.editor(EditorChange(mode = it)) }
                 }
             }
         }
@@ -303,7 +303,7 @@ private fun EditTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, on
             ) {
                 for (slot in 0..5) {
                     FilledTonalButton(
-                        onClick = { panel.act("add", JSONObject().put("slot", slot)) },
+                        onClick = { panel.act(SkillsAct.add(slot.toLong())) },
                         contentPadding = ButtonDefaults.TextButtonContentPadding,
                         modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                     ) { Text("$slot", style = MaterialTheme.typography.titleSmall) }
@@ -341,7 +341,7 @@ private fun EditTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, on
             ConnectedChoice(
                 listOf(false, true),
                 view.waitForCooldown,
-                { panel.editor("waitForCooldown", it) },
+                { panel.editor(EditorChange(waitForCooldown = it)) },
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             ) { Text(if (it) "Wait for cooldown" else "Use if available", maxLines = 1) }
             Text(
@@ -351,10 +351,10 @@ private fun EditTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, on
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
             LabeledRow("Skill timeout", "Longest wait for one skill") {
-                NumberBox(view.timeout, 0, 5000, "ms") { panel.editor("timeout", it) }
+                NumberBox(view.timeout, 0, 5000, "ms") { panel.editor(EditorChange(timeout = it.toLong())) }
             }
             SwitchRow("Reset on target change", "Start the sequence again when the target changes or is lost", view.resetOnTarget) {
-                panel.editor("resetOnTarget", it)
+                panel.editor(EditorChange(resetOnTarget = it))
             }
             Spacer(Modifier.heightIn(min = 8.dp).padding(bottom = 8.dp))
         }
@@ -372,7 +372,7 @@ private fun SkillRow(index: Int, line: String, count: Int, panel: SkillsPanel) {
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
             .clip(MaterialTheme.shapes.medium)
-            .clickable { panel.act("edit-rules", JSONObject().put("index", index)) }
+            .clickable { panel.act(SkillsAct.edit_rules(index.toUInt())) }
             .heightIn(min = 56.dp)
             .padding(start = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -397,12 +397,12 @@ private fun SkillRow(index: Int, line: String, count: Int, panel: SkillsPanel) {
                 Icon(Icons.Rounded.MoreVert, contentDescription = "Skill ${index + 1}: rules, move, remove", tint = Turu.Muted)
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Turu.Card) {
-                val at = JSONObject().put("index", index)
-                DropdownMenuItem(text = { Text("Edit rules") }, onClick = { menu = false; panel.act("edit-rules", at) })
-                DropdownMenuItem(text = { Text("Move up") }, enabled = index > 0, onClick = { menu = false; panel.act("move", at.put("down", false)) })
-                DropdownMenuItem(text = { Text("Move down") }, enabled = index + 1 < count, onClick = { menu = false; panel.act("move", at.put("down", true)) })
+                val at = index.toUInt()
+                DropdownMenuItem(text = { Text("Edit rules") }, onClick = { menu = false; panel.act(SkillsAct.edit_rules(at)) })
+                DropdownMenuItem(text = { Text("Move up") }, enabled = index > 0, onClick = { menu = false; panel.act(SkillsAct.move(at, down = false)) })
+                DropdownMenuItem(text = { Text("Move down") }, enabled = index + 1 < count, onClick = { menu = false; panel.act(SkillsAct.move(at, down = true)) })
                 HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
-                DropdownMenuItem(text = { Text("Remove", color = Turu.Danger) }, onClick = { menu = false; panel.act("remove", at) })
+                DropdownMenuItem(text = { Text("Remove", color = Turu.Danger) }, onClick = { menu = false; panel.act(SkillsAct.remove(at)) })
             }
         }
     }
@@ -454,7 +454,7 @@ private fun SavedTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, o
                             .fillMaxWidth()
                             .padding(horizontal = 8.dp)
                             .clip(MaterialTheme.shapes.medium)
-                            .clickable { panel.act("class", JSONObject().put("class", name)) }
+                            .clickable { panel.act(SkillsAct.`class`(name)) }
                             .heightIn(min = 48.dp)
                             .padding(horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -466,7 +466,7 @@ private fun SavedTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, o
             }
         } else {
             Row(Modifier.fillMaxWidth().padding(end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { panel.act("class", JSONObject().put("class", "")) }) {
+                IconButton(onClick = { panel.act(SkillsAct.`class`("")) }) {
                     Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "All classes")
                 }
                 Column(Modifier.weight(1f)) {
@@ -476,7 +476,7 @@ private fun SavedTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, o
             }
             LazyColumn(Modifier.weight(1f)) {
                 items(view.sets, key = { it.position.toLong() }) { set ->
-                    SetRow(set, onOpen = { panel.act("open-set", JSONObject().put("index", set.position.toLong())); opened() }, onRemove = { onRemove(set) })
+                    SetRow(set, onOpen = { panel.act(SkillsAct.open_set(set.position)); opened() }, onRemove = { onRemove(set) })
                 }
             }
         }

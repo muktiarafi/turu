@@ -51,10 +51,10 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.ConsoleAct
 import com.muktiarafi.turu.models.ConsoleView
 import com.muktiarafi.turu.models.LineKind
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * The Console's copy of the tab on screen (`turu_frontend::models::console`), read while the page
@@ -90,10 +90,10 @@ class ConsolePanel {
         ).also { it.start() }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject()) {
+    fun act(action: ConsoleAct) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("console", "do", body.put("action", action)) { error = it }
+        client.act("console", action, ConsoleAct.JsonSerializer) { error = it }
     }
 
     fun copy(context: Context) {
@@ -124,7 +124,7 @@ fun ConsolePage(state: ShellState, panel: ConsolePanel, fullWindow: () -> Unit) 
                 FullWindowMenu("The same console in the egui window", fullWindow) { close ->
                     val any = view != null && view.output.isNotEmpty()
                     DropdownMenuItem(text = { Text("Copy output") }, enabled = any, onClick = { close(); panel.copy(context) })
-                    DropdownMenuItem(text = { Text("Clear output") }, enabled = any, onClick = { close(); panel.act("clear") })
+                    DropdownMenuItem(text = { Text("Clear output") }, enabled = any, onClick = { close(); panel.act(ConsoleAct.clear) })
                     HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
                 }
             }
@@ -159,13 +159,13 @@ fun ConsolePage(state: ShellState, panel: ConsolePanel, fullWindow: () -> Unit) 
         val runOrStop = @Composable {
             if (view.running) {
                 Button(
-                    onClick = { panel.act("stop") },
+                    onClick = { panel.act(ConsoleAct.stop) },
                     colors = ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = Turu.Text),
                     modifier = Modifier.heightIn(min = 48.dp),
                 ) { Text("Stop") }
             } else {
                 Button(
-                    onClick = { panel.act("run", JSONObject().put("code", code)) },
+                    onClick = { panel.act(ConsoleAct.run(code)) },
                     enabled = view.run.enabled && code.isNotBlank(),
                     modifier = Modifier.heightIn(min = 48.dp),
                 ) { Text("Run") }

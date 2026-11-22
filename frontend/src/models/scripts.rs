@@ -4,7 +4,7 @@
 //! ToggleScript hotkey, with Turu's Force Stop wait).
 
 use super::Control;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -319,6 +319,39 @@ pub fn toggle_favourite(bot: &Bot) {
     if let Some(path) = bot.scripts.loaded() {
         turu_bot::quick_scripts::update(&bot.paths.quick_scripts_file(), |lists| lists.toggle_favorite(&path));
     }
+}
+
+/// The Script Loader's actions (`POST /models/scripts/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum ScriptsAct {
+    Start,
+    Stop,
+    Pause,
+    Resume,
+    Favourite,
+    /// Loads the script at `path`.
+    Load {
+        path: String,
+    },
+}
+
+pub fn act(bot: &Arc<Bot>, act: ScriptsAct) -> Result<(), String> {
+    match act {
+        ScriptsAct::Start => return start(bot),
+        ScriptsAct::Stop => stop(bot),
+        ScriptsAct::Pause => set_paused(bot, true),
+        ScriptsAct::Resume => set_paused(bot, false),
+        ScriptsAct::Favourite => toggle_favourite(bot),
+        ScriptsAct::Load { path } => return load(bot, Path::new(&path)),
+    }
+    Ok(())
 }
 
 #[cfg(test)]

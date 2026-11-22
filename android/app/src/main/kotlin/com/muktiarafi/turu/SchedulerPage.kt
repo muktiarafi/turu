@@ -56,10 +56,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.EntryView
 import com.muktiarafi.turu.models.Note
+import com.muktiarafi.turu.models.SchedulerAct
 import com.muktiarafi.turu.models.SchedulerView
 import com.muktiarafi.turu.models.Tint
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * The Scheduler's copy of the tab on screen (`turu_frontend::models::scheduler`): the tab's
@@ -94,12 +94,10 @@ class SchedulerPanel {
         ).also { it.start() }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject()) {
+    fun act(action: SchedulerAct) {
         error = null
-        client?.act("scheduler", action, body) { error = it }
+        client?.act("scheduler", action, SchedulerAct.JsonSerializer) { error = it }
     }
-
-    fun entry(action: String, entry: EntryView, body: JSONObject = JSONObject()) = act(action, body.put("id", entry.id))
 }
 
 /** A tint in the shell's palette. */
@@ -154,7 +152,7 @@ fun SchedulerPage(state: ShellState, panel: SchedulerPanel, openOptions: () -> U
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Button(
-                onClick = { panel.act("toggle") },
+                onClick = { panel.act(SchedulerAct.toggle) },
                 enabled = view.toggle.enabled,
                 colors = if (view.running) ButtonDefaults.buttonColors(containerColor = Turu.Danger, contentColor = MaterialTheme.colorScheme.onError) else ButtonDefaults.buttonColors(),
                 modifier = Modifier.heightIn(min = 44.dp),
@@ -184,7 +182,7 @@ fun SchedulerPage(state: ShellState, panel: SchedulerPanel, openOptions: () -> U
                 EntryRow(
                     i, entry, view, panel,
                     onRename = { renaming = entry },
-                    onOptions = { optionsAt = view.reads to view.note; panel.entry("options", entry) },
+                    onOptions = { optionsAt = view.reads to view.note; panel.act(SchedulerAct.options(entry.id)) },
                 )
             }
         }
@@ -205,7 +203,7 @@ fun SchedulerPage(state: ShellState, panel: SchedulerPanel, openOptions: () -> U
             initial = entry.name,
             confirm = "Rename",
             onDismiss = { renaming = null },
-        ) { name -> renaming = null; panel.entry("rename", entry, JSONObject().put("name", name)) }
+        ) { name -> renaming = null; panel.act(SchedulerAct.rename(entry.id, name)) }
     }
     if (saving) {
         NameDialog(
@@ -214,7 +212,7 @@ fun SchedulerPage(state: ShellState, panel: SchedulerPanel, openOptions: () -> U
             confirm = "Save",
             note = view?.playlists?.takeIf { it.isNotEmpty() }?.let { "A name already saved is replaced." },
             onDismiss = { saving = false },
-        ) { name -> saving = false; panel.act("save", JSONObject().put("name", name)) }
+        ) { name -> saving = false; panel.act(SchedulerAct.save(name)) }
     }
     if (loading) {
         AlertDialog(
@@ -232,7 +230,7 @@ fun SchedulerPage(state: ShellState, panel: SchedulerPanel, openOptions: () -> U
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(MaterialTheme.shapes.small)
-                                    .clickable { loading = false; panel.act("load", JSONObject().put("name", name)) }
+                                    .clickable { loading = false; panel.act(SchedulerAct.load(name)) }
                                     .heightIn(min = 48.dp)
                                     .padding(horizontal = 8.dp, vertical = 14.dp),
                             )
@@ -281,12 +279,12 @@ private fun EntryRow(index: Int, entry: EntryView, view: SchedulerView, panel: S
             IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "${entry.name}: move, rename, options, remove", tint = Turu.Muted) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Turu.Card) {
                 val editable = view.edit.enabled
-                DropdownMenuItem(text = { Text("Move up") }, enabled = editable && index > 0, onClick = { menu = false; panel.entry("move", entry, JSONObject().put("by", -1)) })
-                DropdownMenuItem(text = { Text("Move down") }, enabled = editable && index + 1 < view.entries.size, onClick = { menu = false; panel.entry("move", entry, JSONObject().put("by", 1)) })
+                DropdownMenuItem(text = { Text("Move up") }, enabled = editable && index > 0, onClick = { menu = false; panel.act(SchedulerAct.move(entry.id, -1)) })
+                DropdownMenuItem(text = { Text("Move down") }, enabled = editable && index + 1 < view.entries.size, onClick = { menu = false; panel.act(SchedulerAct.move(entry.id, 1)) })
                 DropdownMenuItem(text = { Text("Rename") }, onClick = { menu = false; onRename() })
                 DropdownMenuItem(text = { Text("Script options") }, onClick = { menu = false; onOptions() })
                 HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
-                DropdownMenuItem(text = { Text("Remove", color = if (editable) Turu.Danger else Turu.Muted) }, enabled = editable, onClick = { menu = false; panel.entry("remove", entry) })
+                DropdownMenuItem(text = { Text("Remove", color = if (editable) Turu.Danger else Turu.Muted) }, enabled = editable, onClick = { menu = false; panel.act(SchedulerAct.remove(entry.id)) })
                 if (!editable) {
                     Text(view.edit.reason, style = MaterialTheme.typography.bodySmall, color = Turu.Muted, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp).widthIn(max = 240.dp))
                 }

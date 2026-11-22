@@ -256,8 +256,8 @@ the shell owns and what must stay in order with the tab's other messages.
 * **Copies over the control API.** A model's view is a route (`GET /models/<name>`, a sketch) and
   its revision an event on `/events`, so a screen reads again only when its feature changed;
   line-fed models (Logs) give the lines after a revision, never the whole buffer each time.
-  Actions are routes too, where the API has none already (Script Loader's Start is
-  `/script/start` today). The shell's UI layer (Kotlin, Swift) reads them itself over loopback
+  A model's actions are one route, `POST /models/<name>/do`, whose body is one of the model's
+  actions (its `…Act` enum, the action's name in `action`; since 2026-11-23). The shell's UI layer (Kotlin, Swift) reads them itself over loopback
   with the client's token, from the address the client's `Hello` gives (on Android also
   `slots/c<N>.api.json`); a client that restarts says hello again from a new port and the shell
   follows. No size cap (the link's JSON message is at most 1 MB, `shell::MAX_MESSAGE`, and on
@@ -677,6 +677,18 @@ script's message box and options request.
   the types are never committed. Views use `String` for paths (facet-generate has no `PathBuf`).
   The game options and logs views aren't generated yet: game options' values are JSON (`Value`),
   which needs a typed form first.
+* **Typed actions** (2026-11-23): what a shell sends is generated too. Each model's actions are
+  one enum, `<Name>Act` (`#[serde(tag = "action", rename_all = "kebab-case")]`, and facet's same),
+  posted to `POST /models/<name>/do` and read by `models::register()`'s `acts`, which refuses a
+  body that isn't one ("not a grabber action: ..."). The Kotlin pages build the generated types
+  (`GrabberAct.search(page = view.page + 1u)`, `ModelClient.act(model, action, GrabberAct.JsonSerializer)`)
+  instead of `JSONObject`s, so an action or a field renamed in Rust breaks the Kotlin build, not a
+  tap. The per-action routes went (only the shell used them). An option's value is the typed
+  `OptionValue` both ways (Game and Application Options, Butler, CoreBots, Script Options). Not
+  typed yet: the answers (Copy's `{ text }`, Search Scripts' `{ ready }`, a prompt's `window`,
+  `open`, `report`), still read with `JSONObject`; and the shell's own JNI calls
+  (`AccountsPanel`'s `Ask`, `SlotShell`'s actions). Checked on the emulator: Jump's `refresh`,
+  Search Scripts' Pinned and Clear the filters.
 * **L5b**: the Script Loader is native (`ScriptsPage.kt`, `ModelClient.kt`), in the shell's
   panel, read from the tab on screen's scripts model and its log over the control API; Search
   Scripts and Edit Script Options open the slot's egui windows (`ToClient::OpenWindow`). However
@@ -1099,9 +1111,18 @@ tab; Stats' `0d9ede239` and `e4bb580a4` one with settings and an answer):
    `cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))`; a
    field inside an enum variant must be one word; no tuples, so `Option<(String, bool)>` becomes
    two fields; no field named `index`: the generated decoder has a local of that name),
-   functions for each action, per-tab state that isn't the bot's in a `PerTab`
-   (`tab_state.rs`). No egui (`models_import_no_ui`). Add the view and actions to
-   `models::register()` and the view type to `bin/turu-typegen.rs`. Type names are global in
+   its actions as one enum `<Name>Act` (`Deserialize`, `#[serde(tag = "action", rename_all =
+   "kebab-case")]`, `cfg_attr(feature = "typegen", derive(facet::Facet), facet(tag = "action",
+   rename_all = "kebab-case"))`, `#[repr(C)]`) and a `pub fn act(.., act: <Name>Act)`, per-tab
+   state that isn't the bot's in a `PerTab` (`tab_state.rs`). No egui (`models_import_no_ui`).
+   Add the view and `acts("<name>", ...)` to `models::register()`, and both types to
+   `bin/turu-typegen.rs`. In an action: fields inside a variant are one word (or a newtype
+   variant over a struct with `rename_all = "camelCase"`, as `RepoQuery`); integers as the view
+   has them (`u32` for a position or page: Kotlin's `UInt`); an option's value is `OptionValue`;
+   an enum of unit variants only comes out as a Kotlin `enum class` (`BankAct.OPEN`), one with
+   data as a sealed interface (`JumpAct.cell(..)`, `JumpAct.refresh`); a name Kotlin reserves is
+   escaped (``AutoAct.`class`(..)``). A test that reads the JSON a shell sends (a `null` for an
+   option left out) keeps the wire honest. Type names are global in
    Kotlin: no two views may have an enum of the same name (hence `scheduler::Tint` beside
    `repo::Tone`; Army reuses `Tint`). `view()` runs on every `/events` tick (250 ms): nothing slow
    in it unthrottled.
@@ -1117,7 +1138,8 @@ tab; Stats' `0d9ede239` and `e4bb580a4` one with settings and an answer):
    window's key in `open_now` and a bounce (`open_shell_screen`) unless `kept` (a per-process
    window, Army, also unless its egui window is open).
 4. **The page** (`android/.../turu/<Name>Page.kt`): a panel class reading the model over
-   `ModelClient` while it shows (copy `SchedulerPanel`); the generated types come from
+   `ModelClient` while it shows (copy `SchedulerPanel`), sending its actions as the generated
+   `<Name>Act` (`client.act("<name>", action, <Name>Act.JsonSerializer)`); the generated types come from
    `com.muktiarafi.turu.models` (enum constants are UPPER_CASE). Then `Page.<Name>`
    (`ShellState.kt`), its route and panel field (`TabPanel.kt`, `widePages` if 440 dp),
    `ShellScreens` (`openScreen`'s string, the panel), and More's mapping (`RailPages.kt`).

@@ -5,7 +5,7 @@
 
 use super::Control;
 use super::tab_state::{PerTab, lock};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -235,6 +235,48 @@ pub fn set_map_ids(bot: &Arc<Bot>, map_ids: String) {
     lock(&STATE.of(bot)).map_ids = map_ids;
 }
 
+/// Auto's actions (`POST /models/auto/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum AutoAct {
+    /// Reads the classes in the inventory again.
+    ReloadClasses,
+    /// Picks (and equips) a class.
+    Class {
+        name: String,
+    },
+    /// Picks one of the class's saved modes.
+    Mode {
+        name: String,
+    },
+    /// Manual MapIDs.
+    MapIds {
+        ids: String,
+    },
+    Attack,
+    Hunt,
+    Stop,
+}
+
+pub fn act(bot: &Arc<Bot>, act: AutoAct) -> Result<(), String> {
+    match act {
+        AutoAct::ReloadClasses => reload_classes(bot),
+        AutoAct::Class { name } => pick_class(bot, name),
+        AutoAct::Mode { name } => pick_mode(bot, name),
+        AutoAct::MapIds { ids } => set_map_ids(bot, ids),
+        AutoAct::Attack => return start(bot, AutoMode::Attack),
+        AutoAct::Hunt => return start(bot, AutoMode::Hunt),
+        AutoAct::Stop => stop(bot),
+    }
+    Ok(())
+}
+
 /// Auto Attack or Auto Hunt with the chosen class and mode (the equipped class in Base when
 /// either is unset) and Manual MapIDs.
 pub fn start(bot: &Arc<Bot>, mode: AutoMode) -> Result<(), String> {
@@ -287,6 +329,9 @@ mod tests {
         let view = super::view(&bot);
         assert_eq!((view.map_ids.as_str(), view.mode.as_deref()), ("1, 2", Some("Base")));
         // Nothing runs: no run to tell of.
-        assert_eq!((view.running_mode, view.fighting, view.running_secs), (None, None, None));
+        assert_eq!(
+            (view.running_mode, view.fighting, view.running_secs),
+            (None, None, None)
+        );
     }
 }

@@ -52,6 +52,7 @@ import com.muktiarafi.turu.models.CounterKind
 import com.muktiarafi.turu.models.CounterView
 import com.muktiarafi.turu.models.ProgressView
 import com.muktiarafi.turu.models.SnapshotView
+import com.muktiarafi.turu.models.StatsAct
 import com.muktiarafi.turu.models.StatsView
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
@@ -86,10 +87,10 @@ class StatsPanel {
         ).also { it.start() }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject(), answer: (JSONObject) -> Unit = {}) {
+    fun act(action: StatsAct, answer: (JSONObject) -> Unit = {}) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("stats", action, body, answer = answer) { error = it }
+        client.act("stats", action, StatsAct.JsonSerializer, answer = answer) { error = it }
     }
 }
 
@@ -119,7 +120,7 @@ fun StatsPage(state: ShellState, panel: StatsPanel, fullWindow: () -> Unit) {
     val context = LocalContext.current
     var resetting by remember { mutableStateOf(false) }
     var clearing by remember { mutableStateOf(false) }
-    fun export() = panel.act("export") { answer ->
+    fun export() = panel.act(StatsAct.export) { answer ->
         val csv = answer.optString("csv").takeIf { !answer.isNull("csv") && it.isNotEmpty() } ?: return@act
         val send = Intent(Intent.ACTION_SEND)
             .setType("text/csv")
@@ -158,7 +159,7 @@ fun StatsPage(state: ShellState, panel: StatsPanel, fullWindow: () -> Unit) {
                     Row(
                         Modifier
                             .clip(MaterialTheme.shapes.medium)
-                            .toggleable(value = view.advanced, role = Role.Switch) { panel.act("advanced", JSONObject().put("on", it)) }
+                            .toggleable(value = view.advanced, role = Role.Switch) { panel.act(StatsAct.advanced(it)) }
                             .heightIn(min = 48.dp)
                             .padding(start = 12.dp, end = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -180,7 +181,7 @@ fun StatsPage(state: ShellState, panel: StatsPanel, fullWindow: () -> Unit) {
                             val on = unit == view.unit
                             FilterChip(
                                 selected = on,
-                                onClick = { if (!on) panel.act("unit", JSONObject().put("unit", unit)) },
+                                onClick = { if (!on) panel.act(StatsAct.unit(unit)) },
                                 label = { Text(unit) },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Turu.AccentTint, selectedLabelColor = Turu.Text, labelColor = Turu.Muted),
                                 border = FilterChipDefaults.filterChipBorder(enabled = true, selected = on, borderColor = Turu.Edge, selectedBorderColor = Turu.Accent.copy(alpha = 0.6f)),
@@ -214,7 +215,7 @@ fun StatsPage(state: ShellState, panel: StatsPanel, fullWindow: () -> Unit) {
                         color = Turu.Muted,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
-                        FilledTonalButton(onClick = { panel.act("save") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Save") }
+                        FilledTonalButton(onClick = { panel.act(StatsAct.save) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Save") }
                         TextButton(onClick = { export() }, enabled = view.history.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp)) { Text("Export") }
                         Spacer(Modifier.weight(1f))
                         TextButton(onClick = { clearing = true }, enabled = view.history.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp)) {
@@ -232,7 +233,7 @@ fun StatsPage(state: ShellState, panel: StatsPanel, fullWindow: () -> Unit) {
             HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 16.dp, end = 4.dp)) {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = Turu.Danger, modifier = Modifier.weight(1f))
-                if (panel.error == null) TextButton(onClick = { panel.act("dismiss") }) { Text("OK") }
+                if (panel.error == null) TextButton(onClick = { panel.act(StatsAct.dismiss) }) { Text("OK") }
             }
         }
     }
@@ -241,7 +242,7 @@ fun StatsPage(state: ShellState, panel: StatsPanel, fullWindow: () -> Unit) {
             onDismissRequest = { resetting = false },
             title = { Text("Reset the stats?") },
             text = { Text("The counters and the session's rates start over. The rate history stays.", color = Turu.Muted) },
-            confirmButton = { TextButton(onClick = { resetting = false; panel.act("reset") }) { Text("Reset") } },
+            confirmButton = { TextButton(onClick = { resetting = false; panel.act(StatsAct.reset) }) { Text("Reset") } },
             dismissButton = { TextButton(onClick = { resetting = false }) { Text("Cancel") } },
             containerColor = Turu.Card,
         )
@@ -251,7 +252,7 @@ fun StatsPage(state: ShellState, panel: StatsPanel, fullWindow: () -> Unit) {
             onDismissRequest = { clearing = false },
             title = { Text("Clear the rate history?") },
             text = { Text("Every saved snapshot goes, for every client. It can't be undone.", color = Turu.Muted) },
-            confirmButton = { TextButton(onClick = { clearing = false; panel.act("clear") }) { Text("Clear", color = Turu.Danger) } },
+            confirmButton = { TextButton(onClick = { clearing = false; panel.act(StatsAct.clear) }) { Text("Clear", color = Turu.Danger) } },
             dismissButton = { TextButton(onClick = { clearing = false }) { Text("Cancel") } },
             containerColor = Turu.Card,
         )

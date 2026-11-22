@@ -10,7 +10,6 @@
 use super::Control;
 use super::tab_state::{PerTab, lock};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as Json;
 use std::sync::Arc;
 use turu_bot::Bot;
 use turu_bot::paths::Paths;
@@ -535,86 +534,70 @@ impl Skills {
         }
     }
 
-    /// What a shell's page does (`POST /models/skills/<action>`): see [`register`]'s list.
-    pub fn act(&mut self, paths: &Paths, action: &str, body: &Json) -> Result<(), String> {
-        let index = || {
-            body.get("index")
-                .and_then(Json::as_u64)
-                .map(|i| i as usize)
-                .ok_or_else(|| "index is missing".to_owned())
-        };
+    /// What a shell's page does (`POST /models/skills/do`).
+    pub fn act(&mut self, paths: &Paths, act: SkillsAct) -> Result<(), String> {
         let e = &mut self.editor;
-        match action {
-            "open" => {
+        match act {
+            SkillsAct::Open | SkillsAct::Refresh => {
                 self.reload(paths);
                 self.load_classes();
             }
-            "editor" => {
-                if let Some(ms) = body.get("timeout").and_then(Json::as_i64) {
+            SkillsAct::Editor(change) => {
+                if let Some(ms) = change.timeout {
                     e.timeout = ms.clamp(0, MAX_MS);
                 }
-                if let Some(on) = body.get("waitForCooldown").and_then(Json::as_bool) {
+                if let Some(on) = change.wait_for_cooldown {
                     e.wait_for_cooldown = on;
                 }
-                if let Some(on) = body.get("resetOnTarget").and_then(Json::as_bool) {
+                if let Some(on) = change.reset_on_target {
                     e.reset_on_target = on;
                 }
-                if let Some(name) = body.get("className").and_then(Json::as_str) {
-                    e.class_name = name.to_owned();
+                if let Some(name) = change.class_name {
+                    e.class_name = name;
                 }
-                if let Some(mode) = body.get("mode").and_then(Json::as_str) {
+                if let Some(mode) = change.mode {
                     e.mode = CLASS_USE_MODES
                         .iter()
-                        .position(|m| m.eq_ignore_ascii_case(mode))
+                        .position(|m| m.eq_ignore_ascii_case(&mode))
                         .ok_or_else(|| format!("no mode {mode}"))?;
                 }
             }
-            "add" => e.add(body.get("slot").and_then(Json::as_i64).ok_or("slot is missing")?),
-            "move" => {
-                let down = body.get("down").and_then(Json::as_bool).unwrap_or(false);
-                e.move_skill(index()?, down);
+            SkillsAct::Add { slot } => {
+                e.add(slot);
             }
-            "remove" => {
-                let i = index()?;
+            SkillsAct::Move { position, down } => {
+                e.move_skill(position as usize, down);
+            }
+            SkillsAct::Remove { position } => {
+                let i = position as usize;
                 if self.editing.as_ref().is_some_and(|ed| ed.index >= i) {
                     self.editing = None;
                 }
                 self.editor.remove_skill(i);
             }
-            "edit-rules" => self.edit_rules(index()?),
-            "confirm-rules" => self.confirm_rules(),
-            "cancel-rules" => self.editing = None,
-            "rules" => {
-                let view: RulesView = serde_json::from_value(body.get("rules").cloned().ok_or("rules is missing")?)
-                    .map_err(|e| format!("rules: {e}"))?;
-                let target = body.get("target").and_then(Json::as_str).unwrap_or("new");
-                let rules = match target {
+            SkillsAct::EditRules { position } => self.edit_rules(position as usize),
+            SkillsAct::ConfirmRules => self.confirm_rules(),
+            SkillsAct::CancelRules => self.editing = None,
+            SkillsAct::Rules { target, rules: view } => {
+                let rules = match target.as_str() {
                     "new" => &mut self.editor.rules,
                     "editing" => &mut self.editing.as_mut().ok_or("no skill's rules are open")?.rules,
                     other => return Err(format!("no rules {other}")),
                 };
                 *rules = view.to_rules(rules);
             }
-            "save" => {
+            SkillsAct::Save { name } => {
                 // The class name as typed, when the page sends it with Save.
-                if let Some(name) = body.get("className").and_then(Json::as_str) {
-                    self.editor.class_name = name.to_owned();
+                if let Some(name) = name {
+                    self.editor.class_name = name;
                 }
                 self.save(paths)?
             }
-            "class" => {
-                let class = body.get("class").and_then(Json::as_str).unwrap_or("");
-                self.pick_class((!class.is_empty()).then(|| class.to_owned()));
-            }
-            "open-set" => self.open_set(index()?),
-            "remove-set" => self.remove_set(paths, index()?),
-            "reset-sets" => self.reset(paths),
-            "refresh" => {
-                self.reload(paths);
-                self.load_classes();
-            }
-            "dismiss" => self.outcome = None,
-            other => return Err(format!("no action {other}")),
+            SkillsAct::Class { name } => self.pick_class((!name.is_empty()).then_some(name)),
+            SkillsAct::OpenSet { position } => self.open_set(position as usize),
+            SkillsAct::RemoveSet { position } => self.remove_set(paths, position as usize),
+            SkillsAct::ResetSets => self.reset(paths),
+            SkillsAct::Dismiss => self.outcome = None,
         }
         Ok(())
     }
@@ -628,22 +611,86 @@ pub fn view(bot: &Arc<Bot>) -> SkillsView {
     s.view()
 }
 
-/// `open`, `refresh`; the editor's `editor` (`timeout`, `waitForCooldown`, `resetOnTarget`,
-/// `className`, `mode`), `add` (`slot`), `move` (`index`, `down`), `remove` (`index`), `save`;
-/// Edit Rules' `edit-rules` (`index`), `confirm-rules`, `cancel-rules`; `rules` (`target`: "new"
-/// or "editing", `rules`: a [`RulesView`]); the saved sets' `class` (`class`, "" for all),
-/// `open-set`, `remove-set` (`index`), `reset-sets`; `dismiss` (the outcome).
-pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
+/// A change to the editor from a shell: the fields given.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+pub struct EditorChange {
+    /// Milliseconds, kept within 0 and the most it takes.
+    pub timeout: Option<i64>,
+    pub wait_for_cooldown: Option<bool>,
+    pub reset_on_target: Option<bool>,
+    pub class_name: Option<String>,
+    /// One of the class use modes, by name.
+    pub mode: Option<String>,
+}
+
+/// Skills' actions (`POST /models/skills/do`). `position` is a skill's in the sequence, or (the
+/// saved sets') a set's.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum SkillsAct {
+    Open,
+    Refresh,
+    Editor(EditorChange),
+    /// Adds the skill in `slot`.
+    Add {
+        slot: i64,
+    },
+    Move {
+        position: u32,
+        down: bool,
+    },
+    Remove {
+        position: u32,
+    },
+    /// Opens Edit Rules for a skill.
+    EditRules {
+        position: u32,
+    },
+    ConfirmRules,
+    CancelRules,
+    /// Sets the rules of `target`: "new" (the editor's) or "editing" (the skill Edit Rules has open).
+    Rules {
+        target: String,
+        rules: RulesView,
+    },
+    /// Saves the sequence, as the class `name` when it's given (the name as typed).
+    Save {
+        name: Option<String>,
+    },
+    /// Shows the saved sets of the class `name` ("" for all).
+    Class {
+        name: String,
+    },
+    OpenSet {
+        position: u32,
+    },
+    RemoveSet {
+        position: u32,
+    },
+    ResetSets,
+    /// Dismisses the outcome.
+    Dismiss,
+}
+
+pub fn act(bot: &Arc<Bot>, act: SkillsAct) -> Result<(), String> {
     let state = STATE.of(bot);
     let mut s = lock(&state);
     s.ensure_loaded(&bot.paths);
-    s.act(&bot.paths, action, body)
+    s.act(&bot.paths, act)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value as Json, json};
 
     fn paths() -> (tempfile::TempDir, Paths) {
         let dir = tempfile::tempdir().unwrap();
@@ -651,6 +698,12 @@ mod tests {
             root: dir.path().to_owned(),
         };
         (dir, paths)
+    }
+
+    /// `action` with `body`, read as a shell's JSON is.
+    fn read(action: &str, mut body: Json) -> SkillsAct {
+        body["action"] = json!(action);
+        serde_json::from_value(body).unwrap()
     }
 
     fn rules_body(skills: &Skills, target: &str, edit: impl FnOnce(&mut RulesView)) -> Json {
@@ -676,16 +729,19 @@ mod tests {
             r.health = 250;
             r.skip = true;
         });
-        s.act(&paths, "rules", &body).unwrap();
+        s.act(&paths, read("rules", body)).unwrap();
         assert_eq!(s.editor.rules.health, 100, "a percentage stops at 100");
         for slot in [1, 2, 4] {
-            s.act(&paths, "add", &json!({ "slot": slot })).unwrap();
+            s.act(&paths, read("add", json!({ "slot": slot }))).unwrap();
         }
-        s.act(&paths, "move", &json!({ "index": 2, "down": false })).unwrap();
+        s.act(&paths, read("move", json!({ "position": 2, "down": false })))
+            .unwrap();
         s.act(
             &paths,
-            "editor",
-            &json!({ "className": " Questwalker Mage ", "mode": "farm", "timeout": 9000 }),
+            read(
+                "editor",
+                json!({ "className": " Questwalker Mage ", "mode": "farm", "timeout": 9000 }),
+            ),
         )
         .unwrap();
         let view = s.view();
@@ -695,23 +751,24 @@ mod tests {
         assert!(view.save.enabled && !view.replaces);
 
         // The name as typed comes with Save.
-        s.act(&paths, "save", &json!({ "className": "Questwalker Mage" }))
+        s.act(&paths, read("save", json!({ "name": "Questwalker Mage" })))
             .unwrap();
         assert_eq!(s.outcome.as_ref().unwrap().text, "Saved Questwalker Mage (Farm).");
         assert_eq!(s.sets.len(), shipped + 1);
         assert!(s.view().replaces, "saving again replaces it");
 
-        s.act(&paths, "class", &json!({ "class": "Questwalker Mage" })).unwrap();
+        s.act(&paths, read("class", json!({ "name": "Questwalker Mage" })))
+            .unwrap();
         let view = s.view();
         assert_eq!(view.sets.len(), 1);
         assert_eq!(view.sets[0].use_mode, "Use if available");
         s.editor = Editor::default();
-        s.act(&paths, "open-set", &json!({ "index": view.sets[0].position }))
+        s.act(&paths, read("open-set", json!({ "position": view.sets[0].position })))
             .unwrap();
         assert_eq!(s.editor.skills.len(), 3);
         assert_eq!(s.editor.class_name, "Questwalker Mage");
 
-        s.act(&paths, "remove-set", &json!({ "index": view.sets[0].position }))
+        s.act(&paths, read("remove-set", json!({ "position": view.sets[0].position })))
             .unwrap();
         assert_eq!(s.sets.len(), shipped);
         assert_eq!(s.class, None, "the class went with its last set");
@@ -722,8 +779,8 @@ mod tests {
         let (_dir, paths) = paths();
         let mut s = Skills::default();
         s.ensure_loaded(&paths);
-        s.act(&paths, "add", &json!({ "slot": 3 })).unwrap();
-        s.act(&paths, "edit-rules", &json!({ "index": 0 })).unwrap();
+        s.act(&paths, read("add", json!({ "slot": 3 }))).unwrap();
+        s.act(&paths, read("edit-rules", json!({ "position": 0 }))).unwrap();
         let body = rules_body(&s, "editing", |r| {
             r.use_rule = true;
             r.multi_aura = true;
@@ -734,12 +791,12 @@ mod tests {
                 target: false,
             });
         });
-        s.act(&paths, "rules", &body).unwrap();
+        s.act(&paths, read("rules", body)).unwrap();
         assert_eq!(s.editing.as_ref().unwrap().rules.auras[0].stacks, 0.0);
-        s.act(&paths, "cancel-rules", &json!({})).unwrap();
+        s.act(&paths, read("cancel-rules", json!({}))).unwrap();
         assert!(!s.editor.skills[0].rules.use_rule, "Cancel keeps the skill's rules");
 
-        s.act(&paths, "edit-rules", &json!({ "index": 0 })).unwrap();
+        s.act(&paths, read("edit-rules", json!({ "position": 0 }))).unwrap();
         let body = rules_body(&s, "editing", |r| {
             r.use_rule = true;
             r.multi_aura = true;
@@ -750,12 +807,12 @@ mod tests {
                 target: true,
             });
         });
-        s.act(&paths, "rules", &body).unwrap();
+        s.act(&paths, read("rules", body)).unwrap();
         // The last aura removed turns Multi Aura off.
         let body = rules_body(&s, "editing", |r| r.auras.clear());
-        s.act(&paths, "rules", &body).unwrap();
+        s.act(&paths, read("rules", body)).unwrap();
         assert!(!s.editing.as_ref().unwrap().rules.multi_aura);
-        s.act(&paths, "confirm-rules", &json!({})).unwrap();
+        s.act(&paths, read("confirm-rules", json!({}))).unwrap();
         assert!(s.editing.is_none());
         assert!(s.editor.skills[0].rules.use_rule);
     }
@@ -765,14 +822,14 @@ mod tests {
         let (_dir, paths) = paths();
         let mut s = Skills::default();
         s.ensure_loaded(&paths);
-        s.act(&paths, "add", &json!({ "slot": 1 })).unwrap();
-        s.act(&paths, "add", &json!({ "slot": 2 })).unwrap();
-        s.act(&paths, "edit-rules", &json!({ "index": 1 })).unwrap();
-        s.act(&paths, "remove", &json!({ "index": 0 })).unwrap();
+        s.act(&paths, read("add", json!({ "slot": 1 }))).unwrap();
+        s.act(&paths, read("add", json!({ "slot": 2 }))).unwrap();
+        s.act(&paths, read("edit-rules", json!({ "position": 1 }))).unwrap();
+        s.act(&paths, read("remove", json!({ "position": 0 }))).unwrap();
         assert!(s.editing.is_none());
         assert_eq!(s.view().sequence, ["2"]);
-        assert!(s.act(&paths, "nothing", &json!({})).is_err());
-        assert!(s.act(&paths, "editor", &json!({ "mode": "Sleep" })).is_err());
+        assert!(serde_json::from_value::<SkillsAct>(json!({ "action": "nothing" })).is_err());
+        assert!(s.act(&paths, read("editor", json!({ "mode": "Sleep" }))).is_err());
     }
 
     #[test]
@@ -783,7 +840,7 @@ mod tests {
         let view = s.view();
         assert!(view.sets.is_empty() && !view.classes.is_empty());
         let class = view.classes[0].clone();
-        s.act(&paths, "class", &json!({ "class": class })).unwrap();
+        s.act(&paths, read("class", json!({ "name": class }))).unwrap();
         assert!(s.view().sets.iter().all(|set| set.class.eq_ignore_ascii_case(&class)));
     }
 }

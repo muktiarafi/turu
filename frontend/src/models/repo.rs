@@ -7,7 +7,7 @@
 
 use super::Control;
 use super::tab_state::{PerTab, lock};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 use turu_bot::Bot;
@@ -576,41 +576,58 @@ pub fn view(bot: &Arc<Bot>) -> RepoView {
     }
 }
 
-/// Changes the tab's query from a shell: the fields `body` has (`search`, `scope`, `category`,
-/// `pinnedOnly`, `localOnly`, `sort`, `descending`), or `clearFilters: true`.
-pub fn set_query(bot: &Arc<Bot>, body: &Value) -> Result<(), String> {
+/// A change to the tab's query from a shell: the fields given, after `clearFilters`.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+pub struct RepoQuery {
+    pub search: Option<String>,
+    /// A scope's key ([`scope_key`]).
+    pub scope: Option<String>,
+    pub category: Option<String>,
+    pub pinned_only: Option<bool>,
+    pub local_only: Option<bool>,
+    /// "name" or "added".
+    pub sort: Option<String>,
+    pub descending: Option<bool>,
+    /// Clears the filters first.
+    pub clear_filters: Option<bool>,
+}
+
+/// Changes the tab's query from a shell.
+pub fn set_query(bot: &Arc<Bot>, change: RepoQuery) -> Result<(), String> {
     let state = STATE.of(bot);
     let mut state = lock(&state);
     let query = &mut state.query;
-    if body.get("clearFilters").and_then(Value::as_bool) == Some(true) {
+    if change.clear_filters == Some(true) {
         query.clear_filters();
     }
-    if let Some(search) = body.get("search").and_then(Value::as_str) {
-        query.search = search.to_owned();
+    if let Some(search) = change.search {
+        query.search = search;
     }
-    if let Some(scope) = body.get("scope").and_then(Value::as_str) {
+    if let Some(scope) = change.scope {
         query.scope = Scope::ALL
             .into_iter()
             .find(|&s| scope_key(s) == scope)
             .ok_or_else(|| format!("no scope named {scope}"))?;
     }
-    if let Some(category) = body.get("category").and_then(Value::as_str) {
-        query.category = category.to_owned();
+    if let Some(category) = change.category {
+        query.category = category;
     }
-    if let Some(on) = body.get("pinnedOnly").and_then(Value::as_bool) {
+    if let Some(on) = change.pinned_only {
         query.pinned_only = on;
     }
-    if let Some(on) = body.get("localOnly").and_then(Value::as_bool) {
+    if let Some(on) = change.local_only {
         query.local_only = on;
     }
-    if let Some(sort) = body.get("sort").and_then(Value::as_str) {
-        query.sort = match sort {
+    if let Some(sort) = change.sort {
+        query.sort = match sort.as_str() {
             "name" => Sort::Name,
             "added" => Sort::Added,
             other => return Err(format!("no sort named {other}")),
         };
     }
-    if let Some(on) = body.get("descending").and_then(Value::as_bool) {
+    if let Some(on) = change.descending {
         query.descending = on;
     }
     Ok(())
@@ -698,6 +715,65 @@ pub fn task(name: &str) -> Result<(), String> {
     }
 }
 
+/// Search Scripts' actions (`POST /models/repo/do`); `path` is a script's in the repository.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum RepoAct {
+    Query(RepoQuery),
+    Start {
+        path: String,
+    },
+    Load {
+        path: String,
+    },
+    Queue {
+        path: String,
+    },
+    Download {
+        path: String,
+    },
+    /// Downloads over the user's edits.
+    Replace {
+        path: String,
+    },
+    /// Makes it the accounts' launch script: answers `{ "ready": ... }`, false while it downloads.
+    Launch {
+        path: String,
+    },
+    Pin {
+        path: String,
+        pinned: bool,
+    },
+    UpdateAll,
+    DownloadAll,
+    Refresh,
+    Cancel,
+}
+
+pub fn act(bot: &Arc<Bot>, act: RepoAct) -> Result<Value, String> {
+    match act {
+        RepoAct::Query(change) => set_query(bot, change)?,
+        RepoAct::Start { path } => work(bot, &path, Work::Start)?,
+        RepoAct::Load { path } => work(bot, &path, Work::Load)?,
+        RepoAct::Queue { path } => work(bot, &path, Work::Queue)?,
+        RepoAct::Download { path } => work(bot, &path, Work::Download)?,
+        RepoAct::Replace { path } => work(bot, &path, Work::Replace)?,
+        RepoAct::Launch { path } => return Ok(serde_json::json!({ "ready": set_launch_script(bot, &path)? })),
+        RepoAct::Pin { path, pinned } => set_pinned(&path, pinned),
+        RepoAct::UpdateAll => task("update-all")?,
+        RepoAct::DownloadAll => task("download-all")?,
+        RepoAct::Refresh => task("refresh")?,
+        RepoAct::Cancel => task("cancel")?,
+    }
+    Ok(serde_json::json!({}))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -779,9 +855,10 @@ mod tests {
     #[test]
     fn a_shell_sets_the_query_by_its_fields() {
         let bot = Bot::new();
+        let read = |body| serde_json::from_value::<RepoQuery>(body).unwrap();
         set_query(
             &bot,
-            &serde_json::json!({ "search": "gold", "scope": "name", "sort": "added" }),
+            read(serde_json::json!({ "search": "gold", "scope": "name", "sort": "added" })),
         )
         .unwrap();
         let query = lock(&STATE.of(&bot)).query.clone();
@@ -789,8 +866,12 @@ mod tests {
             (query.search.as_str(), query.scope, query.sort),
             ("gold", Scope::Name, Sort::Added)
         );
-        assert!(set_query(&bot, &serde_json::json!({ "scope": "nothing" })).is_err());
-        set_query(&bot, &serde_json::json!({ "category": "Farm", "clearFilters": true })).unwrap();
+        assert!(set_query(&bot, read(serde_json::json!({ "scope": "nothing" }))).is_err());
+        set_query(
+            &bot,
+            read(serde_json::json!({ "category": "Farm", "clearFilters": true })),
+        )
+        .unwrap();
         assert_eq!(lock(&STATE.of(&bot)).query.category, "Farm");
     }
 }

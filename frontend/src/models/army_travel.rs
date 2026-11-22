@@ -13,8 +13,7 @@
 
 use super::army::{Peer as ArmyPeer, Row};
 use super::tab_state::lock;
-use serde::Serialize;
-use serde_json::Value as Json;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -440,37 +439,64 @@ pub fn view() -> ArmyTravelView {
     }
 }
 
-/// A destination in an action's body (`map`, `room`, `cell`, `pad`, and `name` for a preset).
-pub fn destination(body: &Json) -> Destination {
-    let field = |key: &str| {
-        body.get(key)
-            .and_then(Json::as_str)
-            .unwrap_or_default()
-            .trim()
-            .to_owned()
-    };
+/// A place a shell sends: where to jump, or a preset (`name` is a preset's; empty for a jump).
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(default, rename_all = "camelCase")]
+pub struct Place {
+    pub name: String,
+    pub map: String,
+    /// Digits only: anything else is dropped.
+    pub room: String,
+    pub cell: String,
+    pub pad: String,
+}
+
+/// `place` as a destination, trimmed.
+pub fn destination(place: &Place) -> Destination {
     Destination {
-        name: field("name"),
-        map: field("map"),
-        room: field("room").chars().filter(char::is_ascii_digit).collect(),
-        cell: field("cell"),
-        pad: field("pad"),
+        name: place.name.trim().to_owned(),
+        map: place.map.trim().to_owned(),
+        room: place.room.trim().chars().filter(char::is_ascii_digit).collect(),
+        cell: place.cell.trim().to_owned(),
+        pad: place.pad.trim().to_owned(),
     }
 }
 
-/// The control API's actions (`POST /models/army-travel/do`): `clear-history` (`undo-clear-history`
-/// puts it back), `save-preset`
-/// (the preset's fields, and `editing`: the name of the one edited), `delete-preset` (`name`),
-/// `servers` (loads the list) and `forget-servers`. Jumps are Army Control's commands.
-pub fn act(travel: &Travel, action: &str, body: &Json) -> Result<(), String> {
-    let name = |key: &str| body.get(key).and_then(Json::as_str).unwrap_or_default().to_owned();
-    match action {
-        "clear-history" => {
+/// Army Travel's actions (`POST /models/army-travel/do`). Jumps are Army Control's commands.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum ArmyTravelAct {
+    ClearHistory,
+    /// Puts the cleared history back.
+    UndoClearHistory,
+    /// Saves `preset`, over the one named `editing` when it's given.
+    SavePreset {
+        editing: Option<String>,
+        preset: Place,
+    },
+    DeletePreset {
+        name: String,
+    },
+    /// Loads the server list.
+    Servers,
+    ForgetServers,
+}
+
+pub fn act(travel: &Travel, act: ArmyTravelAct) -> Result<(), String> {
+    match act {
+        ArmyTravelAct::ClearHistory => {
             let history = travel.change(|s| std::mem::take(&mut s.history));
             lock(&travel.inner).cleared = Some(history);
         }
         // The cleared maps come back after those visited since, once each, as many as it keeps.
-        "undo-clear-history" => {
+        ArmyTravelAct::UndoClearHistory => {
             let earlier = lock(&travel.inner).cleared.take().ok_or("Nothing to put back")?;
             travel.change(|s| {
                 for d in earlier {
@@ -485,9 +511,9 @@ pub fn act(travel: &Travel, action: &str, body: &Json) -> Result<(), String> {
                 s.history.truncate(turu_bot::army::jump::HISTORY_LEN);
             });
         }
-        "save-preset" => {
-            let preset = destination(body);
-            let editing = name("editing");
+        ArmyTravelAct::SavePreset { editing, preset } => {
+            let preset = destination(&preset);
+            let editing = editing.unwrap_or_default();
             travel.change(|s| {
                 let at = s
                     .presets
@@ -496,17 +522,13 @@ pub fn act(travel: &Travel, action: &str, body: &Json) -> Result<(), String> {
                 s.save_preset(at, preset).map(|_| ())
             })?
         }
-        "delete-preset" => {
-            let preset = name("name");
-            travel.change(|s| {
-                if let Some(at) = s.presets.iter().position(|p| p.name.eq_ignore_ascii_case(&preset)) {
-                    s.delete_preset(at);
-                }
-            })
-        }
-        "servers" => travel.load_servers(),
-        "forget-servers" => travel.forget_servers(),
-        other => return Err(format!("no action {other}")),
+        ArmyTravelAct::DeletePreset { name } => travel.change(|s| {
+            if let Some(at) = s.presets.iter().position(|p| p.name.eq_ignore_ascii_case(&name)) {
+                s.delete_preset(at);
+            }
+        }),
+        ArmyTravelAct::Servers => travel.load_servers(),
+        ArmyTravelAct::ForgetServers => travel.forget_servers(),
     }
     Ok(())
 }
@@ -514,7 +536,6 @@ pub fn act(travel: &Travel, action: &str, body: &Json) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     fn travel() -> (Travel, PathBuf) {
         let dir = std::env::temp_dir().join(format!(
@@ -525,6 +546,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let file = dir.join("army-control-jump.json");
         (Travel::new(file.clone()), file)
+    }
+
+    fn place(name: &str, map: &str, room: &str) -> Place {
+        Place {
+            name: name.into(),
+            map: map.into(),
+            room: room.into(),
+            ..Place::default()
+        }
+    }
+
+    fn save(editing: Option<&str>, preset: Place) -> ArmyTravelAct {
+        ArmyTravelAct::SavePreset {
+            editing: editing.map(str::to_owned),
+            preset,
+        }
     }
 
     fn location(map: &str, room: &str) -> Location {
@@ -540,9 +577,8 @@ mod tests {
     #[test]
     fn presets_by_name_and_a_jump_is_remembered() {
         let (travel, file) = travel();
-        let preset = json!({ "name": "Farm", "map": "battleon", "room": "12a34", "cell": "", "pad": "" });
-        act(&travel, "save-preset", &preset).unwrap();
-        assert!(act(&travel, "save-preset", &json!({ "name": "", "map": "x" })).is_err());
+        act(&travel, save(None, place("Farm", "battleon", "12a34"))).unwrap();
+        assert!(act(&travel, save(None, place("", "x", ""))).is_err());
         let saved = JumpSettings::load(&file);
         assert_eq!(saved.presets.len(), 1);
         assert_eq!(
@@ -550,18 +586,18 @@ mod tests {
             ("1234", "Enter")
         );
         // Edited by its old name, renamed.
-        let edit =
-            json!({ "editing": "farm", "name": "Grind", "map": "yulgar", "room": "", "cell": "Enter", "pad": "Spawn" });
-        act(&travel, "save-preset", &edit).unwrap();
+        let edit = Place {
+            cell: "Enter".into(),
+            pad: "Spawn".into(),
+            ..place("Grind", "yulgar", "")
+        };
+        act(&travel, save(Some("farm"), edit)).unwrap();
         assert_eq!(travel.settings().presets[0].name, "Grind");
-        act(&travel, "delete-preset", &json!({ "name": "GRIND" })).unwrap();
+        act(&travel, ArmyTravelAct::DeletePreset { name: "GRIND".into() }).unwrap();
         assert!(travel.settings().presets.is_empty());
 
-        let command = travel.jump(&destination(&json!({ "map": "yulgar", "room": "77" })));
-        assert_eq!(
-            command,
-            destination(&json!({ "map": "yulgar", "room": "77" })).command()
-        );
+        let command = travel.jump(&destination(&place("", "yulgar", "77")));
+        assert_eq!(command, destination(&place("", "yulgar", "77")).command());
         assert_eq!(JumpSettings::load(&file).last_jump().map, "yulgar");
         travel.jump_player(" Questwalker ");
         assert_eq!(JumpSettings::load(&file).player, "Questwalker");
@@ -580,7 +616,7 @@ mod tests {
         // Another slot saves a preset meanwhile.
         let mut other = JumpSettings::load(&file);
         other
-            .save_preset(None, destination(&json!({ "name": "Farm", "map": "yulgar" })))
+            .save_preset(None, destination(&place("Farm", "yulgar", "")))
             .unwrap();
         other.save(&file).unwrap();
         record(
@@ -603,11 +639,20 @@ mod tests {
         assert_eq!(JumpSettings::load(&file).history.len(), 2);
         assert_eq!(travel.location("questwalker").unwrap().map, "yulgar");
         // Clear, a new visit, Undo: the new one first, then the cleared ones not already there.
-        act(&travel, "clear-history", &Json::Null).unwrap();
+        act(&travel, ArmyTravelAct::ClearHistory).unwrap();
         assert!(JumpSettings::load(&file).history.is_empty());
-        record(&travel.inner, &file, &keys, vec![("questwalker".into(), location("battleon", "1"))]);
-        act(&travel, "undo-clear-history", &Json::Null).unwrap();
-        let maps: Vec<String> = JumpSettings::load(&file).history.iter().map(|d| d.map.clone()).collect();
+        record(
+            &travel.inner,
+            &file,
+            &keys,
+            vec![("questwalker".into(), location("battleon", "1"))],
+        );
+        act(&travel, ArmyTravelAct::UndoClearHistory).unwrap();
+        let maps: Vec<String> = JumpSettings::load(&file)
+            .history
+            .iter()
+            .map(|d| d.map.clone())
+            .collect();
         assert_eq!(maps, ["battleon", "yulgar"]);
         assert!(travel.location("gone").is_none());
     }

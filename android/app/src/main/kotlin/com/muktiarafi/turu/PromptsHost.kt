@@ -29,9 +29,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.net.toUri
 import com.muktiarafi.turu.models.PromptView
+import com.muktiarafi.turu.models.PromptsAct
 import com.muktiarafi.turu.models.PromptsView
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * What the tab on screen asks of the user (`turu_frontend::models::prompts`): a script's message
@@ -79,7 +79,7 @@ class PromptsPanel {
     fun answer(p: PromptView, button: Int, window: (String) -> Unit, open: (String) -> Unit, report: (String) -> Unit) {
         answered = p.id
         prompt = null
-        client?.act("prompts", "answer", JSONObject().put("id", p.id).put("button", button), { reply ->
+        client?.act("prompts", PromptsAct.answer(p.id, button.takeIf { it >= 0 }?.toUInt()), PromptsAct.JsonSerializer, { reply ->
             reply.optString("window").takeIf { it.isNotEmpty() }?.let(window)
             val crash = reply.optString("report")
             if (crash.isNotEmpty()) report(crash) else reply.optString("open").takeIf { it.isNotEmpty() }?.let(open)

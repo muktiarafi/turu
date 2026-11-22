@@ -56,13 +56,13 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.GameOptionsAct
 import com.muktiarafi.turu.models.GameOptionsView
 import com.muktiarafi.turu.models.KindView
 import com.muktiarafi.turu.models.OptionValue
 import com.muktiarafi.turu.models.OptionView
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * Game Options' copy of the tab on screen (`turu_frontend::models::game_options`), read only while
@@ -115,10 +115,10 @@ class GameOptionsPanel {
         ).also { it.start() }
     }
 
-    private fun act(action: String, body: JSONObject = JSONObject(), done: (String?) -> Unit = {}) {
+    private fun act(action: GameOptionsAct, done: (String?) -> Unit = {}) {
         error = null
         val client = client ?: return done("The tab isn't up yet")
-        client.act("game-options", action, body) { failed ->
+        client.act("game-options", action, GameOptionsAct.JsonSerializer) { failed ->
             error = failed
             done(failed)
         }
@@ -131,7 +131,7 @@ class GameOptionsPanel {
             return
         }
         if (option.label !in edited) edited.add(option.label)
-        act("set", JSONObject().put("label", option.label).put("value", value))
+        act(GameOptionsAct.set(option.label, optionValue(value)))
     }
 
     /** The warning's answer: [confirmed] turns the option off, otherwise it stays on. */
@@ -140,19 +140,19 @@ class GameOptionsPanel {
         askOff = null
         if (confirmed) {
             if (option.label !in edited) edited.add(option.label)
-            act("set", JSONObject().put("label", option.label).put("value", false))
+            act(GameOptionsAct.set(option.label, OptionValue.switch(false)))
         }
     }
 
-    fun reload(option: OptionView) = act("set", JSONObject().put("label", option.label).put("value", JSONObject.NULL))
+    fun reload(option: OptionView) = act(GameOptionsAct.set(option.label, OptionValue.none))
 
-    fun save() = act("save") { if (it == null) { edited.clear(); saved = true } }
+    fun save() = act(GameOptionsAct.save) { if (it == null) { edited.clear(); saved = true } }
 
-    fun revert() = act("revert") { if (it == null) edited.clear() }
+    fun revert() = act(GameOptionsAct.revert) { if (it == null) edited.clear() }
 
     fun reset() {
         view?.options?.filter { it.differs }?.forEach { if (it.label !in edited) edited.add(it.label) }
-        act("reset")
+        act(GameOptionsAct.reset)
     }
 }
 
@@ -179,6 +179,14 @@ fun PublicRoomsDialog(onConfirm: () -> Unit, onKeep: () -> Unit, onDismiss: () -
         dismissButton = { TextButton(onClick = onKeep) { Text("Keep private") } },
         containerColor = Turu.Card,
     )
+}
+
+/** What an option's editor gives (a switch's Boolean, a number, a text or a choice's key), to set. */
+internal fun optionValue(value: Any?): OptionValue = when (value) {
+    is Boolean -> OptionValue.switch(value)
+    is Number -> OptionValue.number(value.toLong())
+    null -> OptionValue.none
+    else -> OptionValue.text(value.toString())
 }
 
 private fun OptionValue.bool() = (this as? OptionValue.switch)?.value ?: false

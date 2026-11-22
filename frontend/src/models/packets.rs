@@ -14,7 +14,7 @@
 
 use super::Control;
 use super::tab_state::{PerTab, lock};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value as Json, json};
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
@@ -23,14 +23,7 @@ use turu_bot::Bot;
 use turu_bot::packet_filters::{self, LOGGER_FILTERS};
 
 /// The filter flyout's ticks in an action's body (`shown`: one bool a filter).
-fn ticks(body: &Json, len: usize) -> Result<Vec<bool>, String> {
-    let shown: Vec<bool> = body
-        .get("shown")
-        .and_then(Json::as_array)
-        .ok_or("shown is missing")?
-        .iter()
-        .map(|v| v.as_bool().unwrap_or(true))
-        .collect();
+fn ticks(shown: Vec<bool>, len: usize) -> Result<Vec<bool>, String> {
     if shown.len() != len {
         return Err(format!("{len} filters, not {}", shown.len()));
     }
@@ -46,19 +39,6 @@ pub struct Cleared {
 }
 
 pub static CLEARED: PerTab<Cleared> = PerTab::new();
-
-fn flag(body: &Json, key: &str) -> Result<bool, String> {
-    body.get(key)
-        .and_then(Json::as_bool)
-        .ok_or_else(|| format!("{key} is missing"))
-}
-
-fn text(body: &Json, key: &str) -> Result<String, String> {
-    body.get(key)
-        .and_then(Json::as_str)
-        .map(str::to_owned)
-        .ok_or_else(|| format!("{key} is missing"))
-}
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
@@ -100,26 +80,44 @@ pub fn logger_view(bot: &Arc<Bot>) -> PacketLoggerView {
     }
 }
 
-/// `POST /models/packet-logger/do`: `logging` (`on`), `filters` (`shown`: a filter that's off
-/// drops the packets it takes from then on), `clear` and `undo-clear` (puts the cleared lines back
-/// before those logged since).
-pub fn logger_act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
-    match action {
-        "logging" => bot.logs.packet_logging.store(flag(body, "on")?, Ordering::Relaxed),
-        "filters" => {
-            let hidden = ticks(body, LOGGER_FILTERS.len())?
+/// The Packet Logger's actions (`POST /models/packet-logger/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum PacketLoggerAct {
+    Logging {
+        on: bool,
+    },
+    /// Each filter's tick, in order: a filter that's off drops the packets it takes from then on.
+    Filters {
+        shown: Vec<bool>,
+    },
+    Clear,
+    /// Puts the cleared lines back before those logged since.
+    UndoClear,
+}
+
+pub fn logger_act(bot: &Arc<Bot>, act: PacketLoggerAct) -> Result<(), String> {
+    match act {
+        PacketLoggerAct::Logging { on } => bot.logs.packet_logging.store(on, Ordering::Relaxed),
+        PacketLoggerAct::Filters { shown } => {
+            let hidden = ticks(shown, LOGGER_FILTERS.len())?
                 .iter()
                 .enumerate()
                 .filter(|(_, on)| !**on)
                 .fold(0u32, |mask, (i, _)| mask | 1 << i);
             bot.logs.packet_hidden.store(hidden, Ordering::Relaxed);
         }
-        "clear" => lock(&CLEARED.of(bot)).log = Some(bot.logs.packets.take()),
-        "undo-clear" => {
+        PacketLoggerAct::Clear => lock(&CLEARED.of(bot)).log = Some(bot.logs.packets.take()),
+        PacketLoggerAct::UndoClear => {
             let lines = lock(&CLEARED.of(bot)).log.take().ok_or("Nothing to put back")?;
             bot.logs.packets.restore(lines);
         }
-        other => return Err(format!("no action {other}")),
     }
     Ok(())
 }
@@ -157,57 +155,85 @@ pub fn spammer_view(bot: &Arc<Bot>) -> SpammerView {
     }
 }
 
-/// `POST /models/spammer/do`: `start`, `stop`, `delay` (`ms`), `to-client` (`on`), `add`
-/// (`packet`), `send` (`packet`: once, now), `remove` (`index` and its `packet`, so a queue
-/// changed meanwhile isn't cut in the wrong place), `clear` and `undo-clear` (the cleared queue
-/// back before what was added since).
-pub fn spammer_act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
+/// The Spammer's actions (`POST /models/spammer/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum SpammerAct {
+    Start,
+    Stop,
+    /// The delay between packets, at most 10 minutes.
+    Delay {
+        ms: u64,
+    },
+    ToClient {
+        on: bool,
+    },
+    /// Adds `packet` to the queue.
+    Add {
+        packet: String,
+    },
+    /// Sends `packet` once, now.
+    Send {
+        packet: String,
+    },
+    /// Removes the queue's row at `position`, which must still be `packet` (a queue changed
+    /// meanwhile isn't cut in the wrong place).
+    Remove {
+        position: u32,
+        packet: String,
+    },
+    Clear,
+    /// The cleared queue back, before what was added since.
+    UndoClear,
+}
+
+pub fn spammer_act(bot: &Arc<Bot>, act: SpammerAct) -> Result<(), String> {
     let spammer = &bot.spammer;
-    match action {
-        "start" => {
+    match act {
+        SpammerAct::Start => {
             if spammer.packets.lock().is_empty() {
                 return Err("Add packets to the queue first".into());
             }
             spammer.start(bot);
         }
-        "stop" => spammer.stop(),
-        "delay" => {
-            let ms = body.get("ms").and_then(Json::as_u64).ok_or("ms is missing")?;
-            spammer.set_delay_ms(ms.min(600_000));
-        }
-        "to-client" => spammer.set_to_client(flag(body, "on")?),
-        "add" => {
-            if !spammer.add(&text(body, "packet")?) {
+        SpammerAct::Stop => spammer.stop(),
+        SpammerAct::Delay { ms } => spammer.set_delay_ms(ms.min(600_000)),
+        SpammerAct::ToClient { on } => spammer.set_to_client(on),
+        SpammerAct::Add { packet } => {
+            if !spammer.add(&packet) {
                 return Err("Type a packet first".into());
             }
         }
-        "send" => {
-            let packet = text(body, "packet")?;
+        SpammerAct::Send { packet } => {
             if packet.trim().is_empty() {
                 return Err("Type a packet first".into());
             }
             crate::turu::spawn_action_for(bot.clone(), "Spammer", move |bot| bot.spammer.send(bot, &packet));
         }
-        "remove" => {
-            let index = body.get("index").and_then(Json::as_u64).ok_or("index is missing")? as usize;
-            let packet = text(body, "packet")?;
+        SpammerAct::Remove { position, packet } => {
+            let position = position as usize;
             let mut queue = spammer.packets.lock();
-            if queue.get(index) != Some(&packet) {
+            if queue.get(position) != Some(&packet) {
                 return Err("The queue changed: try again".into());
             }
-            queue.remove(index);
+            queue.remove(position);
         }
-        "clear" => {
+        SpammerAct::Clear => {
             let queue = std::mem::take(&mut *spammer.packets.lock());
             lock(&CLEARED.of(bot)).queue = Some(queue);
         }
-        "undo-clear" => {
+        SpammerAct::UndoClear => {
             let mut earlier = lock(&CLEARED.of(bot)).queue.take().ok_or("Nothing to put back")?;
             let mut queue = spammer.packets.lock();
             earlier.append(&mut queue);
             *queue = earlier;
         }
-        other => return Err(format!("no action {other}")),
     }
     Ok(())
 }
@@ -332,25 +358,60 @@ pub fn interceptor_view(bot: &Arc<Bot>) -> InterceptorView {
     }
 }
 
-/// `POST /models/interceptor/do`: `server` (`name`, empty for the current one), `refresh-servers`,
-/// `connect` (relogging on the chosen server), `disconnect`, `logging` (`on`), `search` (`text`),
-/// `filters` (`shown`), `select` (`number`, `on`), `unselect`, `clear`, `undo-clear` and `copy` (answers `text`:
-/// the selected packets, or every shown one).
-pub fn interceptor_act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json, String> {
+/// The Interceptor's actions (`POST /models/interceptor/do`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum InterceptorAct {
+    /// The server to connect to; empty for the current one.
+    Server {
+        name: String,
+    },
+    RefreshServers,
+    /// Starts capturing, relogging on the chosen server.
+    Connect,
+    Disconnect,
+    Logging {
+        on: bool,
+    },
+    Search {
+        text: String,
+    },
+    /// Each filter's tick, in order.
+    Filters {
+        shown: Vec<bool>,
+    },
+    /// Selects or unselects the packet numbered `number`.
+    Select {
+        number: u64,
+        on: bool,
+    },
+    Unselect,
+    Clear,
+    UndoClear,
+    /// Answers `text`: the selected packets, or every shown one.
+    Copy,
+}
+
+pub fn interceptor_act(bot: &Arc<Bot>, act: InterceptorAct) -> Result<Json, String> {
     let state = INTERCEPTOR.of(bot);
     let capture = &bot.capture;
-    match action {
-        "server" => {
-            let name = text(body, "name")?;
+    match act {
+        InterceptorAct::Server { name } => {
             lock(&state).server = (!name.trim().is_empty()).then_some(name);
         }
-        "refresh-servers" => {
+        InterceptorAct::RefreshServers => {
             crate::turu::spawn_action_for(bot.clone(), "Servers", |bot| {
                 turu_bot::api::servers::get_servers(bot, true);
                 Ok(())
             });
         }
-        "connect" => {
+        InterceptorAct::Connect => {
             capture.start();
             if let Some(server) = lock(&state).server.clone() {
                 crate::turu::spawn_action_for(bot.clone(), "Interceptor", move |bot| {
@@ -359,33 +420,32 @@ pub fn interceptor_act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json
                 });
             }
         }
-        "disconnect" => capture.stop(),
-        "logging" => capture.set_logging(flag(body, "on")?),
-        "search" => lock(&state).search = text(body, "text")?,
-        "filters" => {
-            let shown = ticks(body, packet_filters::interceptor_filters().len())?;
+        InterceptorAct::Disconnect => capture.stop(),
+        InterceptorAct::Logging { on } => capture.set_logging(on),
+        InterceptorAct::Search { text } => lock(&state).search = text,
+        InterceptorAct::Filters { shown } => {
+            let shown = ticks(shown, packet_filters::interceptor_filters().len())?;
             lock(&state).filters = shown;
         }
-        "select" => {
-            let n = body.get("number").and_then(Json::as_u64).ok_or("number is missing")?;
+        InterceptorAct::Select { number, on } => {
             let mut s = lock(&state);
-            if flag(body, "on")? {
-                s.selected.insert(n);
+            if on {
+                s.selected.insert(number);
             } else {
-                s.selected.remove(&n);
+                s.selected.remove(&number);
             }
         }
-        "unselect" => lock(&state).selected.clear(),
-        "clear" => {
+        InterceptorAct::Unselect => lock(&state).selected.clear(),
+        InterceptorAct::Clear => {
             let packets = capture.take();
             lock(&CLEARED.of(bot)).capture = Some(packets);
             lock(&state).selected.clear();
         }
-        "undo-clear" => {
+        InterceptorAct::UndoClear => {
             let packets = lock(&CLEARED.of(bot)).capture.take().ok_or("Nothing to put back")?;
             capture.restore(packets);
         }
-        "copy" => {
+        InterceptorAct::Copy => {
             let rows = shown(bot);
             let selected = lock(&state).selected.clone();
             let picked: Vec<&str> = rows
@@ -403,7 +463,6 @@ pub fn interceptor_act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json
             };
             return Ok(json!({ "text": text }));
         }
-        other => return Err(format!("no action {other}")),
     }
     Ok(json!({}))
 }
@@ -412,37 +471,46 @@ pub fn interceptor_act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json
 mod tests {
     use super::*;
 
+    fn add(packet: &str) -> SpammerAct {
+        SpammerAct::Add { packet: packet.into() }
+    }
+
+    fn remove(packet: &str) -> SpammerAct {
+        SpammerAct::Remove {
+            position: 0,
+            packet: packet.into(),
+        }
+    }
+
     #[test]
     fn logger_filters_and_spammer_queue() {
         let bot = Bot::new();
         let mut shown = vec![true; LOGGER_FILTERS.len()];
         shown[1] = false;
-        logger_act(&bot, "filters", &json!({ "shown": shown })).unwrap();
+        logger_act(&bot, PacketLoggerAct::Filters { shown }).unwrap();
         let v = logger_view(&bot);
         assert!(!v.filters[1].shown && v.filters[0].shown);
-        assert!(logger_act(&bot, "filters", &json!({ "shown": [true] })).is_err());
+        assert!(logger_act(&bot, PacketLoggerAct::Filters { shown: vec![true] }).is_err());
 
-        assert!(spammer_act(&bot, "start", &Json::Null).is_err());
-        spammer_act(&bot, "add", &json!({ "packet": "%xt%zm%moveToCell%1%Enter%Spawn%" })).unwrap();
-        spammer_act(&bot, "add", &json!({ "packet": "%xt%zm%afk%1%false%" })).unwrap();
+        assert!(spammer_act(&bot, SpammerAct::Start).is_err());
+        spammer_act(&bot, add("%xt%zm%moveToCell%1%Enter%Spawn%")).unwrap();
+        spammer_act(&bot, add("%xt%zm%afk%1%false%")).unwrap();
         let v = spammer_view(&bot);
         assert_eq!((v.packets.len(), v.start.enabled, v.sending), (2, true, -1));
-        assert!(spammer_act(&bot, "remove", &json!({ "index": 0, "packet": "nope" })).is_err());
-        spammer_act(
-            &bot,
-            "remove",
-            &json!({ "index": 0, "packet": "%xt%zm%moveToCell%1%Enter%Spawn%" }),
-        )
-        .unwrap();
+        assert!(spammer_act(&bot, remove("nope")).is_err());
+        spammer_act(&bot, remove("%xt%zm%moveToCell%1%Enter%Spawn%")).unwrap();
         assert_eq!(spammer_view(&bot).packets, ["%xt%zm%afk%1%false%"]);
-        spammer_act(&bot, "delay", &json!({ "ms": 999_999 })).unwrap();
+        spammer_act(&bot, SpammerAct::Delay { ms: 999_999 }).unwrap();
         assert_eq!(spammer_view(&bot).delay_ms, 600_000);
         // Clear, add one, Undo: the cleared queue comes back first.
-        spammer_act(&bot, "clear", &Json::Null).unwrap();
-        spammer_act(&bot, "add", &json!({ "packet": "%xt%zm%afk%1%true%" })).unwrap();
-        spammer_act(&bot, "undo-clear", &Json::Null).unwrap();
-        assert_eq!(spammer_view(&bot).packets, ["%xt%zm%afk%1%false%", "%xt%zm%afk%1%true%"]);
-        assert!(spammer_act(&bot, "undo-clear", &Json::Null).is_err());
+        spammer_act(&bot, SpammerAct::Clear).unwrap();
+        spammer_act(&bot, add("%xt%zm%afk%1%true%")).unwrap();
+        spammer_act(&bot, SpammerAct::UndoClear).unwrap();
+        assert_eq!(
+            spammer_view(&bot).packets,
+            ["%xt%zm%afk%1%false%", "%xt%zm%afk%1%true%"]
+        );
+        assert!(spammer_act(&bot, SpammerAct::UndoClear).is_err());
     }
 
     #[test]
@@ -450,12 +518,12 @@ mod tests {
         let bot = Bot::new();
         let v = interceptor_view(&bot);
         assert_eq!((v.matches, v.rows.len(), v.server.as_str()), (0, 0, ""));
-        interceptor_act(&bot, "server", &json!({ "name": "Yorumi" })).unwrap();
-        interceptor_act(&bot, "search", &json!({ "text": "afk" })).unwrap();
+        interceptor_act(&bot, InterceptorAct::Server { name: "Yorumi".into() }).unwrap();
+        interceptor_act(&bot, InterceptorAct::Search { text: "afk".into() }).unwrap();
         let v = interceptor_view(&bot);
         assert_eq!((v.server.as_str(), v.search.as_str()), ("Yorumi", "afk"));
-        let copied = interceptor_act(&bot, "copy", &Json::Null).unwrap();
+        let copied = interceptor_act(&bot, InterceptorAct::Copy).unwrap();
         assert_eq!(copied, json!({ "text": "" }));
-        assert!(interceptor_act(&bot, "filters", &json!({ "shown": [] })).is_err());
+        assert!(interceptor_act(&bot, InterceptorAct::Filters { shown: vec![] }).is_err());
     }
 }

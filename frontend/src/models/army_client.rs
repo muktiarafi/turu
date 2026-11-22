@@ -8,7 +8,7 @@
 
 use super::army::{self, Peer};
 use super::tab_state::lock;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value as Json, json};
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
@@ -87,12 +87,7 @@ pub fn ago(at_ms: u64) -> String {
 }
 
 /// The row `key` names, as a peer.
-fn peer(body: &Json) -> Result<(String, Peer), String> {
-    let key = body
-        .get("key")
-        .and_then(Json::as_str)
-        .ok_or("key is missing")?
-        .to_owned();
+fn peer(key: String) -> Result<(String, Peer), String> {
     let rows = army::rows();
     let row = rows.iter().find(|r| r.key == key).ok_or("That client is gone")?;
     Ok((key, row.peer.clone()))
@@ -178,44 +173,70 @@ fn run(key: String, peer: Peer, action: String, command: Command) -> Result<(), 
     spawned.map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// The control API's actions (`POST /models/army-client/do`, each with the row's `key`): `gear`
-/// (answers its [`ArmyGearView`]), `refresh`, `equip` (`item`: its ID, `name`, `stop`: stop the script
-/// first) and `logs` (`kind`: script or debug, `since`: answers `lines` and `next`).
-pub fn act(action: &str, body: &Json) -> Result<Json, String> {
-    let (key, peer) = peer(body)?;
-    match action {
-        "gear" => serde_json::to_value(gear_view(&key, &peer)).map_err(|e| e.to_string()),
-        "refresh" => {
+/// An Army client's actions (`POST /models/army-client/do`), each on the row whose key is `key`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum ArmyClientAct {
+    /// Answers its [`ArmyGearView`].
+    Gear {
+        key: String,
+    },
+    Refresh {
+        key: String,
+    },
+    /// Equips the item `item` (its ID; `name` for the outcome), stopping the script first when
+    /// `stop`.
+    Equip {
+        key: String,
+        item: i64,
+        name: Option<String>,
+        stop: bool,
+    },
+    /// Its log of `kind` ("script", or "debug") from line `since`: answers `lines` and `next`.
+    Logs {
+        key: String,
+        kind: String,
+        since: u64,
+    },
+}
+
+pub fn act(act: ArmyClientAct) -> Result<Json, String> {
+    match act {
+        ArmyClientAct::Gear { key } => {
+            let (key, peer) = peer(key)?;
+            serde_json::to_value(gear_view(&key, &peer)).map_err(|e| e.to_string())
+        }
+        ArmyClientAct::Refresh { key } => {
+            let (key, peer) = peer(key)?;
             if !peer.online() {
                 return Err("The account isn't online".into());
             }
             run(key, peer, "Refresh".into(), Command::RefreshGear).map(|()| json!({}))
         }
-        "equip" => {
-            let item = body.get("item").and_then(Json::as_i64).ok_or("item is missing")?;
-            let stop = body.get("stop").and_then(Json::as_bool).unwrap_or(false);
+        ArmyClientAct::Equip { key, item, name, stop } => {
+            let (key, peer) = peer(key)?;
             if !peer.online() {
                 return Err("The account isn't online".into());
             }
             if peer.running_script().is_some() && !stop {
                 return Err("A script is running: stop it first".into());
             }
-            let name = body
-                .get("name")
-                .and_then(Json::as_str)
-                .map_or_else(|| item.to_string(), str::to_owned);
+            let name = name.unwrap_or_else(|| item.to_string());
             let command = Command::Equip {
                 item: item.to_string(),
                 stop,
             };
             run(key, peer, format!("Equip {name}"), command).map(|()| json!({}))
         }
-        "logs" => {
-            let kind = match body.get("kind").and_then(Json::as_str) {
-                Some("debug") => "debug",
-                _ => "script",
-            };
-            let since = body.get("since").and_then(Json::as_u64).unwrap_or(0);
+        ArmyClientAct::Logs { key, kind, since } => {
+            let (_, peer) = peer(key)?;
+            let kind = if kind == "debug" { "debug" } else { "script" };
             let reply = peer.get(&format!("/log?type={kind}&since={since}"))?;
             let lines: Vec<&str> = reply["lines"]
                 .as_array()
@@ -225,7 +246,6 @@ pub fn act(action: &str, body: &Json) -> Result<Json, String> {
                 .collect();
             Ok(json!({ "lines": lines, "next": reply["next"].as_u64().unwrap_or(since) }))
         }
-        other => Err(format!("no action {other}")),
     }
 }
 
@@ -235,9 +255,11 @@ mod tests {
 
     #[test]
     fn a_gone_client_is_refused() {
-        assert_eq!(act("gear", &json!({})), Err("key is missing".into()));
+        assert!(serde_json::from_value::<ArmyClientAct>(json!({ "action": "gear" })).is_err());
         assert_eq!(
-            act("gear", &json!({ "key": "questwalker-gone" })),
+            act(ArmyClientAct::Gear {
+                key: "questwalker-gone".into()
+            }),
             Err("That client is gone".into())
         );
         assert_eq!(

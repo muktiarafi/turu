@@ -78,11 +78,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.JunkAct
 import com.muktiarafi.turu.models.JunkRowView
 import com.muktiarafi.turu.models.JunkView
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * Junk Items' copy of the tab on screen (`turu_frontend::models::junk`), read while the page shows.
@@ -123,13 +123,13 @@ class JunkPanel {
             onLog = { _, _, _ -> },
         ).also { it.start() }
         // VibeSkua refreshes the list when the window is shown.
-        if (opened) act("refresh")
+        if (opened) act(JunkAct.refresh)
     }
 
-    fun act(action: String, body: JSONObject = JSONObject(), done: () -> Unit = {}) {
+    fun act(action: JunkAct, done: () -> Unit = {}) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("junk", "do", body.put("action", action)) { e ->
+        client.act("junk", action, JunkAct.JsonSerializer) { e ->
             error = e
             if (e == null) done()
         }
@@ -140,7 +140,7 @@ class JunkPanel {
     fun toggle(row: JunkRowView) {
         val on = !checked(row)
         pending[key(row)] = on
-        act("select", JSONObject().put("id", row.id).put("category", row.category).put("on", on))
+        act(JunkAct.select(row.id, row.category, on))
     }
 
     private fun key(row: JunkRowView) = "${row.id}:${row.category}"
@@ -173,7 +173,7 @@ fun JunkPage(state: ShellState, panel: JunkPanel, fullWindow: () -> Unit) {
                     enabled = canSell,
                     onClick = {
                         close()
-                        if (view?.skipWarning == true) panel.act("sell-all") else ask = JunkAsk.SellAll
+                        if (view?.skipWarning == true) panel.act(JunkAct.sell_all) else ask = JunkAsk.SellAll
                     },
                 )
                 DropdownMenuItem(
@@ -188,7 +188,7 @@ fun JunkPage(state: ShellState, panel: JunkPanel, fullWindow: () -> Unit) {
                     onClick = {
                         close()
                         // Turning it on asks first (VibeSkua `OnSkipSellWarningChanged`).
-                        if (view?.skipWarning == true) panel.act("skip-warning", JSONObject().put("on", false)) else ask = JunkAsk.SkipWarning
+                        if (view?.skipWarning == true) panel.act(JunkAct.skip_warning(false)) else ask = JunkAsk.SkipWarning
                     },
                 )
                 HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
@@ -207,7 +207,7 @@ fun JunkPage(state: ShellState, panel: JunkPanel, fullWindow: () -> Unit) {
         LaunchedEffect(search) {
             if (search != view.search) {
                 delay(300)
-                panel.act("filter", JSONObject().put("search", search))
+                panel.act(JunkAct.filter(search = search))
             }
         }
         val list = rememberLazyListState()
@@ -238,7 +238,7 @@ fun JunkPage(state: ShellState, panel: JunkPanel, fullWindow: () -> Unit) {
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         modifier = Modifier.weight(1f),
                     )
-                    IconButton(onClick = { panel.act("refresh") }, enabled = !view.busy) {
+                    IconButton(onClick = { panel.act(JunkAct.refresh) }, enabled = !view.busy) {
                         Icon(Icons.Rounded.Refresh, contentDescription = "Read the inventory and bank again", tint = Turu.Muted)
                     }
                 }
@@ -270,10 +270,10 @@ fun JunkPage(state: ShellState, panel: JunkPanel, fullWindow: () -> Unit) {
                             color = Turu.Muted,
                             modifier = Modifier.weight(1f).padding(start = 8.dp),
                         )
-                        IconButton(onClick = { panel.act("page", JSONObject().put("page", (view.page - 1u).toLong())) }, enabled = view.page > 0u) {
+                        IconButton(onClick = { panel.act(JunkAct.page(view.page - 1u)) }, enabled = view.page > 0u) {
                             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = "Previous page")
                         }
-                        IconButton(onClick = { panel.act("page", JSONObject().put("page", (view.page + 1u).toLong())) }, enabled = view.page + 1u < view.pages) {
+                        IconButton(onClick = { panel.act(JunkAct.page(view.page + 1u)) }, enabled = view.page + 1u < view.pages) {
                             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "Next page")
                         }
                     }
@@ -288,7 +288,7 @@ fun JunkPage(state: ShellState, panel: JunkPanel, fullWindow: () -> Unit) {
                 view,
                 panel,
                 goal = { goal = true },
-                sell = { what -> if (view.skipWarning) panel.act(if (what == JunkAsk.SellAll) "sell-all" else "sell-selected") else ask = what },
+                sell = { what -> if (view.skipWarning) panel.act(if (what == JunkAsk.SellAll) JunkAct.sell_all else JunkAct.sell_selected) else ask = what },
             )
         }
     }
@@ -305,9 +305,9 @@ private fun JunkFilters(view: JunkView, panel: JunkPanel) {
         Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        JunkChoice("Category", view.category, view.categories) { panel.act("filter", JSONObject().put("category", it)) }
-        JunkChoice("AC", view.ac, view.acs) { panel.act("filter", JSONObject().put("ac", it)) }
-        JunkChoice("Highlight", view.highlight, view.highlights) { panel.act("filter", JSONObject().put("highlight", it)) }
+        JunkChoice("Category", view.category, view.categories) { panel.act(JunkAct.filter(category = it)) }
+        JunkChoice("AC", view.ac, view.acs) { panel.act(JunkAct.filter(ac = it)) }
+        JunkChoice("Highlight", view.highlight, view.highlights) { panel.act(JunkAct.filter(highlight = it)) }
     }
 }
 
@@ -368,7 +368,7 @@ private fun JunkSelectAll(view: JunkView, panel: JunkPanel) {
         TriStateCheckbox(
             state = box,
             enabled = view.matches > 0u,
-            onClick = { panel.act("select-shown", JSONObject().put("on", box == ToggleableState.Off)) },
+            onClick = { panel.act(JunkAct.select_shown(box == ToggleableState.Off)) },
         )
         val shown = if (view.matches == view.total) "${view.total} items" else "${view.matches} of ${view.total} shown"
         Text(
@@ -495,8 +495,8 @@ private fun JunkFoot(view: JunkView, panel: JunkPanel, goal: () -> Unit, sell: (
                     Modifier.widthIn(min = width).padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 ) {
-                    OutlinedButton(onClick = { panel.act("mark") }, contentPadding = tight, modifier = Modifier.heightIn(min = 48.dp)) { Text("Mark as junk", maxLines = 1) }
-                    OutlinedButton(onClick = { panel.act("unmark") }, contentPadding = tight, modifier = Modifier.heightIn(min = 48.dp)) { Text("Unmark", maxLines = 1) }
+                    OutlinedButton(onClick = { panel.act(JunkAct.mark) }, contentPadding = tight, modifier = Modifier.heightIn(min = 48.dp)) { Text("Mark as junk", maxLines = 1) }
+                    OutlinedButton(onClick = { panel.act(JunkAct.unmark) }, contentPadding = tight, modifier = Modifier.heightIn(min = 48.dp)) { Text("Unmark", maxLines = 1) }
                     OutlinedButton(onClick = goal, contentPadding = tight, modifier = Modifier.heightIn(min = 48.dp)) { Text("Goal…", maxLines = 1) }
                     OutlinedButton(
                         onClick = { sell(JunkAsk.SellSelected) },
@@ -555,10 +555,10 @@ private fun JunkConfirm(ask: JunkAsk, view: JunkView, panel: JunkPanel, close: (
             TextButton(onClick = {
                 close()
                 when (ask) {
-                    JunkAsk.SellSelected -> panel.act("sell-selected")
-                    JunkAsk.SellAll -> panel.act("sell-all")
-                    JunkAsk.SkipWarning -> panel.act("skip-warning", JSONObject().put("on", true))
-                    JunkAsk.UnmarkAll -> panel.act("unmark-all")
+                    JunkAsk.SellSelected -> panel.act(JunkAct.sell_selected)
+                    JunkAsk.SellAll -> panel.act(JunkAct.sell_all)
+                    JunkAsk.SkipWarning -> panel.act(JunkAct.skip_warning(true))
+                    JunkAsk.UnmarkAll -> panel.act(JunkAct.unmark_all)
                 }
             }) { Text(yes, color = if (ask == JunkAsk.SkipWarning) Turu.Accent else Turu.Danger) }
         },
@@ -576,7 +576,7 @@ private fun JunkGoalBar(view: JunkView, panel: JunkPanel, close: () -> Unit) {
     LaunchedEffect(Unit) { focus.requestFocus() }
     val set = {
         if (text.toIntOrNull()?.takeIf { it > 0 } == null) wrong = true
-        else panel.act("goal", JSONObject().put("input", text)) { close() }
+        else panel.act(JunkAct.goal(text)) { close() }
     }
     val items = if (view.selected == 1u) "1 item" else "${view.selected} items"
     HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
@@ -595,7 +595,7 @@ private fun JunkGoalBar(view: JunkView, panel: JunkPanel, close: () -> Unit) {
         )
         Spacer(Modifier.width(8.dp))
         Button(onClick = { set() }, enabled = text.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp)) { Text("Set") }
-        TextButton(onClick = { panel.act("clear-goal") { close() } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Clear", color = Turu.Danger) }
+        TextButton(onClick = { panel.act(JunkAct.clear_goal) { close() } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Clear", color = Turu.Danger) }
         IconButton(onClick = close) { Icon(Icons.Rounded.Close, contentDescription = "Close the goal", tint = Turu.Muted) }
     }
 }

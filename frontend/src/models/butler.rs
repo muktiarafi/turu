@@ -10,7 +10,7 @@ use super::Control;
 use super::form::{KindView, OptionValue, OptionView, SectionView};
 use super::scheduler::{Note, Tint};
 use super::tab_state::{PerTab, lock};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value as Json, json};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -797,16 +797,46 @@ pub fn view(bot: &Arc<Bot>) -> ButlerView {
     }
 }
 
-/// `follow`, `summon`, `release` (`name`), `stop-follow`, `release-all`, `summon-all`, `send`
-/// (`player`), `set` (`label`, `value`), `clear-log`, `save-log`, `copy-log` (answers `text`),
-/// `dismiss` (the message).
-pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json, String> {
-    let text = |key: &str| {
-        body.get(key)
-            .and_then(Json::as_str)
-            .map(str::to_owned)
-            .ok_or_else(|| format!("{key} is missing"))
-    };
+/// Butler's actions (`POST /models/butler/do`); `name` is an account's.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum ButlerAct {
+    Follow {
+        name: String,
+    },
+    Summon {
+        name: String,
+    },
+    Release {
+        name: String,
+    },
+    StopFollow,
+    ReleaseAll,
+    SummonAll,
+    /// Sends the account to the player `player`.
+    Send {
+        player: String,
+    },
+    /// Sets and saves the option labelled `label` ([`set`]).
+    Set {
+        label: String,
+        value: OptionValue,
+    },
+    ClearLog,
+    SaveLog,
+    /// Answers the log as `text`.
+    CopyLog,
+    /// Dismisses the message.
+    Dismiss,
+}
+
+pub fn act(bot: &Arc<Bot>, act: ButlerAct) -> Result<Json, String> {
     // Follow on a row as it is now, not as the view a tick ago showed it: `start_follow` checks
     // less than the button (it would switch masters, or follow one that follows you).
     let masks = masks(bot);
@@ -820,9 +850,8 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json, String> {
                 None => format!("{name} isn't online with Butler"),
             })
     };
-    match action {
-        "follow" => {
-            let name = text("name")?;
+    match act {
+        ButlerAct::Follow { name } => {
             let row = row_now(&name)?;
             if !row.follow.enabled {
                 return Err(row.follow.reason);
@@ -832,36 +861,34 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json, String> {
             }
         }
         // Not a toggle: a tap on a view a tick old must not undo itself.
-        "summon" => say(bot, butler::summon(bot, &text("name")?)),
-        "release" => say(bot, butler::release(bot, &text("name")?)),
-        "stop-follow" => {
+        ButlerAct::Summon { name } => say(bot, butler::summon(bot, &name)),
+        ButlerAct::Release { name } => say(bot, butler::release(bot, &name)),
+        ButlerAct::StopFollow => {
             butler::stop_follow(bot);
             say(bot, Ok("Stopped following.".into()));
         }
-        "release-all" => {
+        ButlerAct::ReleaseAll => {
             butler::release_all(bot);
             say(bot, Ok("Released all followers.".into()));
         }
-        "summon-all" => say(bot, butler::summon_all(bot)),
-        "send" => {
-            let player = text("player")?;
+        ButlerAct::SummonAll => say(bot, butler::summon_all(bot)),
+        ButlerAct::Send { player } => {
             if player.trim().is_empty() {
                 return Err("Name the player".into());
             }
             send_to_player(bot, player.trim().to_owned());
         }
-        "set" => set(bot, &text("label")?, body.get("value").ok_or("value is missing")?)?,
-        "clear-log" => bot.butler.clear_log(),
-        "save-log" => say(
+        ButlerAct::Set { label, value } => set(bot, &label, &value.to_json())?,
+        ButlerAct::ClearLog => bot.butler.clear_log(),
+        ButlerAct::SaveLog => say(
             bot,
             bot.butler
                 .save_log()
                 .map(|path| format!("Saved the log to {}", path.display()))
                 .map_err(|e| format!("Couldn't save the log: {e}")),
         ),
-        "copy-log" => return Ok(json!({ "text": bot.butler.log_text() })),
-        "dismiss" => lock(&STATE.of(bot)).message = None,
-        other => return Err(format!("no action {other}")),
+        ButlerAct::CopyLog => return Ok(json!({ "text": bot.butler.log_text() })),
+        ButlerAct::Dismiss => lock(&STATE.of(bot)).message = None,
     }
     // Show the new state now rather than at the next read.
     roster(bot, true);
@@ -876,13 +903,37 @@ mod tests {
     fn release_and_summon_dont_toggle() {
         let bot = Arc::new(Bot::new());
         // Nobody is summoned: Release says so and summons nobody.
-        assert!(act(&bot, "release", &json!({ "name": "Questwalker" })).is_ok());
+        assert!(
+            act(
+                &bot,
+                ButlerAct::Release {
+                    name: "Questwalker".into()
+                }
+            )
+            .is_ok()
+        );
         assert!(bot.butler.followers().is_empty());
         assert_eq!(message(&bot).unwrap().tint, Tint::Danger);
         // Not online: Summon refuses rather than adding a name.
-        assert!(act(&bot, "summon", &json!({ "name": "Questwalker" })).is_ok());
+        assert!(
+            act(
+                &bot,
+                ButlerAct::Summon {
+                    name: "Questwalker".into()
+                }
+            )
+            .is_ok()
+        );
         assert!(bot.butler.followers().is_empty());
-        assert!(act(&bot, "follow", &json!({ "name": "Questwalker" })).is_err());
+        assert!(
+            act(
+                &bot,
+                ButlerAct::Follow {
+                    name: "Questwalker".into()
+                }
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -928,7 +979,10 @@ mod tests {
         assert_eq!(masks.name("Zephyrtest"), "Alt 1");
         assert_eq!(masks.name("hero"), "Tab 1");
         assert_eq!(masks.name("Stranger"), "another account");
-        assert_eq!(masks.text("Following Questwalker (summoned)"), "Following Account 2 (summoned)");
+        assert_eq!(
+            masks.text("Following Questwalker (summoned)"),
+            "Following Account 2 (summoned)"
+        );
         let bot = Bot::new();
         let alt = SyncData {
             username: "Questwalker".into(),
@@ -938,10 +992,16 @@ mod tests {
             ..Default::default()
         };
         let row = account(&bot, &alt, Some(&masks));
-        assert_eq!((row.username.as_str(), row.label.as_str()), ("Questwalker", "Account 2"));
+        assert_eq!(
+            (row.username.as_str(), row.label.as_str()),
+            ("Questwalker", "Account 2")
+        );
         assert!(!row.place.contains("1234"));
         let shown = format!("{:?} {:?} {:?}", row.chips, row.summon, row.follow);
-        assert!(!shown.contains("Questwalker") && !shown.contains("Zephyrtest"), "{shown}");
+        assert!(
+            !shown.contains("Questwalker") && !shown.contains("Zephyrtest"),
+            "{shown}"
+        );
         let plain = account(&bot, &alt, None);
         assert_eq!(plain.label, "Questwalker");
         assert!(plain.place.contains("battleon-1234"));

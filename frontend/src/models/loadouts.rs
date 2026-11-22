@@ -9,8 +9,7 @@
 
 use super::scheduler::{Note, Tint};
 use super::tab_state::{PerTab, lock};
-use serde::Serialize;
-use serde_json::Value as Json;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use turu_bot::Bot;
@@ -614,16 +613,44 @@ pub fn view(bot: &Arc<Bot>) -> LoadoutsView {
     s.view(bot)
 }
 
-/// `open` (read the file and the gear again), `save-current`, `replace` (`name`), `equip` (`name`,
-/// `stop`: stop a running script first), `enhance` (`name`), `rename` (`name`, `to`), `delete`
-/// (`name`), `dismiss` (the note).
-pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
-    let name = || {
-        body.get("name")
-            .and_then(Json::as_str)
-            .map(str::to_owned)
-            .ok_or_else(|| "name is missing".to_owned())
-    };
+/// Loadouts' actions (`POST /models/loadouts/do`); `name` is a loadout's.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum LoadoutsAct {
+    /// Reads the file and the gear again.
+    Open,
+    /// Saves what's worn as a new loadout.
+    SaveCurrent,
+    /// Saves what's worn over the loadout.
+    Replace {
+        name: String,
+    },
+    /// Equips it, stopping a running script first when `stop`.
+    Equip {
+        name: String,
+        stop: bool,
+    },
+    Enhance {
+        name: String,
+    },
+    Rename {
+        name: String,
+        to: String,
+    },
+    Delete {
+        name: String,
+    },
+    /// Dismisses the note.
+    Dismiss,
+}
+
+pub fn act(bot: &Arc<Bot>, act: LoadoutsAct) -> Result<(), String> {
     let state = STATE.of(bot);
     let loadout = |name: &str| {
         let s = lock(&state);
@@ -633,26 +660,23 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<(), String> {
             .cloned()
             .ok_or_else(|| format!("no loadout {name}"))
     };
-    match action {
-        "open" => read_gear(bot),
-        "save-current" => lock(&state).read_worn(bot, WornFor::New),
-        "replace" => lock(&state).read_worn(bot, WornFor::Replace(name()?)),
-        "equip" => {
-            let stop = body.get("stop").and_then(Json::as_bool).unwrap_or(false);
-            let loadout = loadout(&name()?)?;
+    match act {
+        LoadoutsAct::Open => read_gear(bot),
+        LoadoutsAct::SaveCurrent => lock(&state).read_worn(bot, WornFor::New),
+        LoadoutsAct::Replace { name } => lock(&state).read_worn(bot, WornFor::Replace(name)),
+        LoadoutsAct::Equip { name, stop } => {
+            let loadout = loadout(&name)?;
             lock(&state).equip(bot, loadout, stop);
         }
-        "enhance" => {
-            let loadout = loadout(&name()?)?;
+        LoadoutsAct::Enhance { name } => {
+            let loadout = loadout(&name)?;
             lock(&state).enhance(bot, loadout);
         }
-        "rename" => {
-            let to = body.get("to").and_then(Json::as_str).ok_or("to is missing")?;
-            lock(&state).rename(bot, &name()?, to);
+        LoadoutsAct::Rename { name, to } => {
+            lock(&state).rename(bot, &name, &to);
         }
-        "delete" => lock(&state).delete(bot, &name()?),
-        "dismiss" => lock(&state).note = None,
-        other => return Err(format!("no action {other}")),
+        LoadoutsAct::Delete { name } => lock(&state).delete(bot, &name),
+        LoadoutsAct::Dismiss => lock(&state).note = None,
     }
     Ok(())
 }

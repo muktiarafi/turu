@@ -58,9 +58,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.muktiarafi.turu.models.DestinationView
+import com.muktiarafi.turu.models.FastTravelAct
 import com.muktiarafi.turu.models.FastTravelView
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * Fast Travel for the tab on screen (`turu_frontend::models::fast_travel`): the destinations, the
@@ -95,25 +95,24 @@ class FastTravelPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("fast-travel", "do", JSONObject().put("action", "open"))
+            it.act("fast-travel", FastTravelAct.open, FastTravelAct.JsonSerializer)
         }
     }
 
-    fun act(action: String, body: JSONObject = JSONObject()) {
+    fun act(action: FastTravelAct) {
         error = null
-        client?.act("fast-travel", "do", body.put("action", action)) { error = it }
+        client?.act("fast-travel", action, FastTravelAct.JsonSerializer) { error = it }
     }
-
-    /** An action on `dest`, named by its place and its name (the slot refuses one that moved). */
-    fun on(action: String, dest: DestinationView, body: JSONObject = JSONObject()) =
-        act(action, body.put("index", dest.position.toLong()).put("name", dest.name))
 }
 
 /** The form's destination: adding (`editing` null) or editing one. */
 private data class Form(val editing: DestinationView?, val name: String, val map: String, val cell: String, val pad: String) {
     val valid get() = name.isNotBlank() && map.isNotBlank() && cell.isNotBlank() && pad.isNotBlank()
 
-    fun body(): JSONObject = JSONObject().put("name", name.trim()).put("map", map.trim()).put("cell", cell.trim()).put("pad", pad.trim())
+    fun add() = FastTravelAct.add(name.trim(), map.trim(), cell.trim(), pad.trim())
+
+    /** Changes `was`, named by its place and its name (the slot refuses one that moved). */
+    fun edit(was: DestinationView) = FastTravelAct.edit(was.position, was.name, name.trim(), map.trim(), cell.trim(), pad.trim())
 
     companion object {
         /** VibeSkua's new destination: no name, `battleon`, `Enter`, `Spawn`. */
@@ -155,7 +154,7 @@ fun FastTravelPage(state: ShellState, panel: FastTravelPanel, fullWindow: () -> 
                     enabled = view?.destinations?.isNotEmpty() == true,
                     onClick = { close(); clearing = true },
                 )
-                DropdownMenuItem(text = { Text("Read again") }, onClick = { close(); panel.act("open") })
+                DropdownMenuItem(text = { Text("Read again") }, onClick = { close(); panel.act(FastTravelAct.open) })
                 HorizontalDivider(color = Turu.Edge.copy(alpha = 0.5f))
             }
         }
@@ -224,7 +223,7 @@ fun FastTravelPage(state: ShellState, panel: FastTravelPanel, fullWindow: () -> 
             onDismissRequest = { clearing = false },
             title = { Text("Clear Fast Travel?") },
             text = { Text("Every saved destination goes. The defaults don't come back.") },
-            confirmButton = { TextButton(onClick = { clearing = false; panel.act("clear") }) { Text("Clear", color = Turu.Danger) } },
+            confirmButton = { TextButton(onClick = { clearing = false; panel.act(FastTravelAct.clear) }) { Text("Clear", color = Turu.Danger) } },
             dismissButton = { TextButton(onClick = { clearing = false }) { Text("Cancel") } },
             containerColor = Turu.Card,
         )
@@ -243,7 +242,7 @@ private fun PrivateRoom(view: FastTravelView, panel: FastTravelPanel, onFocus: (
             Modifier
                 .weight(1f)
                 .clip(MaterialTheme.shapes.medium)
-                .clickable { panel.act("private", JSONObject().put("on", !view.privateRoom)) }
+                .clickable { panel.act(FastTravelAct.private(on = !view.privateRoom)) }
                 .heightIn(min = 48.dp),
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
         ) {
@@ -258,7 +257,7 @@ private fun PrivateRoom(view: FastTravelView, panel: FastTravelPanel, onFocus: (
             value = text,
             onValueChange = { next ->
                 text = next.filter { it.isDigit() }.take(9)
-                text.toLongOrNull()?.takeIf { it in 1..999_999_999 && it != view.room }?.let { panel.act("private", JSONObject().put("room", it)) }
+                text.toLongOrNull()?.takeIf { it in 1..999_999_999 && it != view.room }?.let { panel.act(FastTravelAct.private(room = it)) }
             },
             enabled = view.privateRoom,
             singleLine = true,
@@ -268,7 +267,7 @@ private fun PrivateRoom(view: FastTravelView, panel: FastTravelPanel, onFocus: (
             modifier = Modifier.width(136.dp).onFocusChanged { onFocus(it.isFocused) },
         )
         Spacer(Modifier.width(12.dp))
-        Switch(checked = view.privateRoom, onCheckedChange = { panel.act("private", JSONObject().put("on", it)) })
+        Switch(checked = view.privateRoom, onCheckedChange = { panel.act(FastTravelAct.private(on = it)) })
     }
 }
 
@@ -282,7 +281,7 @@ private fun DestinationRow(dest: DestinationView, busy: Boolean, panel: FastTrav
             .padding(horizontal = 8.dp, vertical = 2.dp)
             .clip(MaterialTheme.shapes.medium)
             .background(selectionTint(dest.traveling))
-            .clickable(enabled = !busy) { panel.on("travel", dest) }
+            .clickable(enabled = !busy) { panel.act(FastTravelAct.travel(dest.position, dest.name)) }
             .heightIn(min = 56.dp)
             .padding(start = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -302,7 +301,7 @@ private fun DestinationRow(dest: DestinationView, busy: Boolean, panel: FastTrav
             IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "${dest.name}: edit, remove", tint = Turu.Muted) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Turu.Card) {
                 DropdownMenuItem(text = { Text("Edit") }, onClick = { menu = false; onEdit() })
-                DropdownMenuItem(text = { Text("Remove", color = Turu.Danger) }, onClick = { menu = false; panel.on("remove", dest) })
+                DropdownMenuItem(text = { Text("Remove", color = Turu.Danger) }, onClick = { menu = false; panel.act(FastTravelAct.remove(dest.position, dest.name)) })
             }
         }
     }
@@ -327,7 +326,7 @@ private fun FormPage(form: Form, view: FastTravelView, panel: FastTravelPanel, o
     val submit = {
         if (form.valid) {
             val e = form.editing
-            if (e == null) panel.act("add", form.body()) else panel.act("edit", form.body().put("index", e.position.toLong()).put("was", e.name))
+            panel.act(if (e == null) form.add() else form.edit(e))
             onClose()
         }
     }
@@ -360,7 +359,7 @@ private fun FormPage(form: Form, view: FastTravelView, panel: FastTravelPanel, o
                         Picker(label = "Pad", value = form.pad, options = view.pads.map { it to it }, loading = false) { onChange(form.copy(pad = it)) }
                     }
                 }
-                TextButton(onClick = { panel.act("get-current") }, modifier = Modifier.padding(horizontal = 8.dp).heightIn(min = 48.dp)) {
+                TextButton(onClick = { panel.act(FastTravelAct.get_current) }, modifier = Modifier.padding(horizontal = 8.dp).heightIn(min = 48.dp)) {
                     Icon(Icons.Rounded.Place, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Use where I am")

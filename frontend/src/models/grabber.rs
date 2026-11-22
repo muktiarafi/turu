@@ -11,7 +11,7 @@
 
 use super::Control;
 use super::tab_state::{PerTab, Shared, lock};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value as Json, json};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -491,24 +491,73 @@ pub fn copy_text(bot: &Arc<Bot>, kind: GrabKind, targets: &[&Grabbed]) -> Option
     Some(grabber::export_text(kind.title(), targets))
 }
 
-/// The control API's actions (`POST /models/grabber/do`, `action` in the body). Copy answers
-/// `{ "text": ... }`.
-pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json, String> {
+/// Grabber's actions (`POST /models/grabber/do`). `kind` is a list's title ("Inventory"); without
+/// one, the list the page shows. `positions` and `revision` are rows checked in that grab.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "action", rename_all = "kebab-case")
+)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+#[repr(C)]
+pub enum GrabberAct {
+    /// Shows another list (a fresh search and page).
+    Select {
+        kind: Option<String>,
+    },
+    /// Searches the list (back to its first page), and or turns to `page`.
+    Search {
+        search: Option<String>,
+        page: Option<u32>,
+    },
+    /// Shows a row's details, or closes them (none).
+    Detail {
+        position: Option<u32>,
+    },
+    Grab {
+        kind: Option<String>,
+    },
+    /// Runs the list's action labelled `label` on the checked rows.
+    Run {
+        kind: Option<String>,
+        label: String,
+        positions: Vec<u32>,
+        revision: u64,
+    },
+    /// Answers the quantity an action asks for.
+    Quantity {
+        kind: Option<String>,
+        value: Option<String>,
+    },
+    CancelAsk {
+        kind: Option<String>,
+    },
+    Dismiss {
+        kind: Option<String>,
+    },
+    Cancel {
+        kind: Option<String>,
+    },
+    /// The checked rows (or, none checked, every shown row) as text: answers `{ "text": ... }`.
+    Copy {
+        kind: Option<String>,
+        positions: Vec<u32>,
+        revision: u64,
+    },
+}
+
+/// Runs `act`; Copy answers `{ "text": ... }`.
+pub fn act(bot: &Arc<Bot>, act: GrabberAct) -> Result<Json, String> {
     let state = STATE.of(bot);
-    let kind = || match body.get("kind").and_then(Json::as_str) {
-        Some(key) => kind_of(key).ok_or_else(|| format!("no list {key}")),
+    let kind = |key: Option<String>| match key {
+        Some(key) => kind_of(&key).ok_or_else(|| format!("no list {key}")),
         None => Ok(lock(&state).native.kind),
     };
-    let positions = || -> Vec<usize> {
-        body.get("positions")
-            .and_then(Json::as_array)
-            .map(|a| a.iter().filter_map(Json::as_u64).map(|p| p as usize).collect())
-            .unwrap_or_default()
-    };
-    let revision = || body.get("revision").and_then(Json::as_u64).ok_or("revision is missing");
-    match action {
-        "select" => {
-            let kind = kind()?;
+    let positions = |p: Vec<u32>| -> Vec<usize> { p.into_iter().map(|p| p as usize).collect() };
+    match act {
+        GrabberAct::Select { kind: key } => {
+            let kind = kind(key)?;
             let mut s = lock(&state);
             if s.native.kind != kind {
                 s.native.kind = kind;
@@ -517,41 +566,45 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json, String> {
                 s.native.detail = None;
             }
         }
-        "search" => {
+        GrabberAct::Search { search, page } => {
             let mut s = lock(&state);
-            if let Some(search) = body.get("search").and_then(Json::as_str)
+            if let Some(search) = search
                 && search != s.native.search
             {
-                s.native.search = search.to_owned();
+                s.native.search = search;
                 s.native.page = 0;
             }
-            if let Some(page) = body.get("page").and_then(Json::as_u64) {
+            if let Some(page) = page {
                 s.native.page = page as usize;
             }
         }
-        "detail" => lock(&state).native.detail = body.get("position").and_then(Json::as_u64).map(|p| p as usize),
-        "grab" => grab(bot, kind()?),
-        "run" => {
-            let kind = kind()?;
-            let key = body.get("label").and_then(Json::as_str).ok_or("label is missing")?;
-            let action = action_of(kind, key).ok_or_else(|| format!("{} has no {key}", kind.title()))?;
+        GrabberAct::Detail { position } => lock(&state).native.detail = position.map(|p| p as usize),
+        GrabberAct::Grab { kind: key } => grab(bot, kind(key)?),
+        GrabberAct::Run {
+            kind: key,
+            label,
+            positions: picked,
+            revision,
+        } => {
+            let kind = kind(key)?;
+            let action = action_of(kind, &label).ok_or_else(|| format!("{} has no {label}", kind.title()))?;
             if action.fights() && fights_blocked(bot) {
                 return Err("Stop the script, Console snippet or Auto Attack/Hunt first".into());
             }
-            let selected = rows(&state, kind, &positions(), revision()?)?;
+            let selected = rows(&state, kind, &positions(picked), revision)?;
             start(bot, kind, action, selected);
         }
-        "quantity" => answer(
-            bot,
-            kind()?,
-            Some(body.get("value").and_then(Json::as_str).unwrap_or("")),
-        ),
-        "cancel-ask" => answer(bot, kind()?, None),
-        "dismiss" => dismiss(bot, kind()?),
-        "cancel" => cancel(bot, kind()?),
-        "copy" => {
-            let kind = kind()?;
-            let picked = rows(&state, kind, &positions(), revision()?)?;
+        GrabberAct::Quantity { kind: key, value } => answer(bot, kind(key)?, Some(value.as_deref().unwrap_or(""))),
+        GrabberAct::CancelAsk { kind: key } => answer(bot, kind(key)?, None),
+        GrabberAct::Dismiss { kind: key } => dismiss(bot, kind(key)?),
+        GrabberAct::Cancel { kind: key } => cancel(bot, kind(key)?),
+        GrabberAct::Copy {
+            kind: key,
+            positions: picked,
+            revision,
+        } => {
+            let kind = kind(key)?;
+            let picked = rows(&state, kind, &positions(picked), revision)?;
             // None checked: every row the search shows.
             let all: Vec<Grabbed> = if picked.is_empty() {
                 let mut s = lock(&state);
@@ -564,7 +617,6 @@ pub fn act(bot: &Arc<Bot>, action: &str, body: &Json) -> Result<Json, String> {
             let refs: Vec<&Grabbed> = all.iter().collect();
             return Ok(json!({ "text": copy_text(bot, kind, &refs) }));
         }
-        other => return Err(format!("no action {other}")),
     }
     Ok(json!({}))
 }
@@ -583,6 +635,49 @@ mod tests {
         }
     }
 
+    fn run(positions: Vec<u32>, revision: u64) -> GrabberAct {
+        GrabberAct::Run {
+            kind: None,
+            label: "To Inventory".into(),
+            positions,
+            revision,
+        }
+    }
+
+    /// The body a shell sends, as the generated Kotlin writes it (a `null` for an option left out).
+    #[test]
+    fn actions_read_the_shells_json() {
+        let read = |body: Json| serde_json::from_value::<GrabberAct>(body).unwrap();
+        assert_eq!(
+            read(json!({ "action": "cancel-ask", "kind": null })),
+            GrabberAct::CancelAsk { kind: None }
+        );
+        assert_eq!(
+            read(json!({ "action": "search", "search": "x", "page": null })),
+            GrabberAct::Search {
+                search: Some("x".into()),
+                page: None
+            }
+        );
+        // An option may also be left out.
+        assert_eq!(
+            read(json!({ "action": "detail" })),
+            GrabberAct::Detail { position: None }
+        );
+        assert_eq!(
+            read(
+                json!({ "action": "run", "kind": "Inventory", "label": "To Inventory", "positions": [1, 2], "revision": 3 })
+            ),
+            GrabberAct::Run {
+                kind: Some("Inventory".into()),
+                label: "To Inventory".into(),
+                positions: vec![1, 2],
+                revision: 3,
+            }
+        );
+        assert!(serde_json::from_value::<GrabberAct>(json!({ "action": "nope" })).is_err());
+    }
+
     #[test]
     fn the_page_follows_the_list_and_its_search() {
         let bot = Bot::new();
@@ -592,27 +687,37 @@ mod tests {
             ("Shop Items", 0, GrabKind::ALL.len())
         );
         assert_eq!(v.actions.len(), 1);
-        act(&bot, "select", &json!({ "kind": "Inventory" })).unwrap();
-        act(&bot, "search", &json!({ "search": "x" })).unwrap();
+        act(
+            &bot,
+            GrabberAct::Select {
+                kind: Some("Inventory".into()),
+            },
+        )
+        .unwrap();
+        act(
+            &bot,
+            GrabberAct::Search {
+                search: Some("x".into()),
+                page: None,
+            },
+        )
+        .unwrap();
         let v = view(&bot);
         assert_eq!((v.kind.as_str(), v.search.as_str()), ("Inventory", "x"));
         // Another list starts unsearched.
-        act(&bot, "select", &json!({ "kind": "Bank Items" })).unwrap();
-        assert_eq!(view(&bot).search, "");
-        // Rows checked in another revision are refused.
-        let err = act(
-            &bot,
-            "run",
-            &json!({ "label": "To Inventory", "positions": [0], "revision": 9 }),
-        );
-        assert!(err.is_err());
-        // Nothing checked: VibeSkua's "No items found/selected."
         act(
             &bot,
-            "run",
-            &json!({ "label": "To Inventory", "positions": [], "revision": 0 }),
+            GrabberAct::Select {
+                kind: Some("Bank Items".into()),
+            },
         )
         .unwrap();
+        assert_eq!(view(&bot).search, "");
+        // Rows checked in another revision are refused.
+        let err = act(&bot, run(vec![0], 9));
+        assert!(err.is_err());
+        // Nothing checked: VibeSkua's "No items found/selected."
+        act(&bot, run(vec![], 0)).unwrap();
         assert_eq!(view(&bot).message.as_deref(), Some("No items found/selected."));
     }
 }
