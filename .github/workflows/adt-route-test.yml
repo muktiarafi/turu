@@ -127,9 +127,126 @@ jobs:
               print(c.decode(), "in dex:", c in dex)
           PY
 
+      - name: "Linux SDK layout"
+        if: always()
+        run: |
+          cd "$AIR_HOME"
+          find . -path '*android*' -name '*.apk' | head -20
+          ls -la air/android/device/arm8 2>&1 | head || true
+          ls lib/android/lib/resources/captive_runtime 2>&1 | head || true
+
+      # D: the Android SDK at Linux's default location (no -platformsdk).
+      - name: "D: SDK at ~/Android/Sdk"
+        continue-on-error: true
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64" PATH="$JAVA_HOME_17_X64/bin:$PATH"
+          mkdir -p ~/Android && ln -sfn "$ANDROID_HOME" ~/Android/Sdk
+          cd target/air-app
+          : > ~/adt.log
+          AIR_NOANDROIDFLAIR=true "$AIR_HOME/bin/adt" -package -target apk-captive-runtime -arch armv8 \
+            -storetype pkcs12 -keystore dev.p12 -storepass turumasdev "$RUNNER_TEMP/d.apk" app.xml \
+            -extdir ext -C . TuruAirHost.swf turu.swf icons || echo "adt exit $?"
+          cp ~/adt.log "$GITHUB_WORKSPACE/adt-logs/d-default-location.log"
+          grep -n "legacy\|Android Studio\|location passed\|Using gradle\|out of date" ~/adt.log || true
+
+      - name: Keep the build for macOS
+        uses: actions/upload-artifact@v7
+        with:
+          name: air-app
+          path: |
+            target/air-app/app.xml
+            target/air-app/dev.p12
+            target/air-app/ext/
+            target/air-app/icons/
+            target/air-app/res/
+            target/air-app/TuruAirHost.swf
+            target/air-app/turu.swf
+
       - if: always()
         uses: actions/upload-artifact@v7
         with:
           name: adt-logs
+          path: adt-logs/
+          if-no-files-found: warn
+
+  mac:
+    name: ADT route on macOS
+    needs: adt
+    if: always()
+    runs-on: macos-15
+    steps:
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: joshtynjala/setup-adobe-air-action@v2
+        with:
+          air-version: "51.5.1.1"
+          accept-license: true
+      - uses: actions/download-artifact@v7
+        with:
+          name: air-app
+          path: target/air-app
+      - name: Turn on ADT's debug log
+        run: |
+          printf '\nDebugOut=true\nVerboseOut=true\nKeepAndroidStudioOutput=true\n' >> "$AIR_HOME/lib/adt.cfg"
+          mkdir -p adt-logs
+          # build.sh writes the resources' folder into app.xml as an absolute path (Linux's).
+          perl -pi -e "s|<resdir>.*</resdir>|<resdir>$PWD/target/air-app/res</resdir>|" target/air-app/app.xml
+          grep -n resdir target/air-app/app.xml
+          echo "ANDROID_HOME=$ANDROID_HOME"; ls "$ANDROID_HOME" "$ANDROID_HOME/build-tools" "$ANDROID_HOME/platforms" || true
+
+      # B: the same files packaged again, naming the Android SDK.
+      - name: "B: package with -platformsdk"
+        continue-on-error: true
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_ARM64" PATH="$JAVA_HOME_17_ARM64/bin:$PATH"
+          cd target/air-app
+          : > ~/adt.log
+          AIR_NOANDROIDFLAIR=true "$AIR_HOME/bin/adt" -package -target apk-captive-runtime -arch armv8 \
+            -storetype pkcs12 -keystore dev.p12 -storepass turumasdev "$RUNNER_TEMP/b.apk" app.xml \
+            -platformsdk "$ANDROID_HOME" -extdir ext -C . TuruAirHost.swf turu.swf icons
+          cp ~/adt.log "$GITHUB_WORKSPACE/adt-logs/b-platformsdk.log"
+          grep -n "legacy\|Android Studio\|location passed\|Using gradle\|dx\|d8" ~/adt.log || true
+          ls -la "$RUNNER_TEMP/b.apk"
+
+      # C: ADT's Gradle project (-target android-studio), with Compose 1.13's and Material 3
+      # 1.5's classes (Java 11 class files) added, built by ADT's own Gradle.
+      - name: "C: Gradle route with Compose 1.13's classes"
+        continue-on-error: true
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_ARM64" PATH="$JAVA_HOME_17_ARM64/bin:$PATH"
+          cd target/air-app
+          : > ~/adt.log
+          AIR_NOANDROIDFLAIR=true "$AIR_HOME/bin/adt" -package -target android-studio "$RUNNER_TEMP/studio" \
+            app.xml -platformsdk "$ANDROID_HOME" -extdir ext -C . TuruAirHost.swf turu.swf icons
+          cp ~/adt.log "$GITHUB_WORKSPACE/adt-logs/c-export.log"
+          cd "$RUNNER_TEMP/studio"
+          maven=https://dl.google.com/android/maven2/androidx
+          for lib in compose/runtime/runtime-android/1.13.0 compose/ui/ui-android/1.13.0 \
+              compose/foundation/foundation-android/1.13.0 compose/material3/material3-android/1.5.0; do
+            name=$(echo "$lib" | cut -d/ -f3)
+            curl -fsSL "$maven/$lib/$name-$(basename "$lib").aar" -o "$RUNNER_TEMP/$name.aar"
+            unzip -p "$RUNNER_TEMP/$name.aar" classes.jar > "app/libs/$name.jar"
+            perl -0pi -e "s|dependencies \\{|dependencies {\\n    implementation files('libs/$name.jar')|" app/build.gradle
+          done
+          grep -n "libs/" app/build.gradle
+          java -Xmx2048m -Dorg.gradle.appname=gradlew \
+            -cp "gradle/wrapper/gradle-wrapper.jar:$AIR_HOME/lib/android/bin/gradle-cli.jar" \
+            org.gradle.wrapper.GradleWrapperMain -q :app:assembleDebug
+          apk=$(find app/build/outputs -name '*.apk' | head -1)
+          ls -la "$apk"
+          python3 -I - "$apk" <<'PY'
+          import sys, zipfile
+          z = zipfile.ZipFile(sys.argv[1])
+          dex = b"".join(z.read(n) for n in z.namelist() if n.endswith(".dex"))
+          for c in (b"Landroidx/compose/material3/ButtonKt;", b"Landroidx/compose/runtime/Composer;"):
+              print(c.decode(), "in dex:", c in dex)
+          PY
+
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: adt-logs-macos
           path: adt-logs/
           if-no-files-found: warn
