@@ -45,6 +45,32 @@ How to build, run and check the Android app. The design and the plan are in
 > and Accounts' "No tab is free" landing on the setting; Keep 4 left it as it was; Allow 6 opened
 > slots 5 and 6 in `:c5` and `:c6`. Slots 7 to 9 weren't started (nine clients on that AVD).
 >
+> **Quit Turu (2026-11-22):** players couldn't find a way to end Turu. Back goes to the background,
+> swiping Turu out of Recents only closes the window (the slots are processes of their own and go
+> on), and Android brings back a slot it killed (`START_STICKY`), which left Settings > Force stop
+> as the only exit. Every tab's notification now ends with **Quit Turu** (the group's summary
+> shows no buttons on Android 7+). With no script running it quits at once; while any tab's script
+> runs, that notification asks in place, "Quit Turu? 2 tabs are running scripts. They stop and log
+> out." with Quit and Keep running, and goes back after 10 s unanswered (the count comes from a
+> `running` extra in each slot's notification; opening the app to ask would start drawing the
+> game). Quitting forgets every slot's running script (`android-restart-c<N>.txt`, with the
+> password kept for it) and turns the tabs' `--run-script`/`--run-playlist` into `--load-...`
+> (`restart.rs`'s `quit`), so when Turu is opened again the tabs come back logged in with their
+> scripts waiting for Start. Then the window closes and leaves Recents (a broadcast within the
+> app; a bound slot outlives its stop until it's unbound), and every slot is stopped, the tapped
+> one last, each ending its process as a closed tab does. A `quitting` file in the app's files
+> folder tells the slots' `onDestroy` to take the summary down rather than post it again, since they
+> all end at once in their own processes; a slot starting removes it. Turu Mas has no Quit yet.
+> Checked on the emulator (`-gpu host`, Android 16, two tabs in game, a script that only sleeps):
+> Quit Turu from the idle tab's notification asked "1 tab is running a script" (counted from the
+> other slot's process), went back after 10 s, and Keep running left both tabs; Quit then ended
+> `:c1` and `:c3` within 1.5 s with the window open and with it in the background, left no
+> notification, removed the window from Recents and the restart records, and nothing came back
+> in 30 s. A tab record's `--run-script` became `--load-script`, and Turu opened again showed
+> the script loaded, not running. With nothing running, Quit Turu quit at once. Laid out at font
+> scale 1.0 and 1.3 (Pause, Stop and Quit Turu fit on one row). The collapsed group shows no
+> buttons: Quit Turu is a tap on the group, then on a tab, away.
+>
 > **Checked on MuMu (2026-11-07, at the login screen, no account logged in):** a second tab
 > from Army > New Tab, switching between the two, closing one, and the second reopened from
 > `android-tabs.json` after a restart (two clients at the login screen: ~245 MB PSS); the

@@ -618,7 +618,9 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
         /** The text fields above the keyboard, as the messages name them. */
         const val GAME = "game"
         const val UI = "ui"
-        private val CLASSES = listOf(
+
+        /** The slot services, by slot less one (also for Quit Turu, [SlotService]). */
+        val CLASSES = listOf(
             Slot1Service::class.java,
             Slot2Service::class.java,
             Slot3Service::class.java,

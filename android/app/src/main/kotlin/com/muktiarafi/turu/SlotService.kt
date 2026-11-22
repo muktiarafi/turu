@@ -43,6 +43,11 @@ abstract class SlotService(private val slot: Int) : Service() {
     private var startable = false
     private var held = false
 
+    /** Quit Turu was tapped while scripts run: the notification asks first ([ACTION_QUIT]). */
+    private var confirming = false
+    private val handler = Handler(Looper.getMainLooper())
+    private val stopConfirming = Runnable { setConfirming(false) }
+
     override fun onCreate() {
         super.onCreate()
         // Each process has its own crash reports: this slot's crashes, and how the app's
@@ -55,6 +60,8 @@ abstract class SlotService(private val slot: Int) : Service() {
         Alerts.onScreen = { appOnScreen }
         Log.i(TAG, "Slot $slot: service created in process ${android.os.Process.myPid()}")
         instance = this
+        // A slot starting is Turu opened again after a Quit Turu.
+        quitting().delete()
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL, "Turu tabs", NotificationManager.IMPORTANCE_LOW),
         )
@@ -83,16 +90,68 @@ abstract class SlotService(private val slot: Int) : Service() {
             ACTION_STOP -> nativeAction("stop")
             ACTION_PAUSE -> nativeAction("pause")
             ACTION_START_AGAIN -> nativeAction("start_again")
+            ACTION_QUIT -> if (scriptsRunning() == 0) quit() else setConfirming(true)
+            ACTION_QUIT_NOW -> quit()
+            ACTION_QUIT_CANCEL -> setConfirming(false)
         }
         return START_STICKY
     }
 
+    /**
+     * Quit Turu asks in the notification itself while scripts run (opening the app to ask would
+     * start drawing the game, the opposite of quitting), and goes back to the tab's buttons after
+     * [CONFIRM_MS] with no answer.
+     */
+    private fun setConfirming(on: Boolean) {
+        handler.removeCallbacks(stopConfirming)
+        if (on) handler.postDelayed(stopConfirming, CONFIRM_MS)
+        if (confirming == on) return
+        confirming = on
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION + slot, build())
+    }
+
+    /** The tabs whose scripts run: this one's, and the other slots' from their notifications. */
+    private fun scriptsRunning(): Int {
+        val others = getSystemService(NotificationManager::class.java).activeNotifications.count {
+            it.id != NOTIFICATION + slot && it.id in NOTIFICATION + 1..NOTIFICATION + SLOTS &&
+                it.notification.extras.getBoolean(EXTRA_RUNNING)
+        }
+        return others + if (running) 1 else 0
+    }
+
+    /**
+     * Quit Turu: every tab ends, and nothing comes back by itself (Android starts a slot that it
+     * killed again, `START_STICKY`, but not one that was stopped). Swiping Turu out of Recents only
+     * closes the window, so before this the only way out was Android's Force stop. The scripts
+     * are forgotten first (`restart.rs`), the window closes ([TuruActivity]: a bound slot outlives
+     * its stop until it's unbound), then every slot is stopped, this one last; each ends its
+     * process in [onDestroy].
+     */
+    private fun quit() {
+        Log.i(TAG, "Slot $slot: Quit Turu")
+        handler.removeCallbacks(stopConfirming)
+        nativeAction("quit")
+        runCatching { quitting().createNewFile() }
+        sendBroadcast(Intent(ACTION_QUIT_APP).setPackage(packageName))
+        for (other in 1..SLOTS) {
+            if (other != slot) stopService(Intent(this, SlotShell.CLASSES[other - 1]))
+        }
+        stopService(Intent(this, javaClass))
+    }
+
     override fun onDestroy() {
         Log.i(TAG, "Slot $slot: service destroyed")
+        handler.removeCallbacks(stopConfirming)
         // Its notification goes with the service: the summary loses its line, or goes with the last.
         val manager = getSystemService(NotificationManager::class.java)
         manager.cancel(NOTIFICATION + slot)
-        postSummary(without = NOTIFICATION + slot)
+        if (quitting().exists()) {
+            // Quit Turu ends every slot at once, each in its own process: one that posted the
+            // summary again from a notification another was taking down would leave it up for good.
+            manager.cancel(NOTIFICATION)
+        } else {
+            postSummary(without = NOTIFICATION + slot)
+        }
         if (wakeLock.isHeld) wakeLock.release()
         if (instance === this) instance = null
         super.onDestroy()
@@ -126,14 +185,32 @@ abstract class SlotService(private val slot: Int) : Service() {
         )
         val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setStyle(Notification.BigTextStyle().bigText(text))
             .setContentIntent(open)
             .setGroup(GROUP)
             .setOngoing(true)
+            // For the other slots' Quit Turu, which counts the scripts running ([scriptsRunning]).
+            .addExtras(Bundle().apply { putBoolean(EXTRA_RUNNING, running) })
+        if (confirming) {
+            val count = scriptsRunning()
+            val ask = if (count == 0) {
+                "No tab is running a script now."
+            } else if (count == 1) {
+                "1 tab is running a script. It stops and logs out."
+            } else {
+                "$count tabs are running scripts. They stop and log out."
+            }
+            return builder
+                .setContentTitle("Quit Turu?")
+                .setContentText(ask)
+                .setStyle(Notification.BigTextStyle().bigText(ask))
+                .addAction(Notification.Action.Builder(null, "Quit", action(ACTION_QUIT_NOW, 6)).build())
+                .addAction(Notification.Action.Builder(null, "Keep running", action(ACTION_QUIT_CANCEL, 7)).build())
+                .build()
+        }
+        builder.setContentTitle(title).setContentText(text).setStyle(Notification.BigTextStyle().bigText(text))
         // Pause/Resume and Stop while the tab's script runs, Start while it can start; Start again
-        // while it's held after kills for memory.
+        // while it's held after kills for memory. Then Quit Turu, on every tab's notification (the
+        // group's summary shows no buttons).
         if (held) {
             builder.addAction(Notification.Action.Builder(null, "Start again", action(ACTION_START_AGAIN, 4)).build())
         } else if (running) {
@@ -144,8 +221,12 @@ abstract class SlotService(private val slot: Int) : Service() {
         } else if (startable) {
             builder.addAction(Notification.Action.Builder(null, "Start", action(ACTION_START, 3)).build())
         }
+        builder.addAction(Notification.Action.Builder(null, "Quit Turu", action(ACTION_QUIT, 5)).build())
         return builder.build()
     }
+
+    /** Marks a Quit Turu under way, for every slot's [onDestroy]; gone when a slot starts again. */
+    private fun quitting() = java.io.File(filesDir, "quitting")
 
     /** A button's intent to this slot's service (each slot's codes apart). */
     private fun action(action: String, code: Int): PendingIntent {
@@ -321,6 +402,19 @@ abstract class SlotService(private val slot: Int) : Service() {
         private const val ACTION_STOP = "com.muktiarafi.turu.slot.STOP"
         private const val ACTION_PAUSE = "com.muktiarafi.turu.slot.PAUSE"
         private const val ACTION_START_AGAIN = "com.muktiarafi.turu.slot.START_AGAIN"
+        private const val ACTION_QUIT = "com.muktiarafi.turu.slot.QUIT"
+        private const val ACTION_QUIT_NOW = "com.muktiarafi.turu.slot.QUIT_NOW"
+        private const val ACTION_QUIT_CANCEL = "com.muktiarafi.turu.slot.QUIT_CANCEL"
+
+        /** Quit Turu, to the window ([TuruActivity] closes), broadcast within the app. */
+        const val ACTION_QUIT_APP = "com.muktiarafi.turu.QUIT"
+
+        /** In each slot's notification: its tab's script runs. */
+        private const val EXTRA_RUNNING = "com.muktiarafi.turu.running"
+
+        /** How long Quit Turu's question stays in the notification unanswered. */
+        private const val CONFIRM_MS = 10_000L
+
         /** The group summary's notification ID; each slot's is this plus its slot. */
         private const val NOTIFICATION = 100
 

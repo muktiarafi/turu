@@ -3,9 +3,12 @@ package com.muktiarafi.turu
 import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.net.Uri
@@ -97,6 +100,14 @@ class TuruActivity : GameActivity() {
                 moveTaskToBack(true)
             }
         })
+        // Quit Turu (a tab's notification, SlotService): the window closes and leaves Recents, which
+        // unbinds the slots so their stops end them. Only the app's own processes can send it.
+        ContextCompat.registerReceiver(
+            this,
+            quitReceiver,
+            IntentFilter(SlotService.ACTION_QUIT_APP),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         // The display's refresh rate, for frame interpolation's pacing (`ui.rs`): now and whenever
         // the display changes mode (phones with adaptive rates switch between 60 and 120 Hz).
         sendRefreshRate()
@@ -365,7 +376,15 @@ class TuruActivity : GameActivity() {
         super.onPause()
     }
 
+    private val quitReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            Log.i(SlotService.TAG, "Shell: Quit Turu; closing the window")
+            finishAndRemoveTask()
+        }
+    }
+
     override fun onDestroy() {
+        unregisterReceiver(quitReceiver)
         shell?.stop()
         displays().unregisterDisplayListener(displayListener)
         super.onDestroy()

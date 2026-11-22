@@ -28,6 +28,11 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeAction<'local>(
                 crate::memory_kills::start_again();
                 return Ok(());
             }
+            // Quit Turu: on the calling thread, done before the slots are stopped.
+            if action == "quit" {
+                crate::restart::quit();
+                return Ok(());
+            }
             // Off the calling thread: stopping waits for the script's stop handlers.
             turu::spawn_action("Notification", move |bot| {
                 match action.as_str() {

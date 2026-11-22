@@ -13,6 +13,7 @@ use std::time::Duration;
 use turu_bot::Bot;
 use turu_bot::accounts::SecretStore;
 use turu_bot::script::ScriptOptionsState;
+use turu_frontend::slots::SlotRecord;
 use turu_frontend::turu;
 
 /// What's kept while a script runs, in the data folder.
@@ -249,13 +250,46 @@ fn remember(bot: &Bot) {
 
 /// The script stopped: nothing to bring back.
 fn forget() {
-    if let Some(username) = read_record().and_then(|r| r.username) {
+    forget_file(&record_file());
+}
+
+/// Removes the record `file`, and the password kept with it.
+fn forget_file(file: &std::path::Path) {
+    let record = std::fs::read_to_string(file)
+        .ok()
+        .and_then(|text| Record::parse(&text));
+    if let Some(username) = record.and_then(|r| r.username) {
         let _ = crate::storage::KeystoreStore.delete(&password_key(&username));
     }
-    match std::fs::remove_file(record_file()) {
+    match std::fs::remove_file(file) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
             tracing::warn!("Couldn't forget the script for a restart: {e}");
         }
         _ => {}
     }
+}
+
+/// Quit Turu (a tab's notification, `SlotService.kt`): nothing comes back by itself afterwards.
+/// Every slot's running script is forgotten, and the open tabs' records load their scripts
+/// instead of running them (as a slot held after kills for memory does), so the tabs that come
+/// back when Turu is opened again are logged in, their scripts waiting for Start. Runs in the slot
+/// whose notification was tapped, before the slots are stopped.
+pub(crate) fn quit() {
+    let root = turu_bot::paths::Paths::new().root;
+    forget_file(&root.join(RECORD_FILE));
+    let dir = turu_frontend::slots::dir(&root);
+    for slot in 1..=turu_frontend::slots::POOL {
+        forget_file(&root.join(slot_record_file(slot)));
+        let Some(mut record) = SlotRecord::read(&dir, slot) else {
+            continue;
+        };
+        let loaded = turu_frontend::memory_kills::held_args(&record.args);
+        if loaded != record.args {
+            record.args = loaded;
+            if let Err(e) = record.write(&dir, slot) {
+                tracing::warn!("Quit: couldn't keep slot {slot}'s script from running again: {e}");
+            }
+        }
+    }
+    tracing::info!("Quit Turu: no script comes back by itself");
 }
