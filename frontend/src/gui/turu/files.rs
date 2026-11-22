@@ -116,10 +116,26 @@ pub fn find_vscode() -> Option<PathBuf> {
 
 /// Opens `path` in VS Code; why it couldn't start, if it couldn't.
 pub fn open_in_vscode(code: &Path, path: &Path) -> std::io::Result<()> {
+    use std::process::Stdio;
+    // `code.cmd` on Windows: std runs a batch file through cmd and quotes its arguments for cmd
+    // (spaces, `&`, `%`), which a `cmd /C` of our own doesn't ("'C:\...\Microsoft' is not
+    // recognized" for a path with a space). No stdio of ours: a tab's client
+    // (`--exit-with-parent`) has a thread blocked reading its stdin pipe, and on Windows VS
+    // Code's launcher (Node) hangs on that same pipe as it starts.
+    let mut command = std::process::Command::new(code);
+    command
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     #[cfg(windows)]
-    let result = std::process::Command::new("cmd").arg("/C").arg(code).arg(path).spawn();
-    #[cfg(not(windows))]
-    let result = std::process::Command::new(code).arg(path).spawn();
+    {
+        use std::os::windows::process::CommandExt;
+        // A client has no console, so cmd would open one.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let result = command.spawn();
     if let Err(e) = &result {
         tracing::warn!("Couldn't start VS Code: {e}");
     }
