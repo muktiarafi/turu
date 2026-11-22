@@ -1,8 +1,9 @@
 name: CI
 
 # Every pull request to main (and every push to main) is checked here: the branch is rebased on
-# main with no merge commits, the Rust code is formatted and passes clippy, the tests pass and
-# the scripts type-check against this commit's bot/js/turu.ts. CONTRIBUTING.md lists the same
+# main with no merge commits, the submodules point at pushed commits, the Rust code is formatted
+# and passes clippy with no warning, the tests pass and the scripts type-check against this
+# commit's bot/js/turu.ts. CONTRIBUTING.md lists the same
 # commands to run before pushing. Branch protection on main requires these jobs.
 on:
   pull_request:
@@ -72,9 +73,40 @@ jobs:
             rustfmt --edition 2024 --config max_width=120 --check "$file"
           done
 
+  # A submodule bump must point at a commit already on that submodule's branch (.gitmodules):
+  # otherwise a clone of this commit can't fetch it. Commits only, no files (`tree:0`).
+  submodules:
+    name: Submodules pushed
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check each submodule's commit is on its branch
+        run: |
+          status=0
+          for path in ruffle scripts; do
+            url=$(git config -f .gitmodules "submodule.$path.url")
+            branch=$(git config -f .gitmodules "submodule.$path.branch")
+            commit=$(git rev-parse "HEAD:$path")
+            git init -q "$RUNNER_TEMP/$path"
+            git -C "$RUNNER_TEMP/$path" fetch -q --filter=tree:0 "$url" "$branch"
+            if git -C "$RUNNER_TEMP/$path" cat-file -e "$commit^{commit}" 2>/dev/null \
+              && git -C "$RUNNER_TEMP/$path" merge-base --is-ancestor "$commit" FETCH_HEAD; then
+              echo "$path: $commit is on $branch"
+            else
+              echo "::error::$path points at $commit, which isn't on $branch of $url. Push it there first."
+              status=1
+            fi
+          done
+          exit $status
+
+  # Every warning fails, Ruffle's crates' included (RUSTFLAGS reaches the path dependencies;
+  # crates.io's are capped by Cargo).
   clippy:
     name: Clippy
     runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v7
 
@@ -102,7 +134,7 @@ jobs:
       - name: Clippy
         run: |
           cargo clippy --locked -p turu_bot -p turu_frontend -p turu --all-targets \
-            --no-default-features --features "$FEATURES" -- -A clippy::redundant_clone
+            --no-default-features --features "$FEATURES" -- -D warnings -A clippy::redundant_clone
 
   # bot/assets/turu.swf, Turu's host SWF, is built from host/as3 (turu_host) and committed, so a
   # Rust-only build needs no Java: check it is what the source builds.

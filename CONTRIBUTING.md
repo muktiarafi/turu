@@ -42,18 +42,19 @@ before merging:
 | Job | What | Run it locally |
 |---|---|---|
 | Rebased on main | branch contains `main`, no merge commits | `git rebase origin/main` |
+| Submodules pushed | `ruffle` and `scripts` point at commits on their branches (`aqw`, `main`) | push the submodule first |
 | Format | `bot/` with `cargo fmt`, the UI windows with `max_width = 120` | see below |
-| Clippy | `turu_bot`, `turu_frontend`, `turu`, tests included | see below |
+| Clippy | `turu_bot`, `turu_frontend`, `turu`, tests included; any warning fails, Ruffle's crates' too | see below |
 | Host SWF | `turu_host`: format, clippy, tests, and `bot/assets/turu.swf` built from `host/as3` | `cargo run -p turu_host -- --check` |
 | Test | engine tests, app and frontend tests, scripts type-check | see below |
 
 ```bash
-# Format: bot/ with cargo fmt; each changed UI window file on its own (never mod.rs, never cargo fmt -p turu)
+# Format: bot/ with cargo fmt; the UI windows with rustfmt (mod.rs formats them all; never cargo fmt -p turu)
 cargo fmt -p turu_bot
-rustfmt --edition 2024 --config max_width=120 frontend/src/gui/turu/<file>.rs
+rustfmt --edition 2024 --config max_width=120 frontend/src/gui/turu/mod.rs
 
 # Clippy
-cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -A clippy::redundant_clone
+cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -D warnings -A clippy::redundant_clone
 
 # Tests (CI runs the three crates' in one cargo-nextest command, much faster for the engine:
 # `cargo nextest run --profile ci -p turu_bot`, the same flags as below; .config/nextest.toml)

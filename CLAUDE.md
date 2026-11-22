@@ -42,8 +42,9 @@ Sibling checkouts used as references (read-only): `../VibeSkua` (C# source of tr
 behaviour: `Skua.Core/Scripts/*.cs`, `Skua.AS3/skua/src`), `../Scripts` (the C# scripts we
 port), `../mugetsu` (patch source).
 
-Updating Ruffle or Mugetsu happens in ruffle-aqw: re-apply Mugetsu on the new Ruffle there, tag
-it, bump `ruffle/`, then port what changed in ruffle-aqw's `desktop/` into `app/`
+Updating Ruffle or Mugetsu happens in ruffle-aqw: re-apply Mugetsu on the new Ruffle there, format
+it before re-applying Turu's commits (ruffle-aqw's `.github/CONTRIBUTING.md`), tag it, bump
+`ruffle/`, then port what changed in ruffle-aqw's `desktop/` into `app/`
 (`git -C ruffle diff <old>..<new> -- desktop`). Keep the root `Cargo.toml`'s
 `[workspace.dependencies]`, `[patch.crates-io]` and profiles in step with `ruffle/Cargo.toml`
 (Cargo reads patches and profiles only from the root workspace).
@@ -56,7 +57,7 @@ cargo build -p turu --no-default-features --features software_video,external_vid
 cargo nextest run -p turu_bot            # engine + script runtime tests (fake Flash host): ~25 s, `cargo test` ~30 s (see below)
 cargo run -p turu_host                   # rebuild bot/assets/turu.swf from host/as3 (Java); `-- --check` as CI
 cargo test -p turu -p turu_frontend --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen   # app + bot windows (see STATUS.md); cargo test here, not nextest (see below)
-cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -A clippy::redundant_clone   # see STATUS.md
+cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -D warnings -A clippy::redundant_clone   # see STATUS.md
 cd android && ./gradlew assembleDebug   # Android APK (SDK, NDK 27, cargo-ndk: docs/ANDROID.md)
 air/app/build.sh --no-install           # Turu Mas APK (AIR SDK, JDK 17: docs/TURU_MAS.md)
 docker build -t turu .                  # headless image (Dockerfile, compose.yaml: docs/HEADLESS.md, "Docker")
