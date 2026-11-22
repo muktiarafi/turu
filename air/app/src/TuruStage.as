@@ -40,7 +40,10 @@ package {
          * ([stageAddChild]).
          */
         public static var overlays:Array = [];
-        /** Sounds playing ([sound]): each `SoundChannel`'s client and its own volume. */
+        /**
+         * Sounds playing ([sound]): each `SoundChannel`'s client and, while its tab is hidden, the
+         * volume the game had given it ([volume]).
+         */
         private static var channels:Dictionary = new Dictionary(true);
         /** Key listeners' gates ([keys]), by the listener they gate. */
         private static var gates:Dictionary = new Dictionary();
@@ -340,7 +343,7 @@ package {
             if (channel != null) {
                 var client:int = clientOfDomain(domain);
                 if (client >= 0) {
-                    channels[channel] = {client: client, transform: channel.soundTransform};
+                    channels[channel] = {client: client, silenced: null};
                     volume(channel);
                     if (client != active) {
                         soundsSilenced++;
@@ -352,14 +355,23 @@ package {
             return result;
         }
 
+        /**
+         * Silences `channel` while its tab is hidden and gives its volume back once shown. Only
+         * what Turu silenced goes back: the game sets a channel's volume after playing it too (its
+         * music's, for Music and Mute All), so its volume at `play` would undo those settings.
+         */
         private static function volume(channel:SoundChannel):void {
             var playing:Object = channels[channel];
             if (playing == null) {
                 return;
             }
             if (playing.client == active) {
-                channel.soundTransform = playing.transform as SoundTransform;
-            } else {
+                if (playing.silenced != null) {
+                    channel.soundTransform = playing.silenced as SoundTransform;
+                    playing.silenced = null;
+                }
+            } else if (playing.silenced == null) {
+                playing.silenced = channel.soundTransform;
                 var muted:SoundTransform = channel.soundTransform;
                 muted.volume = 0;
                 channel.soundTransform = muted;

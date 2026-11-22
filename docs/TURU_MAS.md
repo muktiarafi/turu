@@ -268,7 +268,13 @@ stage, not players of their own as in Ruffle. How it was found to work: docs/AIR
     Switching tabs takes the focus off a hidden game's text field.
   * *Sound:* each `play(...)`'s result goes through `TuruStage.sound`: a hidden tab's
     `SoundChannel` is silenced, and follows its tab from then on; timeline sounds (maps,
-    monsters, skills) through the hidden game's own `soundTransform`.
+    monsters, skills) through the hidden game's own `soundTransform`. Shown again, a channel
+    gets back the volume it had when Turu silenced it, not the one it started with: the game
+    sets its music channel's volume later too (Music, Mute All), and going back to the one at
+    `play` turned muted music back on whenever a tab was picked or the app came back
+    (2026-11-22). Off screen, the host silences `SoundMixer` (`TuruAirHost.onActivity`) and gives
+    back the game's own transform after, which is the game's Master volume and Mute All: it
+    used to set 1, which unmuted the game on every return.
   * *Popups:* `addChild`, `removeChild` and `getChildByName` shortly after a `stage` (22, 7 and 10
     sites) go through `stageAddChild` and its kin: a child for the stage goes into its tab's
     layer, a sprite just above its game that's fitted, shown and hidden with it (`rootOf` maps

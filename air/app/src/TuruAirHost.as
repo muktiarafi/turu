@@ -73,6 +73,8 @@ package {
         private var viewSize:Array;
         /** [fit] is reading AIR's own size. */
         private var measuring:Boolean = false;
+        /** The game's own `SoundMixer.soundTransform` while [onActivity] silences it, or null. */
+        private var gameMixer:SoundTransform;
 
         public function TuruAirHost() {
             mouseEnabled = false;
@@ -185,10 +187,23 @@ package {
         /**
          * Silent off screen, as Turu's Ruffle build (the game keeps running there). Back on screen,
          * the tab's game is redrawn ([redrawShown]).
+         *
+         * The mixer is also the game's Master volume and Mute All (its `VolumePanel`), so it gets
+         * back what the game had, not 1: setting 1 unmuted a muted game on every return. If it
+         * isn't silent any more, the game set it meanwhile (a login applies the saved volumes):
+         * that stays.
          */
         private function onActivity(event:Event):void {
             say(new Date().toTimeString().substr(0, 8) + " " + event.type);
-            SoundMixer.soundTransform = new SoundTransform(event.type == Event.ACTIVATE ? 1 : 0);
+            if (event.type == Event.ACTIVATE) {
+                if (gameMixer != null && SoundMixer.soundTransform.volume == 0) {
+                    SoundMixer.soundTransform = gameMixer;
+                }
+                gameMixer = null;
+            } else if (gameMixer == null) {
+                gameMixer = SoundMixer.soundTransform;
+                SoundMixer.soundTransform = new SoundTransform(0);
+            }
             dumpStage(event.type);
             if (event.type == Event.ACTIVATE) {
                 redrawShown();
