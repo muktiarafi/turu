@@ -1297,7 +1297,10 @@ fn open_tabs(launches: Vec<Launch>, status: &Mutex<Status>, states: &Mutex<Launc
             } else {
                 "couldn't open a tab".to_owned()
             };
-            (format!("{}: {failed}", shown_launch(&launch.username)), Launched::Failed(failed))
+            (
+                format!("{}: {failed}", shown_launch(&launch.username)),
+                Launched::Failed(failed),
+            )
         };
         let failed = matches!(state, Launched::Failed(_));
         lock(states).set(&launch.username, state);
