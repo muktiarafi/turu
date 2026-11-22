@@ -5,7 +5,7 @@ answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with A
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
 and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
 window the pass made native, then past it Notification Center, Accounts' selection and groups,
-Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items and Console. The PR isn't opened yet (the owner's call). Continuing: "Handover"
+Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console and Update Turu. The PR isn't opened yet (the owner's call). Continuing: "Handover"
 under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
@@ -995,6 +995,20 @@ script's message box and options request.
   the three pages, the Logger's logging on and back off and its filters dialog (cancelled), the
   Spammer's composer with the keyboard up (the queue steps aside), the Interceptor at font scale
   1.3. Not pressed: Start, Send now, Add, Connect, Clear.
+* **Update Turu** (2026-11-22, the owner's request): `models::client_update` gives the new
+  release, how this platform takes it (`InstallWay`: an APK to the installer, in place, a link),
+  the install's state in words (`UpdateStep`), the buttons with their reasons and the footnote,
+  from a pure `build` tested without the process's state; the egui window draws from it. Not per
+  tab: the release and the install are the process's, and since 2026-11-22 every Android slot
+  shows what the checking slot found (`update-available.json`). The install now waits while any
+  other tab runs (`shell_tabs`' busy), and two slots can't download at once (`jobs/client-update.lock`).
+  The page is `Page.Update`, from the rail's Update and More's. Checked on the emulator (`-gpu
+  host`) with a made-up 0.5.0 pre-release planted in `update-available.json` (the checking slot's
+  launch check removes it: plant it after), its asset at `example.invalid`: the page, More's dot,
+  Download & install failing on the download (red, dot on the first line, More's dot red), font
+  scale 1.3 (it scrolls); the file was removed after. No text field, so no keyboard check. Not
+  seen: the downloading state with a real download, Android's installer, the held state (no tab
+  ran), the "is the newest" state, a release without a package.
 * **Design hook** (2026-11-20, the owner's pick): `.claude/hooks/compose-design-check.py` runs
   after each edit of an Android Kotlin screen and on Stop (Impeccable's own skips this repo); it
   found and cleared nine findings in the pages before Skills.
@@ -1021,7 +1035,7 @@ the owner says so).
 **Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
 Search Scripts (with a pick mode), Scheduler, Logs, Game, Application and CoreBots options, Army
-Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console, Logs > Crashes. Each window's page has Full window for the
+Control, Notification Center, Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console, Logs > Crashes, Update Turu. Each window's page has Full window for the
 egui one, and the engine's dialogs (a script's message box, Butler's notice, the crash notice,
 "Send crash reports?", the Tab Limit, the graphics tips) are native too. **Still egui on Android**, from More: HotKeys only
 (staying egui; decision 8 as changed 2026-11-21). Spammer, Packet Logger and Interceptor are native

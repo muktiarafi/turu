@@ -87,7 +87,8 @@ class PromptsPanel {
     }
 }
 
-private fun openLink(context: Context, url: String) {
+/** Opens `url` in the system's browser (or what handles it), quietly when nothing does. */
+fun openLink(context: Context, url: String) {
     try {
         context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
     } catch (e: ActivityNotFoundException) {

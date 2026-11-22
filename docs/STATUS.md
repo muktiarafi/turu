@@ -1122,6 +1122,12 @@ marked `C#` and listed in `scripts/docs/PORTING.md` (the Nation fixes: "Known ga
 they are unverified in game). Don't remove one to match the C#. What VibeSkua has that Turu lacks
 is in "Known gaps" and `docs/PORTING_GAPS.md`.
 
+- **Installing an update waits for every tab** (2026-11-22, `models::client_update`): VibeSkua is
+  one process; Turu's tabs are processes of their own (Android's slots, a desktop shell's
+  clients) and an update closes them all, so Download & install (and Download & restart) wait
+  while any other tab runs a script or Auto, naming it, as they wait for this tab's script. The
+  shell's tab list says only "busy", so Auto counts in other tabs. On Android two tabs can't
+  download the update at once either (a lock in `jobs/`): the second is told another tab is.
 - **Game Options asks before Private Rooms goes off, in CoreBots' words** (2026-11-22,
   `models::game_options::PUBLIC_ROOMS`, `warning_modal`, Android's `PublicRoomsDialog`): VibeSkua
   turns it off without a word, and only CoreBots Options warns, on Save ("Public Room Warning",

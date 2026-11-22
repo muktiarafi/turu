@@ -163,6 +163,9 @@ sealed interface Page {
     /** Combat > Runtime > Notifications. */
     data object NotifyDrop : Page
 
+    /** Update Turu: the rail's Update, More's. */
+    data object Update : Page
+
     /** Tools & Helpers > Loader. */
     data object Loader : Page
 

@@ -110,6 +110,7 @@ class TabActions(
     val cosmetics: CosmeticsPanel,
     val runtime: RuntimePanel,
     val notifyDrop: NotifyDropPanel,
+    val update: UpdatePanel,
     val loader: LoaderPanel,
     val grabber: GrabberPanel,
     val junk: JunkPanel,
@@ -331,6 +332,7 @@ fun TabPanel(state: ShellState, actions: TabActions, onGone: () -> Unit = {}) {
                         Page.Cosmetics -> CosmeticsPage(state, actions.cosmetics) { actions.window("cosmetics") }
                         Page.Runtime -> RuntimePage(state, actions.runtime, notifyDrop = { state.push(Page.NotifyDrop) }) { actions.window("runtime") }
                         Page.NotifyDrop -> NotifyDropPage(state, actions.notifyDrop) { actions.window("notify_drop") }
+                        Page.Update -> UpdatePage(state, actions.update) { actions.window("client_update") }
                         Page.Loader -> LoaderPage(state, actions.loader) { actions.window("loader") }
                         Page.Grabber -> GrabberPage(state, actions.grabber) { actions.window("grabber") }
                         Page.JunkItems -> JunkPage(state, actions.junk) { actions.window("junk_items") }

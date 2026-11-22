@@ -572,6 +572,8 @@ pub enum NativeScreen {
     Interceptor,
     /// Scripts > Edit Script Options (also when a script asks for its options).
     ScriptOptions,
+    /// Update Turu (the rail's Update).
+    ClientUpdate,
 }
 
 /// One of the shell's Army clients, as a tab sees it: its control API and token (commands, the

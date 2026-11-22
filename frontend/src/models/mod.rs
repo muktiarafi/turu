@@ -22,6 +22,7 @@ pub mod army_travel;
 pub mod auto;
 pub mod bank;
 pub mod butler;
+pub mod client_update;
 pub mod console;
 pub mod core_bots;
 pub mod cosmetics;
@@ -369,6 +370,16 @@ pub fn register() {
         Box::new(|bot, _| {
             bank::open(bot);
             done()
+        }),
+    );
+
+    add_model("client-update", Box::new(|_| to_json(&client_update::view())));
+    add_model_action(
+        "client-update",
+        "install",
+        Box::new(|_, body| {
+            let on_quit = body.get("onQuit").and_then(Value::as_bool).unwrap_or(false);
+            client_update::install(on_quit).and_then(|()| done())
         }),
     );
 

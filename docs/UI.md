@@ -377,9 +377,10 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   runs, "A script is running. Stop it to restart now, or update when you quit Turu.". Buttons:
   **Download & restart** (primary; greyed while any tab runs a script or a download runs, the
   tooltip says why) downloads the package, checks it against `SHA256SUMS.txt`, replaces Turu and
-  starts it again with the same arguments; **Update when I quit** downloads and unpacks it now
+  starts it again with the same arguments (in a shell's client it also waits while another tab
+  runs a script or Auto, naming it: the shell restarts every tab); **Update when I quit** downloads and unpacks it now
   and puts it in place when the window closes. On Android one button, **Download & install**
-  (greyed while a script runs: installing stops the app), downloads the APK, checks it against
+  (greyed while any tab runs a script, or another tab Auto: installing stops the app), downloads the APK, checks it against
   `SHA256SUMS.txt` and hands it to Android's installer, which installs it over the app (asking
   first only before Android 12); the user opens the new version (cancelling Android's dialog
   brings the button back). The
@@ -1459,6 +1460,18 @@ above, and why:
   shows its first 400 KB with a line saying so (what Share and Copy take too). Delete goes back to
   the list with a snackbar ("Deleted "Low memory"", Undo); Undo puts the report back in its place.
   The egui window draws from the same model.
+* **Update Turu** (L5b, 2026-11-22; `models::client_update`): a page of the panel (320 dp), from
+  the rail's Update (selected while it shows) and More's Update button, and wherever a slot opens
+  the window. It leads with the new version as the headline ("Turu 0.5.0"), a Pre-release tag in
+  the warning colour beside "You have 0.4.0", and Read the release notes (the browser). Then the
+  install's state with a dot (green: downloaded, waits for quit; red: failed; muted: why it
+  waits) or, while it works, the text over a wavy bar; then the one filled button (Download &
+  install on Android, Download & restart on a desktop, with Update when I quit outlined under it),
+  a spinner on it until the tab answers, and the footnote on SHA256SUMS.txt. A release without a
+  package gets its link button (Download APK, Open release page). Once no update is waiting the
+  page says "Turu 0.4.0 is the newest". The install waits while any tab runs a script or Auto
+  (installing closes every tab), naming them. ⋮: Full window. The egui window draws from the
+  same model.
 * **Search Scripts everywhere a script is chosen** (the owner's rule, 2026-11-20): searching is
   how users reach scripts, so it is never only the Script Loader's: More > Scripts has it, and
   every place that chooses a script offers Search scripts…, which opens it picking for that

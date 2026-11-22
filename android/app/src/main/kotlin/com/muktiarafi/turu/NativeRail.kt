@@ -150,11 +150,11 @@ fun NativeRail(state: ShellState, models: TabModels, actions: RailActions, onTab
         },
         update?.let {
             Entry(
-                "Update", RailIcons.Update, 3, null,
+                "Update", RailIcons.Update, 3, Page.Update,
                 badge = if (it.failed != null) Turu.Danger else Turu.Accent,
                 busy = it.busy != null,
                 state = it.failed?.let { why -> "failed: $why" } ?: it.busy ?: "version ${it.version} ready",
-            ) { actions.window("client_update") }
+            ) { actions.open(Page.Update) }
         },
         Entry("More", RailIcons.More, 0, Page.More) { actions.open(Page.More) },
     )

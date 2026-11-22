@@ -465,6 +465,7 @@ private fun nativePage(window: String): Page? = when (window) {
     "interceptor" -> Page.Interceptor
     "script_options" -> Page.ScriptOptions
     "logs" -> Page.Logs
+    "client_update" -> Page.Update
     else -> null
 }
 
@@ -570,10 +571,10 @@ fun MorePage(state: ShellState, models: TabModels, window: (String) -> Unit, ban
             if ("Update" in state.folded && update != null) {
                 // The version, as the egui bar says it, unless a pre-release's long one would crowd the title.
                 val label = if (update.version.length <= 8) "Update ${update.version}" else "Update"
-                val state = update.failed?.let { "failed: $it" } ?: update.busy ?: "version ${update.version} ready"
+                val said = update.failed?.let { "failed: $it" } ?: update.busy ?: "version ${update.version} ready"
                 TextButton(
-                    onClick = { window("client_update") },
-                    modifier = Modifier.semantics { stateDescription = state },
+                    onClick = { state.push(Page.Update) },
+                    modifier = Modifier.semantics { stateDescription = said },
                 ) {
                     if (update.busy != null) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Turu.Accent)

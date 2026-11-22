@@ -983,6 +983,14 @@ fn install_package() -> Result<String, String> {
     if !release.installable() {
         return Err(format!("{name} {} has no APK", release.version));
     }
+    // Turu: each tab is a process with its own install state, so two tabs could download into
+    // the same folder at once: the tab that starts holds a lock until its download is handed on.
+    let dir = turu_bot::shared_job::dir(&bot().paths.root);
+    let held = match turu_bot::shared_job::try_hold(&dir, "client-update") {
+        Ok(Some(held)) => held,
+        Ok(None) => return Err("another tab is downloading the update already".into()),
+        Err(e) => return Err(format!("couldn't take the update's lock: {e}")),
+    };
     let busy = updates::update_state(|s| {
         let busy = matches!(s.install, Install::Busy(_));
         if !busy {
@@ -997,6 +1005,7 @@ fn install_package() -> Result<String, String> {
     let spawned = std::thread::Builder::new()
         .name("Turu Client Update".into())
         .spawn(move || {
+            let _held = held;
             let set = |install: Install| updates::update_state(|s| s.install = install);
             let dir = bot().paths.updates_dir();
             let installed = updates::download(&updates::Http::for_downloads(), &release, &dir)

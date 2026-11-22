@@ -395,6 +395,7 @@ impl TuruUi {
             ("spammer", w.spammer),
             ("interceptor", w.interceptor),
             ("script_options", w.script_options),
+            ("client_update", w.client_update),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
         let kept = |w: &Windows, key: &str| w.egui.iter().any(|k| *k == key);
@@ -457,6 +458,9 @@ impl TuruUi {
         }
         if w.runtime && !kept(w, "runtime") && crate::turu::open_shell_screen(NativeScreen::Runtime) {
             w.runtime = false;
+        }
+        if w.client_update && !kept(w, "client_update") && crate::turu::open_shell_screen(NativeScreen::ClientUpdate) {
+            w.client_update = false;
         }
         if w.notify_drop && !kept(w, "notify_drop") && crate::turu::open_shell_screen(NativeScreen::NotifyDrop) {
             w.notify_drop = false;

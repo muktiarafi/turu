@@ -59,6 +59,7 @@ class ShellScreens(private val activity: TuruActivity) {
         cosmetics = CosmeticsPanel(),
         runtime = RuntimePanel(),
         notifyDrop = NotifyDropPanel(),
+        update = UpdatePanel(),
         loader = LoaderPanel(),
         grabber = GrabberPanel(),
         junk = JunkPanel(),
@@ -161,6 +162,7 @@ class ShellScreens(private val activity: TuruActivity) {
             "cosmetics" -> open(Page.Cosmetics)
             "runtime" -> open(Page.Runtime)
             "notify_drop" -> open(Page.NotifyDrop)
+            "client_update" -> open(Page.Update)
             "loader" -> open(Page.Loader)
             "grabber" -> open(Page.Grabber)
             "junk_items" -> open(Page.JunkItems)
