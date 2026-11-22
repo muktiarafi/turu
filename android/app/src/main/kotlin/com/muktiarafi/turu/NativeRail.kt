@@ -180,7 +180,19 @@ fun NativeRail(state: ShellState, models: TabModels, actions: RailActions, onTab
             TabsItemContent(state, onTabs)
             for (entry in entries) {
                 if (entry in kept) {
-                    RailItem(entry, item, selected = open && entry.page != null && entry.page == page)
+                    // More carries Update's dot while Update is folded into it, so the news isn't hidden.
+                    val hint = update != null && entry.page == Page.More && "Update" in folded
+                    val shown = if (hint) {
+                        Entry(
+                            entry.label, entry.icon, entry.keep, entry.page,
+                            badge = if (update.failed != null) Turu.Danger else Turu.Accent,
+                            state = "update available",
+                            onClick = entry.onClick,
+                        )
+                    } else {
+                        entry
+                    }
+                    RailItem(shown, item, selected = open && entry.page != null && entry.page == page)
                 }
             }
             Spacer(Modifier.weight(1f))

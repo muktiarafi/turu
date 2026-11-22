@@ -77,6 +77,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -566,12 +568,22 @@ fun MorePage(state: ShellState, models: TabModels, window: (String) -> Unit, ban
             }
             val update = rail?.update
             if ("Update" in state.folded && update != null) {
-                TextButton(onClick = { window("client_update") }) {
-                    BadgedBox(badge = { Badge(containerColor = if (update.failed != null) Turu.Danger else Turu.Accent) }) {
-                        Icon(RailIcons.Update, contentDescription = null, modifier = Modifier.size(18.dp))
+                // The version, as the egui bar says it, unless a pre-release's long one would crowd the title.
+                val label = if (update.version.length <= 8) "Update ${update.version}" else "Update"
+                val state = update.failed?.let { "failed: $it" } ?: update.busy ?: "version ${update.version} ready"
+                TextButton(
+                    onClick = { window("client_update") },
+                    modifier = Modifier.semantics { stateDescription = state },
+                ) {
+                    if (update.busy != null) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Turu.Accent)
+                    } else {
+                        BadgedBox(badge = { Badge(containerColor = if (update.failed != null) Turu.Danger else Turu.Accent) }) {
+                            Icon(RailIcons.Update, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
                     }
                     Spacer(Modifier.width(6.dp))
-                    Text("Update")
+                    Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             // A layout setting, not a place to go: under ⋮, so the bar keeps to destinations.
