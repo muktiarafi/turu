@@ -426,11 +426,72 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 
 pub fn state() -> State {
-    STATE.lock().clone()
+    let mut state = STATE.lock().clone();
+    if state.available.is_none() {
+        state.available = shared_available();
+    }
+    state
 }
 
 pub fn available() -> Option<Release> {
-    STATE.lock().available.clone()
+    STATE.lock().available.clone().or_else(shared_available)
+}
+
+/// Turu: Android's tabs are processes of their own and only one checks for updates, so what it
+/// finds goes to this file in the data folder for the others to show and install (the rail's
+/// Update, the Update window). Unset (the default) in every other process, whose updates come
+/// from itself or from its shell.
+static SHARED_FILE: OnceLock<PathBuf> = OnceLock::new();
+
+/// How long a process keeps what it read from [`SHARED_FILE`].
+const SHARED_READ_EVERY: Duration = Duration::from_secs(2);
+
+static SHARED_READ: Mutex<Option<(std::time::Instant, Option<Release>)>> = Mutex::new(None);
+
+/// Makes this process read, and every check it makes write, the release found by whichever
+/// process checks (`path`: `update-available.json` in the data folder).
+pub fn share_through(path: PathBuf) {
+    let _ = SHARED_FILE.set(path);
+}
+
+/// The newer release another process found, while it is still newer than this build.
+fn shared_available() -> Option<Release> {
+    let path = SHARED_FILE.get()?;
+    let mut cached = SHARED_READ.lock();
+    if let Some((at, release)) = cached.as_ref()
+        && at.elapsed() < SHARED_READ_EVERY
+    {
+        return release.clone();
+    }
+    let release = read_shared(path, current_version());
+    *cached = Some((std::time::Instant::now(), release.clone()));
+    release
+}
+
+fn read_shared(path: &Path, current: &str) -> Option<Release> {
+    if is_nightly(current) {
+        return None;
+    }
+    let release: Release = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    // Left by an older build, or by this one before it updated: nothing to offer.
+    (parse_version(&release.version)? > parse_version(current)?).then_some(release)
+}
+
+/// Writes `release` for the other processes, or removes the file when there is none.
+fn write_shared(path: &Path, release: Option<&Release>) {
+    let result = match release {
+        Some(release) => serde_json::to_vec(release)
+            .map_err(std::io::Error::other)
+            .and_then(|json| std::fs::write(path, json)),
+        None => match std::fs::remove_file(path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        },
+    };
+    if let Err(e) = result {
+        tracing::warn!("Couldn't share the update with the other tabs: {e}");
+    }
+    *SHARED_READ.lock() = None;
 }
 
 /// Runs `change` on the state.
@@ -452,6 +513,9 @@ pub fn record_check(result: Result<Option<Release>, String>) -> Option<Release> 
                 .filter(|r| state.available.as_ref().map(|a| &a.version) != Some(&r.version));
             let new = new.cloned();
             state.available = release;
+            if let Some(path) = SHARED_FILE.get() {
+                write_shared(path, state.available.as_ref());
+            }
             new
         }
         Err(e) => {
@@ -463,8 +527,7 @@ pub fn record_check(result: Result<Option<Release>, String>) -> Option<Release> 
 
 /// The control API's and the monitor's `update` field: `null`, or the version and links.
 pub fn status_json() -> serde_json::Value {
-    let state = STATE.lock();
-    match &state.available {
+    match &available() {
         None => serde_json::Value::Null,
         Some(release) => serde_json::json!({
             "version": release.version,
@@ -830,6 +893,40 @@ mod tests {
             semver::Version::parse("1.2.3").ok()
         );
         assert!(super::newest(b"not json", "0.1.0", true, None).is_err());
+    }
+
+    /// What one process finds the others show, while it is newer than their build.
+    #[test]
+    fn another_process_shows_what_the_checker_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("update-available.json");
+        let found = newest(
+            &list(&[release("v0.4.1", false, false)]),
+            "0.4.0",
+            false,
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(read_shared(&path, "0.4.0"), None, "nothing written yet");
+        write_shared(&path, Some(&found));
+        assert_eq!(read_shared(&path, "0.4.0"), Some(found.clone()));
+        assert_eq!(read_shared(&path, "0.4.1"), None, "already installed");
+        assert_eq!(read_shared(&path, "0.4.2"), None, "older than this build");
+        assert_eq!(
+            read_shared(&path, "0.4.0-nightly.20261118"),
+            None,
+            "nightlies never update"
+        );
+        std::fs::write(&path, "not json").unwrap();
+        assert_eq!(
+            read_shared(&path, "0.4.0"),
+            None,
+            "a damaged file offers nothing"
+        );
+        write_shared(&path, None);
+        assert!(!path.exists(), "the checker found no update now");
+        write_shared(&path, None);
     }
 
     #[test]

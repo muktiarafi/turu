@@ -1784,6 +1784,8 @@ fn runs_monitor() -> bool {
 /// until its process ends; the system then lets the lock go, and another tab takes it (tried every
 /// 3 s). That tab polls the others all along and follows Options changed in theirs.
 pub fn start_monitor_election() {
+    // Turu: only the tab that wins runs the update checks; the others show what it found.
+    turu_bot::updates::share_through(bot().paths.root.join("update-available.json"));
     let spawned = std::thread::Builder::new()
         .name("Turu Monitor Election".into())
         .spawn(|| {
