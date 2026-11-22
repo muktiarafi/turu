@@ -7549,7 +7549,6 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "objc2-io-surface",
  "objc2-metal 0.3.2",
- "os_info",
  "rand 0.10.2",
  "rfd",
  "ruffle_core",
