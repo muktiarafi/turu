@@ -434,6 +434,7 @@ impl Resolver {
         Self
     }
 
+    #[allow(clippy::needless_pass_by_ref_mut, reason = "same signature as Windows' resolver")]
     fn describe(&mut self, _stack: &Stack) -> Vec<String> {
         vec!["(stacks are only resolved on Windows)".to_string()]
     }

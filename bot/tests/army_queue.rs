@@ -250,10 +250,13 @@ fn queues_and_presets_persist() {
     assert!(read.names().is_empty());
 }
 
+/// A client launched: its account, its script, its storage name and when.
+type Launch = (String, String, Option<String>, Instant);
+
 /// Clients that quit when told to.
 #[derive(Default)]
 struct FakeLauncher {
-    launched: Mutex<Vec<(String, String, Option<String>, Instant)>>,
+    launched: Mutex<Vec<Launch>>,
     running: Mutex<HashMap<String, bool>>,
     missing: Vec<String>,
     failing: Vec<String>,

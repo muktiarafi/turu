@@ -1277,7 +1277,7 @@ pub(super) fn set_rail_hidden(hidden: bool) {
 
 /// While the rail is hidden: a small tab on the screen's left edge, halfway down, that brings it
 /// back. It floats over the game, which has the whole width then.
-fn rail_handle(ui: &mut Ui, inset: f32) {
+fn rail_handle(ui: &Ui, inset: f32) {
     let screen = ui.ctx().content_rect();
     let size = vec2(24.0 + inset, 64.0);
     let pos = pos2(screen.left(), screen.center().y - size.y / 2.0);

@@ -21,8 +21,8 @@ mod fast_travel;
 mod files;
 mod game_options;
 mod gear;
-mod graphics_tips;
 mod grabber;
+mod graphics_tips;
 mod grid_overlay;
 mod hotkeys;
 mod hotkeys_window;
@@ -327,8 +327,7 @@ impl TuruUi {
     /// The active tab's windows (made the first time), dropping those of closed tabs.
     fn active(&mut self) -> &mut TabUi {
         let tabs = crate::turu::tabs();
-        self.tabs
-            .retain(|id, _| tabs.iter().any(|(tab, _)| tab == id));
+        self.tabs.retain(|id, _| tabs.iter().any(|(tab, _)| tab == id));
         self.tabs.entry(crate::turu::active_tab()).or_default()
     }
 
@@ -398,7 +397,7 @@ impl TuruUi {
             ("client_update", w.client_update),
         ];
         w.egui.retain(|key| open_now.iter().any(|(k, open)| k == key && *open));
-        let kept = |w: &Windows, key: &str| w.egui.iter().any(|k| *k == key);
+        let kept = |w: &Windows, key: &str| w.egui.contains(&key);
         if w.script_loader && !kept(w, "script_loader") && crate::turu::open_shell_screen(NativeScreen::Scripts) {
             w.script_loader = false;
         }
@@ -497,12 +496,8 @@ impl TuruUi {
             // The page shows the draft: the egui window hiding now isn't a Cancel.
             crate::models::script_options::hand_over(&crate::turu::bot());
         }
-        tab.script_loader.show(
-            ctx,
-            &mut w.script_loader,
-            &mut w.script_options,
-            &mut w.script_repo,
-        );
+        tab.script_loader
+            .show(ctx, &mut w.script_loader, &mut w.script_options, &mut w.script_repo);
         tab.scheduler.show(ctx, &mut w.scheduler);
         tab.scheduler.files(ctx);
         w.script_repo |= std::mem::take(&mut tab.scheduler.open_repo);
@@ -521,8 +516,7 @@ impl TuruUi {
             ctx.request_repaint();
         }
         tab.game_options.show(ctx, &mut w.game_options);
-        tab.application_options
-            .show(ctx, &mut w.application_options);
+        tab.application_options.show(ctx, &mut w.application_options);
         tab.core_bots.show(ctx, &mut w.core_bots);
         tab.hotkeys.show(ctx, &mut w.hotkeys);
         tab.current_drops.show(ctx, &mut w.current_drops);
@@ -723,40 +717,29 @@ mod tests {
         vec![
             (
                 "Script Options",
-                boxed(script_options::ScriptOptionsWindow::default(), |w, c, o| {
-                    w.show(c, o)
-                }),
+                boxed(script_options::ScriptOptionsWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "Search Scripts",
-                boxed(script_repo::ScriptRepoWindow::default(), |w, c, o| {
-                    w.show(c, o)
-                }),
+                boxed(script_repo::ScriptRepoWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "Scheduler",
-                boxed(scheduler::SchedulerWindow::default(), |w, c, o| {
-                    w.show(c, o)
-                }),
+                boxed(scheduler::SchedulerWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "Game Options",
-                boxed(game_options::GameOptionsWindow::default(), |w, c, o| {
-                    w.show(c, o)
-                }),
+                boxed(game_options::GameOptionsWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "HotKeys",
-                boxed(hotkeys_window::HotKeysWindow::default(), |w, c, o| {
-                    w.show(c, o)
-                }),
+                boxed(hotkeys_window::HotKeysWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "Application Options",
-                boxed(
-                    application_options::ApplicationOptionsWindow::default(),
-                    |w, c, o| w.show(c, o),
-                ),
+                boxed(application_options::ApplicationOptionsWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
             (
                 "CoreBots Options",
@@ -764,53 +747,37 @@ mod tests {
             ),
             (
                 "Current Drops",
-                boxed(current_drops::CurrentDrops::default(), |w, c, o| {
-                    w.show(c, o)
-                }),
+                boxed(current_drops::CurrentDrops::default(), |w, c, o| w.show(c, o)),
             ),
-            (
-                "Loader",
-                boxed(loader::LoaderWindow::default(), |w, c, o| w.show(c, o)),
-            ),
+            ("Loader", boxed(loader::LoaderWindow::default(), |w, c, o| w.show(c, o))),
             (
                 "Grabber",
                 boxed(grabber::GrabberWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "Junk Items",
-                boxed(junk_items::JunkItemsWindow::default(), |w, c, o| {
-                    w.show(c, o)
-                }),
+                boxed(junk_items::JunkItemsWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "Fast Travel",
-                boxed(fast_travel::FastTravelWindow::default(), |w, c, o| {
-                    w.show(c, o)
-                }),
+                boxed(fast_travel::FastTravelWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "Army Queue",
-                boxed(army_queue::ArmyQueueWindow::default(), |w, c, o| {
-                    w.show(c, o)
-                }),
+                boxed(army_queue::ArmyQueueWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "Loadouts Manager",
                 boxed(loadouts::LoadoutsWindow::default(), |w, c, o| w.show(c, o)),
             ),
-            (
-                "Stats",
-                boxed(stats::StatsWindow::default(), |w, c, o| w.show(c, o)),
-            ),
+            ("Stats", boxed(stats::StatsWindow::default(), |w, c, o| w.show(c, o))),
             (
                 "Runtime",
                 boxed(runtime::RuntimeWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 notify_drop::TITLE,
-                boxed(notify_drop::NotifyDropWindow::default(), |w, c, o| {
-                    w.show(c, o)
-                }),
+                boxed(notify_drop::NotifyDropWindow::default(), |w, c, o| w.show(c, o)),
             ),
             (
                 "Advanced Skills",
@@ -826,26 +793,18 @@ mod tests {
             ),
             (
                 "Interceptor",
-                boxed(interceptor::InterceptorWindow::default(), |w, c, o| {
-                    w.show(c, o)
-                }),
+                boxed(interceptor::InterceptorWindow::default(), |w, c, o| w.show(c, o)),
             ),
-            (
-                "Butler",
-                boxed(butler::ButlerWindow::default(), |w, c, o| w.show(c, o)),
-            ),
+            ("Butler", boxed(butler::ButlerWindow::default(), |w, c, o| w.show(c, o))),
             (
                 notifications::TITLE,
-                boxed(
-                    notifications::NotificationCenterWindow::default(),
-                    |w, c, o| w.show(c, o),
-                ),
+                boxed(notifications::NotificationCenterWindow::default(), |w, c, o| {
+                    w.show(c, o)
+                }),
             ),
             (
                 "Cosmetics & Outfits",
-                boxed(cosmetics::CosmeticsWindow::default(), |w, c, o| {
-                    w.show(c, o)
-                }),
+                boxed(cosmetics::CosmeticsWindow::default(), |w, c, o| w.show(c, o)),
             ),
         ]
     }
@@ -899,7 +858,9 @@ mod tests {
             Install::Idle,
             Install::Busy("Downloading Turu 0.2.0-alpha.10…".into()),
             Install::OnQuit("0.2.0-alpha.10".into()),
-            Install::Failed("https://example.invalid/turu.zip: error sending request for url: connection refused".into()),
+            Install::Failed(
+                "https://example.invalid/turu.zip: error sending request for url: connection refused".into(),
+            ),
         ];
         for install in states {
             turu_bot::updates::update_state(|s| {
@@ -924,11 +885,9 @@ mod tests {
     /// Butler with its settings and debug log open (it scrolls then) stays on screen.
     #[test]
     fn butler_settings_and_log_render() {
-        crate::turu::bot().butler.record(
-            "Follower",
-            "AntiLag ON",
-            turu_bot::butler::Level::Success,
-        );
+        crate::turu::bot()
+            .butler
+            .record("Follower", "AntiLag ON", turu_bot::butler::Level::Success);
         let mut window = butler::ButlerWindow::expanded();
         let mut show: Show = Box::new(move |ctx, open| window.show(ctx, open));
         for screen in [vec2(1400.0, 1000.0), vec2(640.0, 420.0)] {
@@ -955,8 +914,7 @@ mod tests {
         output.textures_delta.clear();
         let font = egui::FontId::proportional(13.0);
         let uv = |c: char| {
-            let galley = ctx
-                .fonts_mut(|f| f.layout_no_wrap(c.to_string(), font.clone(), egui::Color32::WHITE));
+            let galley = ctx.fonts_mut(|f| f.layout_no_wrap(c.to_string(), font.clone(), egui::Color32::WHITE));
             galley.rows[0].glyphs[0].uv_rect
         };
         let replacement = uv('\u{FFFF}');
@@ -981,9 +939,7 @@ mod tests {
                     failures.push(format!("{screen:?} {title}: {rect:?} outside {area:?}"));
                 }
                 if screen.y >= 1000.0 && overflow > 0.5 {
-                    failures.push(format!(
-                        "{title} scrolls at its default size: {overflow} too tall"
-                    ));
+                    failures.push(format!("{title} scrolls at its default size: {overflow} too tall"));
                 }
             }
         }

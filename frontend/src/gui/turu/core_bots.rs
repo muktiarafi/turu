@@ -829,6 +829,10 @@ mod tests {
     /// Refreshing the class and gear lists keeps each role's picks (VibeSkua's Reload Classes
     /// cleared them), so it changes nothing to save.
     #[test]
+    #[allow(
+        clippy::field_reassign_with_default,
+        reason = "username is the Draft's, reached through Deref"
+    )]
     fn refresh_keeps_the_picks() {
         let mut window = CoreBotsWindow::default();
         window.username = "Hero".into();
@@ -846,6 +850,10 @@ mod tests {
     /// A long name and state are cut, and in a narrow window (a phone's) the buttons go on a row
     /// of their own: the text never runs under the buttons, and keeps room to be read.
     #[test]
+    #[allow(
+        clippy::field_reassign_with_default,
+        reason = "username is the Draft's, reached through Deref"
+    )]
     fn header_fits_narrow_windows() {
         for width in [800.0, 440.0] {
             let ctx = egui::Context::default();

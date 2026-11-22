@@ -1834,9 +1834,10 @@ mod tests {
         let published = format!(
             r#"{{ "ArchMage": {{ "Base": {set}, "TuruTest": {set} }}, "TuruTestClass": {{ "Base": {set} }} }}"#
         );
-        let mut settings = crate::settings::AppSettings::default();
-
-        settings.auto_update_advance_skill_sets_updates = false;
+        let mut settings = crate::settings::AppSettings {
+            auto_update_advance_skill_sets_updates: false,
+            ..Default::default()
+        };
         let added = startup_skill_sets(&paths, &settings, || panic!("not downloaded")).unwrap();
         assert_eq!(added, None, "needs both switches");
 

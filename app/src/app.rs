@@ -846,7 +846,7 @@ impl MainWindow {
     }
 
     /// Turu: gives the player the room under the nav bar.
-    fn set_viewports(&mut self, size: PhysicalSize<u32>) {
+    fn set_viewports(&self, size: PhysicalSize<u32>) {
         let scale_factor = self.gui.window().scale_factor();
         let top = self.gui.height_offset() as u32;
         let height = size.height.saturating_sub(top);
