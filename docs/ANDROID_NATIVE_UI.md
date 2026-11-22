@@ -255,17 +255,19 @@ some windows (an update's release page, Options' web control), and the native fi
 keyboard while the game's field has the focus.
 
 **Every Kotlin class Rust reaches is bound in one file per app**, `android/src/java.rs` (Turu:
-`TuruActivity`, `TuruService`, `Storage`) and `air/ane/rust/src/java.rs` (Turu Mas: `Bridge`,
+`TuruActivity`, `TuruService`, `Storage`, and since process tabs and the native shell
+`SlotService`, `SlotShell`, `AccountsPanel`) and `air/ane/rust/src/java.rs` (Turu Mas: `Bridge`,
 `Passwords`), with jni 0.22's `bind_java_type!`: each method Rust calls, and each `external` it
 implements, is written there once, with its Java types. Rust calls the generated methods
-(`activity.show_ui_field(env, ...)`, `TuruService::status(env, ...)`), never a method by name. The
+(`activity.share_text(env, ...)`, `SlotService::status(env, ...)`), never a method by name. The
 `native*` functions keep their bodies and `Java_...` exports where they are; the binding names
 each one (`fn = ...`), so a Rust function that doesn't match its declared signature doesn't
 compile, and registers them with `RegisterNatives`.
 
 `java::check` looks up every bound method and registers the natives when the app starts: Turu from
-`android_main` (through the activity's class loader) and from `TuruService.nativeStart` (the
-service alone, after a kill), Turu Mas from `Bridge.nativeStart`. A renamed Kotlin method, a
+`android_main` (the shell's process, through the activity's class loader) and from
+`SlotService.nativeStartSlot` (each tab's slot process, through the service's context), Turu Mas
+from `Bridge.nativeStart`. A renamed Kotlin method, a
 changed parameter, or a Rust binding with no Kotlin method behind it stops the app at once,
 naming it ("Kotlin and Rust disagree on Storage: Method not found: deletePasswords
 (Ljava/lang/String;)V"), instead of failing the first time that feature is used. Release builds
