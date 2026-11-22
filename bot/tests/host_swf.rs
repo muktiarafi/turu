@@ -8,10 +8,11 @@ use std::time::{Duration, Instant};
 use turu_bot::{Bot, BotError, FlashArg, FlashHost, HostError};
 
 /// A host SWF that records the calls it gets; `info` is what its `hostInfo` answers ("null":
-/// none, as the tests' fake games).
+/// none, as the tests' fake games). `hostInfo` waits while a test holds `gate`.
 struct FakeSwf {
     info: String,
     calls: Mutex<Vec<(String, Vec<FlashArg>)>>,
+    gate: Mutex<()>,
 }
 
 impl FakeSwf {
@@ -19,17 +20,25 @@ impl FakeSwf {
         Arc::new(Self {
             info: info.to_string(),
             calls: Mutex::new(Vec::new()),
+            gate: Mutex::new(()),
         })
     }
 
     fn calls(&self) -> Vec<(String, Vec<FlashArg>)> {
         self.calls.lock().clone()
     }
+
+    fn count(&self, name: &str) -> usize {
+        self.calls().iter().filter(|(n, _)| n == name).count()
+    }
 }
 
 impl FlashHost for FakeSwf {
     fn call(&self, name: &str, args: Vec<FlashArg>) -> Result<String, HostError> {
         self.calls.lock().push((name.to_owned(), args));
+        if name == "hostInfo" {
+            drop(self.gate.lock());
+        }
         Ok(match name {
             "hostInfo" => self.info.clone(),
             _ => "null".into(),
@@ -126,11 +135,21 @@ fn a_new_start_asks_the_host_swf_again() {
     wait_for_call(&swf, "loadClient");
     assert!(bot.flash.host_info().is_some());
 
+    // The new start's `hostInfo` waits at the gate: the old answer must be gone by then (the
+    // client loading asks again at once, which raced this check on CI).
+    let gate = swf.gate.lock();
     bot.on_flash_call("requestLoadGame", vec![]);
     assert!(
         bot.flash.host_info().is_none(),
         "forgotten until asked again"
     );
+    drop(gate);
+
+    let start = Instant::now();
+    while swf.count("hostInfo") < 2 || bot.flash.host_info().is_none() {
+        assert!(start.elapsed() < Duration::from_secs(5), "not asked again");
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 #[test]
