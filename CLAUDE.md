@@ -125,6 +125,13 @@ Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
   (`// impeccable-disable-line <rule>: <why>`). Run it by hand with `--check <files>`. Don't
   edit `.impeccable/config.json` to force Impeccable's. Android's shell looks like
   `ShellTheme.kt` and docs/UI.md's pass, not DESIGN.md (the web monitor's).
+* **Always format, and clear the warnings** (owner, 2026-11-22): every change ends with its code
+  formatted (STATUS.md, "Formatting": the bot crate, the UI windows at 120 columns, and in
+  `ruffle/` its workspace and `patches/` crates) and with the clippy command above, and the
+  build, showing no warning, Ruffle's crates included. Fix a warning rather than allow it; where
+  the fix is wrong (clippy's suggestion doesn't compile, a stub must keep a signature), allow it on
+  that item with a `reason`. Prefer `allow` to `expect` in Ruffle's patched crates: a newer rustc
+  can make an `expect` unfulfilled.
 * **Search Scripts wherever a script is chosen**: every screen that picks a script offers
   "Search scripts…" opening Search Scripts picking for it, never only the Script Loader's
   (docs/UI.md, "Search Scripts everywhere a script is chosen"; Android's `ScriptPick`). Not as an

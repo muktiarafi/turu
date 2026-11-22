@@ -1348,8 +1348,10 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
   macromedia.asc.embedding.ScriptCompiler"), while the app's cached build is reused.
 - **Formatting:** the bot crate uses `cargo fmt`. Not the app (Ruffle's files keep their own
   layout: `cargo fmt -p turu` rewraps 50 of them). The files in `frontend/src/gui/turu/` are
-  formatted with `max_width = 120`, so format one file at a time
-  (`rustfmt --edition 2024 --config max_width=120 <file>`). Running rustfmt on `mod.rs`
-  reformats every window.
+  formatted with `max_width = 120`, so format them with rustfmt rather than `cargo fmt`
+  (`rustfmt --edition 2024 --config max_width=120 <file>`; on `mod.rs` it formats every
+  window, which are all formatted). In `ruffle/`, `cargo fmt --all` formats Ruffle's workspace
+  (Mugetsu's and Turu's changes included); the crates in `ruffle/patches/` are outside it:
+  `rustfmt --edition <its Cargo.toml's edition> ruffle/patches/<crate>/src/lib.rs`.
 - `docs/mugetsu-patch.md` describes what Mugetsu's patch changes, including the egui
   palette.

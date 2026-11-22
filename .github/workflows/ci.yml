@@ -62,14 +62,13 @@ jobs:
           components: rustfmt
 
       # Only Turu's own code: Ruffle's files in app/ keep their own layout (docs/STATUS.md,
-      # "Formatting"). The UI windows use max_width = 120; mod.rs isn't one of them.
+      # "Formatting"). The UI windows, mod.rs included, use max_width = 120.
       - name: Check the bot engine's formatting
         run: cargo fmt -p turu_bot --check
 
       - name: Check the UI windows' formatting
         run: |
           for file in frontend/src/gui/turu/*.rs; do
-            [[ "$(basename "$file")" == mod.rs ]] && continue
             rustfmt --edition 2024 --config max_width=120 --check "$file"
           done
 
