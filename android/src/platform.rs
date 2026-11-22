@@ -77,7 +77,8 @@ impl Platform for AndroidPlatform {
     }
 
     fn set_graphics(&self, value: &str) {
-        let graphics = crate::screen::Graphics::from_arg(value).unwrap_or(crate::screen::Graphics::Auto);
+        let graphics =
+            crate::screen::Graphics::from_arg(value).unwrap_or(crate::screen::Graphics::Auto);
         crate::save_graphics(graphics);
         tracing::info!("Graphics: {} from each tab's next start", graphics.arg());
     }
@@ -140,7 +141,14 @@ impl Platform for AndroidPlatform {
 
     fn set_memory_limit_mb(&self, mb: u32) {
         crate::set_memory_limit_mb(mb);
-        tracing::info!("Memory limit: {}", if mb == 0 { "off".to_string() } else { format!("{mb} MB") });
+        tracing::info!(
+            "Memory limit: {}",
+            if mb == 0 {
+                "off".to_string()
+            } else {
+                format!("{mb} MB")
+            }
+        );
     }
 
     fn memory_now_mb(&self) -> Option<u64> {

@@ -11,8 +11,8 @@ use jni::objects::{JClass, JString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
-use turu_bot::accounts::{self, Account, Accounts};
 use turu_bot::accounts::ping::{self, Pings};
+use turu_bot::accounts::{self, Account, Accounts};
 
 fn accounts_file(root: &Path) -> PathBuf {
     turu_bot::paths::Paths {
@@ -38,7 +38,10 @@ pub(crate) fn accounts_view(root: &Path, tabs: &[(u32, Option<String>)], streame
                     .is_some_and(|u| u.eq_ignore_ascii_case(&account.username))
                     .then_some(*slot)
             });
-            let password = accounts::password(&account.username).ok().flatten().is_some();
+            let password = accounts::password(&account.username)
+                .ok()
+                .flatten()
+                .is_some();
             // Turu: VibeSkua's Streamer Mode leaves its Manager's account list as it is; here the
             // list is part of the window being streamed.
             let label = if streamer {
@@ -83,16 +86,28 @@ pub(crate) fn accounts_view(root: &Path, tabs: &[(u32, Option<String>)], streame
 #[serde(tag = "do", rename_all = "camelCase")]
 enum Ask {
     /// Starts the account in a new tab, with the launch options.
-    Start { username: String },
+    Start {
+        username: String,
+    },
     /// Starts each account in a new tab of its own, in the list's order, as far as there are free
     /// tabs (the panel says first which won't fit).
-    StartMany { usernames: Vec<String> },
+    StartMany {
+        usernames: Vec<String>,
+    },
     /// Puts the accounts in the group, making it if there's none of that name.
-    AddToGroup { group: String, usernames: Vec<String> },
+    AddToGroup {
+        group: String,
+        usernames: Vec<String>,
+    },
     /// Takes the accounts out of the group (the group stays, even empty).
-    RemoveFromGroup { group: String, usernames: Vec<String> },
+    RemoveFromGroup {
+        group: String,
+        usernames: Vec<String>,
+    },
     /// Removes the group; its accounts stay.
-    RemoveGroup { group: String },
+    RemoveGroup {
+        group: String,
+    },
     /// Adds an account, or changes the one named `original`.
     #[serde(rename_all = "camelCase")]
     Save {
@@ -102,9 +117,14 @@ enum Ask {
         display_name: String,
         tags: Vec<String>,
     },
-    Remove { username: String },
+    Remove {
+        username: String,
+    },
     /// Up (-1) or down (1) the list.
-    Move { username: String, by: isize },
+    Move {
+        username: String,
+        by: isize,
+    },
     /// The launch options.
     #[serde(rename_all = "camelCase")]
     Launch {
@@ -124,7 +144,10 @@ fn act(root: &Path, ask: Ask) -> String {
         Err(e) => json!({ "error": format!("Couldn't save the accounts: {e}") }).to_string(),
     };
     let start_args = |list: &Accounts, username: String| {
-        let script = list.script.as_ref().map(|s| s.to_string_lossy().into_owned());
+        let script = list
+            .script
+            .as_ref()
+            .map(|s| s.to_string_lossy().into_owned());
         turu_frontend::slots::open_args(
             Some(username),
             Some(list.server.clone()).filter(|s| !s.trim().is_empty()),
@@ -140,8 +163,15 @@ fn act(root: &Path, ask: Ask) -> String {
         Ask::StartMany { usernames } => {
             // One answer for all: each `open` adds its slot's actions, the last tab shown. A
             // full pool opens nothing more.
-            let all: Vec<Vec<String>> = usernames.into_iter().map(|u| start_args(&list, u)).collect();
-            with_shell_actions(|shell| all.into_iter().flat_map(|args| shell.open(args, None)).collect())
+            let all: Vec<Vec<String>> = usernames
+                .into_iter()
+                .map(|u| start_args(&list, u))
+                .collect();
+            with_shell_actions(|shell| {
+                all.into_iter()
+                    .flat_map(|args| shell.open(args, None))
+                    .collect()
+            })
         }
         Ask::AddToGroup { group, usernames } => {
             let group = group.trim();
@@ -180,7 +210,8 @@ fn act(root: &Path, ask: Ask) -> String {
                 .as_deref()
                 .filter(|o| !o.eq_ignore_ascii_case(&username));
             if (original.is_none() || renamed.is_some()) && list.find(&username).is_some() {
-                return json!({ "error": format!("{username} is already in the list") }).to_string();
+                return json!({ "error": format!("{username} is already in the list") })
+                    .to_string();
             }
             let account = Account {
                 username: username.clone(),

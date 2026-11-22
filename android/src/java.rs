@@ -212,7 +212,10 @@ pub(crate) fn check(env: &mut Env, loader: &LoaderContext) {
         ("Storage", StorageAPI::get(env, loader).map(drop)),
         ("SlotService", SlotServiceAPI::get(env, loader).map(drop)),
         ("SlotShell", SlotShellAPI::get(env, loader).map(drop)),
-        ("AccountsPanel", AccountsPanelAPI::get(env, loader).map(drop)),
+        (
+            "AccountsPanel",
+            AccountsPanelAPI::get(env, loader).map(drop),
+        ),
     ];
     let count = checked.len();
     let failures: Vec<String> = checked

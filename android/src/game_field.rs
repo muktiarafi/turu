@@ -204,4 +204,3 @@ pub(crate) fn closed() {
         crate::with_screen(|screen| screen.game_field.closed(player));
     });
 }
-

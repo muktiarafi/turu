@@ -745,7 +745,9 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
             // a phone draws at most one picture a refresh, so a game faster than the display is
             // measured against the display.
             if let Some((drawn_fps, refresh)) = SCREEN.with_borrow_mut(|screen| {
-                screen.as_mut().and_then(|screen| screen.take_picture_window())
+                screen
+                    .as_mut()
+                    .and_then(|screen| screen.take_picture_window())
             }) {
                 let rate = refresh.map_or(player.frame_rate(), |hz| player.frame_rate().min(hz));
                 turu_frontend::graphics_tips::window(drawn_fps, rate, tip_quality(player));
@@ -844,7 +846,10 @@ static PERFORMANCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::n
 
 /// Reads Performance mode's saved level (`root`: the data folder).
 fn load_performance(root: &Path) {
-    let level = match std::fs::read_to_string(root.join(PERFORMANCE_FILE)).as_deref().map(str::trim) {
+    let level = match std::fs::read_to_string(root.join(PERFORMANCE_FILE))
+        .as_deref()
+        .map(str::trim)
+    {
         Ok("balanced") => 1,
         Ok("fast") => 2,
         _ => 0,

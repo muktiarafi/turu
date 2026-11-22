@@ -230,7 +230,10 @@ fn check_memory_limit(watch: &mut Watch, player: &mut Player, now: Instant) {
         return;
     }
     watch.last_limit_trim = Some(now);
-    trim(player, &format!("over the memory limit: {rss_mb} of {limit_mb} MB"));
+    trim(
+        player,
+        &format!("over the memory limit: {rss_mb} of {limit_mb} MB"),
+    );
 }
 
 /// Trims when Turu itself is over its memory budget ([`process_memory::over_budget`]), at most
@@ -285,7 +288,9 @@ fn release_finished_gpu_work(player: &mut Player) {
 fn gpu_lost(why: &str) {
     let restart = crate::slots::slot().is_some_and(gpu_restart_allowed);
     if restart {
-        tracing::error!("The GPU stopped working ({why}); this tab's process ends, and Android starts it again");
+        tracing::error!(
+            "The GPU stopped working ({why}); this tab's process ends, and Android starts it again"
+        );
         turu::bot().logs.debug.push(format!(
             "Graphics: the GPU stopped working ({why}); the tab starts again"
         ));
@@ -329,7 +334,9 @@ fn gpu_restart_allowed(slot: u32) -> bool {
         .map(|time| format!("{time}\n"))
         .collect::<String>();
     if let Err(e) = std::fs::write(&path, kept) {
-        tracing::warn!("Couldn't keep the time of the GPU's loss ({e}): the tab doesn't start again");
+        tracing::warn!(
+            "Couldn't keep the time of the GPU's loss ({e}): the tab doesn't start again"
+        );
         return false;
     }
     true
@@ -513,10 +520,19 @@ mod tests {
     fn a_lost_gpu_restarts_a_slot_three_times_in_ten_minutes() {
         assert_eq!(restart_times("", 1000), Some(vec![1000]));
         // Times older than the window, and from a clock set back, don't count.
-        assert_eq!(restart_times("100\n1500\n2000\n", 1000 + 700), Some(vec![1500, 1700]));
-        assert_eq!(restart_times("1000\n1100\n", 1200), Some(vec![1000, 1100, 1200]));
+        assert_eq!(
+            restart_times("100\n1500\n2000\n", 1000 + 700),
+            Some(vec![1500, 1700])
+        );
+        assert_eq!(
+            restart_times("1000\n1100\n", 1200),
+            Some(vec![1000, 1100, 1200])
+        );
         assert_eq!(restart_times("1000\n1100\n1200\n", 1300), None);
-        assert_eq!(restart_times("1000\n1100\n1200\n", 1650), Some(vec![1100, 1200, 1650]));
+        assert_eq!(
+            restart_times("1000\n1100\n1200\n", 1650),
+            Some(vec![1100, 1200, 1650])
+        );
     }
 
     #[test]
