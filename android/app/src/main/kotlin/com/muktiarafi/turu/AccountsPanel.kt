@@ -137,7 +137,9 @@ class AccountsPanel(private val runActions: (String) -> Unit) {
     /** Sends `ask`; the answer's actions are the activity's (and `opened`'s), an error goes to `done`. */
     private fun ask(ask: JSONObject, opened: (String) -> Unit = {}, done: (String?) -> Unit) {
         work.execute {
-            val answer = runCatching { nativeAccountsDo(ask.toString()) }.getOrElse { "{\"error\":\"${it.message}\"}" }
+            // Built with JSONObject, not by hand: a message with a quote or a line break must still parse.
+            val answer = runCatching { nativeAccountsDo(ask.toString()) }
+                .getOrElse { JSONObject().put("error", it.message ?: it.toString()).toString() }
             main.post {
                 if (answer.trimStart().startsWith("{")) {
                     done(JSONObject(answer).optString("error"))
