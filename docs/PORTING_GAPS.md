@@ -68,7 +68,7 @@ What VibeSkua has that Turu doesn't (as of 2026-11-06), from `docs/STATUS.md`, `
 | 42 | `Bot.Schedule(delay, action)` | 0 | CoreTasks covers C#'s `Task.Run` patterns. | |
 | 43 | `Bot.Version` / script version gate (`version: x.y.z.w`) | 2 | Search Scripts doesn't flag scripts made for a newer `turu.ts` either. | |
 | 44 | `Bot.Manager.RestartScriptAsync` | — | CoreBots' restart after a logout in windowless mode. | |
-| 45 | Handlers running during one engine wait | — | VibeSkua's 20 ms timer runs handlers all the time; Turu runs them at the next bot call. | |
+| 45 | Handlers running during one engine wait | — | VibeSkua's 20 ms timer runs handlers all the time; Turu runs them at the next bot call. `bot.sleep` now wakes when a handler falls due (it used to hold them for each 100 ms slice, which slowed CoreTasks' skill loops in the Ultras), so only long engine waits (`bot.wait.*`, `Core.jump`'s cell wait) still hold them. | partly done |
 
 ## Ported but partial (from STATUS.md, for completeness)
 

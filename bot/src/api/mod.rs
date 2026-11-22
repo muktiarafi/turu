@@ -34,6 +34,7 @@ use crate::error::{BotError, BotResult};
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// Routes `"module.method"` to the module's `dispatch`.
 pub fn dispatch(bot: &Arc<Bot>, method: &str, args: &[Value]) -> BotResult<Value> {
@@ -77,9 +78,17 @@ fn root(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
             bot.log(args.str(0)?);
             ok(())
         }
+        // Turu: VibeSkua's handlers run on a 20 ms timer of their own while the script sleeps;
+        // here they run between bot calls, so a sleep ends early when one falls due. Returns the
+        // milliseconds slept; `bot/js/turu.ts` sleeps the rest after running the handlers.
         "sleep" => {
-            bot.sleep(args.i64(0)?.max(0) as u64)?;
-            ok(())
+            let started = Instant::now();
+            let mut until = started + Duration::from_millis(args.i64(0)?.max(0) as u64);
+            if let Some(due) = bot.handlers.next_due() {
+                until = until.min(due.max(started));
+            }
+            bot.control.sleep(until - started)?;
+            ok(started.elapsed().as_millis() as u64)
         }
         "shouldExit" => ok(bot.should_exit()),
         "sellJunk" => {

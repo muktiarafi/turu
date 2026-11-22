@@ -1310,7 +1310,7 @@ export class Flash {
 // Handlers
 // ---------------------------------------------------------------------------------------
 
-/** Longest slice of a `bot.sleep` before the handlers get a turn. */
+/** Longest slice of a `bot.sleep`; the engine also ends a slice when a handler falls due. */
 const SLEEP_SLICE_MS = 100;
 
 /** The functions of `bot.handlers`. The engine keeps their timing (bot/src/api/handlers.rs). */
@@ -1430,10 +1430,11 @@ export class Bot {
      */
     sleep(ms: number): void {
         let left = ms;
+        // The engine ends a slice early when a handler falls due and says how long it slept.
         do {
             const slice = Math.min(Math.max(left, 0), SLEEP_SLICE_MS);
-            call("sleep", slice);
-            left -= slice;
+            const slept = call<number>("sleep", slice);
+            left -= Math.max(slept, 1);
         } while (left > 0);
     }
     /**

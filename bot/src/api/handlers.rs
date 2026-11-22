@@ -70,6 +70,17 @@ impl HandlerRunner {
             .collect()
     }
 
+    /// When the next handler that isn't running falls due, or `None` without one. A script's
+    /// `bot.sleep` ends then, so the handlers keep their interval while the script sleeps.
+    pub fn next_due(&self) -> Option<Instant> {
+        self.entries
+            .lock()
+            .iter()
+            .filter(|e| !e.running)
+            .map(|e| e.next)
+            .min()
+    }
+
     /// The script ran the handler. It is due again one interval after the run ended (VibeSkua's
     /// `LimitedRun` stamps the end too), or removed when it was added as `once`. Returns whether
     /// the handler is still registered.
@@ -129,6 +140,22 @@ mod tests {
             handlers.take_due(Instant::now() + Duration::from_millis(200)),
             ["a"]
         );
+    }
+
+    #[test]
+    fn next_due_skips_running_handlers() {
+        let handlers = HandlerRunner::default();
+        assert_eq!(handlers.next_due(), None);
+
+        handlers.add("slow", Duration::from_secs(60), false);
+        handlers.add("fast", Duration::from_millis(20), false);
+        let fast = handlers.next_due().unwrap();
+        assert!(fast <= Instant::now() + Duration::from_millis(20));
+
+        // "fast" runs: the next one due is "slow".
+        let later = Instant::now() + Duration::from_millis(200);
+        assert_eq!(handlers.take_due(later), ["fast"]);
+        assert!(handlers.next_due().unwrap() > Instant::now() + Duration::from_secs(30));
     }
 
     #[test]

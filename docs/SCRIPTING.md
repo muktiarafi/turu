@@ -52,7 +52,7 @@ Script Loader's SCRIPT LOG (and `console.log` goes there too).
   every 1000 ms, `bot.handlers.once(...)` runs once after the delay, and `remove("name")` /
   `clear()` stop them. Returning `false` from the function removes it. A name in use is replaced.
   Intervals are in milliseconds and run at 20 ms at the fastest. They run between your bot calls
-  and during `bot.sleep`, never inside another handler, but not while a single long engine wait
+  and on time during `bot.sleep`, never inside another handler, but not while a single long engine wait
   is blocking (such as `bot.wait.forMapLoad`); they run at the next call after it.
 - **Background tasks** (C#'s `Task.Run` and `new Thread`): `core/CoreTasks.ts` runs a generator
   function beside the script, stepped like a handler. `yield 500` waits 500 ms, `yield until(() =>

@@ -79,6 +79,33 @@ export default function main(): void {
     assert_eq!(bot.scripts.status(), ScriptStatus::Loaded, "{log}");
 }
 
+/// A 100 ms `bot.sleep` (one slice) used to hold a 20 ms handler for all of it, so a fight loop
+/// polling every 100 ms stepped CoreTasks' skill loop at 100 ms instead of 20 ms.
+#[test]
+fn a_handler_keeps_its_interval_during_a_sleep() {
+    let bot = run(
+        "interval",
+        r#"import { bot } from "turu";
+export default function main(): void {
+    let ticks = 0;
+    bot.handlers.register("count", 20, () => { ticks++; });
+    const started = Date.now();
+    for (let i = 0; i < 5; i++) bot.sleep(100);
+    const elapsed = Date.now() - started;
+    bot.handlers.clear();
+    bot.log(`ticks ${ticks}`);
+    bot.log(`elapsed ${elapsed}`);
+}
+"#,
+    );
+
+    let log = bot.logs.script.text();
+    // About 25 at 20 ms; at most 5 when each sleep held the handlers.
+    assert!(logged_number(&log, "ticks") >= 12, "{log}");
+    // Ending early doesn't shorten the sleep.
+    assert!(logged_number(&log, "elapsed") >= 490, "{log}");
+}
+
 #[test]
 fn a_handler_runs_after_a_bot_call() {
     let bot = run(

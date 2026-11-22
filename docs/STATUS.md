@@ -440,8 +440,8 @@ client of its own, a Ruffle player and its bot, in one window and one process (V
   again; meanwhile `combat.attack` refuses and the skill timer waits up to 10 s. The packet
   handler only sets flags; the target calls go through the bot's work thread.
 - **Handlers:** `bot.handlers` (VibeSkua `Bot.Handlers`). The engine times them
-  (`bot/src/api/handlers.rs`) and the script runs them between bot calls and every 100 ms of
-  `bot.sleep`. CoreBots' AFK and registered-quest handlers use it.
+  (`bot/src/api/handlers.rs`) and the script runs them between bot calls; a `bot.sleep` ends its
+  slice when one falls due, so they keep their interval while the script sleeps. CoreBots' AFK and registered-quest handlers use it.
 - **Scripts:** TypeScript, run in QuickJS after oxc strips the types. Ported: the parts of
   CoreBots, CoreFarms, CoreAdvanced (shop buying, the merge-shop template, gear and enhancement)
   and CoreNation that the ported scripts and the FarmerJoe include tree reach (the Core boss kills,
