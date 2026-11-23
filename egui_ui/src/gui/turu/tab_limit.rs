@@ -1,4 +1,4 @@
-//! The Tab Limit's notice (Turu on Android, Turu Mas: `Platform::limits_tabs`): a new tab asked
+//! The Tab Limit's notice (Turu on Android, Turu Mas: `Host::limits_tabs`): a new tab asked
 //! for with the tab strip's "+", Army > New Tab or Accounts' "In a tab" while as many tabs are
 //! open as Options > Application > Tab Limit allows isn't opened; this box says why and offers
 //! the setting (or, at the most Turu runs, to close a tab first). The state is `models::prompts`',

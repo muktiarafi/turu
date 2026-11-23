@@ -85,7 +85,7 @@ impl RuffleGui {
             context_menu: None,
             // Turu: the bot windows' file dialogs and links.
             turu: {
-                crate::platform::set(std::sync::Arc::new(crate::desktop_platform::DesktopPlatform::new(
+                crate::host::set(std::sync::Arc::new(crate::desktop_host::DesktopHost::new(
                     dialogs.file_picker(),
                 )));
                 turu::TuruUi::new()

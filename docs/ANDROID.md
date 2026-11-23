@@ -22,7 +22,7 @@ How to build, run and check the Android app. The design and the plan are in
 > them; one engine thread runs them all (`turu_frontend::players`), the active tab drawn and
 > heard, the others muted and ticked at the hidden tab's rate. Options > Application > Tab Limit
 > (default 4, at most 4 then: 9 since 2026-11-22, below) refuses more, with a log line. The Army menu and Plugins > Butler show
-> (`Platform::has_army`), Butler and Army Control as full-screen sheets with finger-sized
+> (`Host::has_army`), Butler and Army Control as full-screen sheets with finger-sized
 > buttons. The wake lock is held while any tab's script runs and the notification has a line per
 > tab (Pause and Stop act on the active one). The tabs after the first are written to
 > `android-tabs.json` in the data folder (account, server, script, whether it ran; no password)
@@ -40,7 +40,7 @@ How to build, run and check the Android app. The design and the plan are in
 > file changes) and opens no tab past it, whichever way the tab is asked for (New tab, Accounts,
 > a slot's egui menus). Raising it above 4 asks first, with the phone's memory beside what the
 > tabs take (docs/UI.md, "Application Options and CoreBots"). Turu Mas stays at 4: its tabs share
-> one process (`Platform::tab_max`). Checked on the emulator (`-gpu host`, 6 GB AVD, blank tabs at
+> one process (`Host::tab_max`). Checked on the emulator (`-gpu host`, 6 GB AVD, blank tabs at
 > the login screen): at Tab Limit 4 a fifth tab was refused, with the Tabs footer's Raise Tab Limit
 > and Accounts' "No tab is free" landing on the setting; Keep 4 left it as it was; Allow 6 opened
 > slots 5 and 6 in `:c5` and `:c6`. Slots 7 to 9 weren't started (nine clients on that AVD).
@@ -170,7 +170,7 @@ on Auto; Off hides them): Turu's player reports a finger touch screen
 
 | Path | What |
 |---|---|
-| `android/Cargo.toml`, `android/src/lib.rs` | crate `turu_android`: `android_main`, the engine thread, logcat, `turu-args.txt`. `screen.rs` (the GPU, the game's texture, Turu's egui UI over it, who gets a touch or a key), `input.rs` (touch, keys), `audio.rs` (AAudio, from ruffle-android), `ui.rs` (the game's soft keyboard), `platform.rs` (the bot windows' `Platform`: the browser, file dialogs through `saf.rs`). Empty on other systems. |
+| `android/Cargo.toml`, `android/src/lib.rs` | crate `turu_android`: `android_main`, the engine thread, logcat, `turu-args.txt`. `screen.rs` (the GPU, the game's texture, Turu's egui UI over it, who gets a touch or a key), `input.rs` (touch, keys), `audio.rs` (AAudio, from ruffle-android), `ui.rs` (the game's soft keyboard), `platform.rs` (the bot windows' `Host`: the browser, file dialogs through `saf.rs`). Empty on other systems. |
 | `android/src/storage.rs`, `android/app/.../Storage.kt` | account passwords (Accounts' `SecretStore`): AES-GCM with a key in the Android Keystore, in the app's internal storage (`noBackupFilesDir/passwords`, not the shared data folder); copying and writing the picker's documents. |
 | `android/src/restart.rs` | the script started by hand, kept in the data folder's `android-restart.txt` while it runs (its options storage, the account and server; the password, when Accounts hasn't it, with the Keystore's key), run again when the service comes back without an activity after a kill (`turu-args.txt`'s own script wins). |
 | `android/src/notify.rs` | `TuruService`'s native methods (start the engine, the notification's Start, Pause and Stop) and the status it shows (a line per tab with several), sent every 2 s when it changed; alerts (a watched drop, a stopped script) as notifications of their own (`alert`, docs/ANDROID_NATIVE_UI.md, "Alerts"). |
@@ -417,7 +417,7 @@ $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-symbolizer --o
 
 Builds made with a Sentry DSN also send crash reports to the developers, once the user agrees:
 the first start asks "Send crash reports?" in Android's own dialog (`CrashQuestion.kt`, through
-`Platform::ask_crash_uploads`; the desktop asks in Turu's window; closing it asks again next
+`Host::ask_crash_uploads`; the desktop asks in Turu's window; closing it asks again next
 time), and Options >
 Application > Send Crash Reports changes it (`sendCrashReports` in `settings.json`, applied at
 once). Nothing is sent before a yes; builds without a DSN never ask. `CrashUploads.kt` starts

@@ -201,7 +201,7 @@ impl NavigatorInterface for NoDialogs {
         // opens, as a client's `display_unsupported_video` opens it. Web pages only.
         if self.open_links && matches!(url.scheme(), "http" | "https") {
             tracing::info!("The game opens {url}");
-            crate::platform::platform().open_url(url.as_str());
+            crate::host::host().open_url(url.as_str());
         } else {
             tracing::info!("The game wants to open {url} (not opened)");
         }

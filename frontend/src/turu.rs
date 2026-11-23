@@ -155,7 +155,7 @@ pub fn add_tab(startup: Startup) -> (TabId, Arc<Bot>) {
     (id, bot)
 }
 
-/// Where the platform posts alerts ([`crate::platform::Platform::posts_alerts`], Android's
+/// Where the platform posts alerts ([`crate::host::Host::posts_alerts`], Android's
 /// notifications): a script that stops in `bot`'s tab alerts, 2 s later (as
 /// [`exit_on_script_stop`] waits), unless it was the auto-relogin's stop, the script runs again, or
 /// a playlist goes on to its next script. Notify Drop alerts its own drops (`notify_drop.rs`).
@@ -164,7 +164,7 @@ fn watch_alerts(bot: &Arc<Bot>) {
     // The first tab is made before the platform is installed: asked at each stop.
     bot.events.subscribe(move |event| {
         if !matches!(event, BotEvent::ScriptStopped)
-            || !crate::platform::platform().posts_alerts()
+            || !crate::host::host().posts_alerts()
         {
             return;
         }
@@ -185,8 +185,8 @@ fn watch_alerts(bot: &Arc<Bot>) {
                 };
                 let (title, text) = script_stopped_alert(&tab_label(&bot), &end);
                 tracing::info!("Alert: {title}: {text}");
-                let kind = crate::platform::Alert::ScriptStopped;
-                crate::platform::platform().alert(kind, &title, &text);
+                let kind = crate::host::Alert::ScriptStopped;
+                crate::host::host().alert(kind, &title, &text);
             });
     });
 }
@@ -969,12 +969,12 @@ pub fn install_update(on_quit: bool) -> Result<String, String> {
 
 /// Android's Download & install, on a thread: downloads the available release's APK, checks it
 /// against `SHA256SUMS.txt` and hands it to the system's installer
-/// ([`crate::platform::Platform::install_package`]), which asks the user, installs it over this
+/// ([`crate::host::Host::install_package`]), which asks the user, installs it over this
 /// app and stops it; [`package_install_finished`] hears when it didn't.
 #[cfg(target_os = "android")]
 fn install_package() -> Result<String, String> {
     use turu_bot::updates::{self, Install};
-    let platform = crate::platform::platform();
+    let platform = crate::host::host();
     if !platform.installs_packages() {
         return Err("this app can't install its updates".into());
     }
@@ -1011,7 +1011,7 @@ fn install_package() -> Result<String, String> {
             let installed = updates::download(&updates::Http::for_downloads(), &release, &dir)
                 .and_then(|apk| {
                     set(Install::Busy(format!("Installing {name} {}…", release.version)));
-                    crate::platform::platform().install_package(&apk)
+                    crate::host::host().install_package(&apk)
                 });
             if let Err(e) = installed {
                 tracing::error!("Couldn't update {name}: {e}");

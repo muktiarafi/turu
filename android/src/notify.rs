@@ -209,8 +209,8 @@ pub(crate) fn gpu_lost(why: &str) {
 }
 
 /// `TuruService.alert(kind, title, text)`: a notification while the app isn't on screen
-/// (`Platform::alert`). Through the service's class, as the activity may be gone.
-pub(crate) fn alert(kind: turu_frontend::platform::Alert, title: &str, text: &str) {
+/// (`Host::alert`). Through the service's class, as the activity may be gone.
+pub(crate) fn alert(kind: turu_frontend::host::Alert, title: &str, text: &str) {
     // In a process tab's slot too: its `SlotService` set up `Alerts` there, and the shell tells it
     // whether the app is on screen.
     let Some(vm) = SERVICE.get() else {

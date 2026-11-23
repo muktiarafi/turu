@@ -6,7 +6,7 @@ use super::hotkeys;
 use super::theme::{DANGER, MUTED, TEXT, WARNING};
 use super::widgets::{self, Kind};
 use crate::models::scripts::{self as model, FORCE_STOP_DOES, Status};
-use crate::platform::FileDialog;
+use crate::host::FileDialog;
 use egui::{Align, Context, CursorIcon, Key, Label, Layout, RichText, Sense, Ui, vec2};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -62,7 +62,7 @@ impl ScriptLoader {
         let view = model::view(&bot);
         let status = bot.scripts.status();
         let active = view.status.is_active();
-        let platform = crate::platform::platform();
+        let platform = crate::host::host();
         let code = self.vscode.get_or_insert_with(files::find_vscode).clone();
         self.log.set_wrap(true);
         self.log.set_empty_text(if active {

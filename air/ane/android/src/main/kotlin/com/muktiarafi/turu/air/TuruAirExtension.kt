@@ -42,7 +42,7 @@ class TuruAirExtension : FREExtension {
                 Passwords.init(activity.applicationContext)
                 // The file dialogs' documents.
                 Documents.init(activity.applicationContext)
-                // Drops and stopped scripts as notifications (`Platform::alert`), held while AIR's
+                // Drops and stopped scripts as notifications (`Host::alert`), held while AIR's
                 // activity, already on screen, is.
                 Foreground.watch(activity, activity)
                 Alerts.init(activity.applicationContext, activity.applicationInfo.icon)

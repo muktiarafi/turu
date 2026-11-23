@@ -5,7 +5,7 @@
 use super::files::{self, Pending};
 use super::theme::{ACCENT, DANGER, HOVER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
-use crate::platform::FileDialog;
+use crate::host::FileDialog;
 use egui::{Align, Checkbox, ComboBox, Context, Label, Layout, Modal, RichText, ScrollArea, Ui, vec2};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -130,7 +130,7 @@ pub struct AccountsWindow {
     launch_open: bool,
     /// Search… asked for a script: the answer goes to Search Scripts' pick mode
     /// ([`Self::take_script_search`]).
-    script_search: Option<crate::platform::Answer>,
+    script_search: Option<crate::host::Answer>,
 }
 
 impl Default for AccountsWindow {
@@ -762,7 +762,7 @@ impl AccountsWindow {
         let server = Some(list.server.trim())
             .filter(|s| !s.is_empty())
             .unwrap_or("Any server");
-        let mode = if crate::platform::platform().launches_processes() {
+        let mode = if crate::host::host().launches_processes() {
             list.mode.label()
         } else {
             LaunchMode::Tab.label()
@@ -810,7 +810,7 @@ impl AccountsWindow {
             }
             labeled(ui, "Where", &mut |ui| {
                 // Only tabs where Army can't start a `turu` of its own (Android).
-                if !crate::platform::platform().launches_processes() {
+                if !crate::host::host().launches_processes() {
                     ui.label(RichText::new(LaunchMode::Tab.label()).color(MUTED))
                         .on_hover_text("Here accounts start in tabs of this app");
                     return;
@@ -877,7 +877,7 @@ impl AccountsWindow {
     /// when needed), and Browse… for a file where there are file dialogs. Drawn right to left.
     fn script_picker(&mut self, ui: &mut Ui) {
         let waiting = self.pending_script.is_open();
-        if crate::platform::platform().has_file_dialogs()
+        if crate::host::host().has_file_dialogs()
             && widgets::small_button(ui, "Browse…", !waiting)
                 .on_hover_text("Pick a script file")
                 .clicked()
@@ -903,7 +903,7 @@ impl AccountsWindow {
     }
 
     /// Search…'s request: Search Scripts should open in its pick mode with this answer.
-    pub fn take_script_search(&mut self) -> Option<crate::platform::Answer> {
+    pub fn take_script_search(&mut self) -> Option<crate::host::Answer> {
         self.script_search.take()
     }
 
@@ -1021,7 +1021,7 @@ impl AccountsWindow {
             headless: list.mode == LaunchMode::Headless,
             ..Default::default()
         };
-        let in_tabs = list.mode == LaunchMode::Tab || !crate::platform::platform().launches_processes();
+        let in_tabs = list.mode == LaunchMode::Tab || !crate::host::host().launches_processes();
         {
             let mut launches = lock(&self.launches);
             launches.batch = accounts.iter().map(|a| a.username.clone()).collect();

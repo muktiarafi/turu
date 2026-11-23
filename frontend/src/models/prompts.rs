@@ -22,9 +22,9 @@ use turu_bot::startup::Startup;
 
 /// How long after a shell last read the view egui still leaves the dialogs to it.
 const SHELL_FRESH: Duration = Duration::from_secs(3);
-/// The most tabs Options > Application > Tab Limit allows (`Platform::tab_max`).
+/// The most tabs Options > Application > Tab Limit allows (`Host::tab_max`).
 pub fn tab_max() -> i32 {
-    crate::platform::platform().tab_max()
+    crate::host::host().tab_max()
 }
 
 static SHELL_READ: Mutex<Option<Instant>> = Mutex::new(None);
@@ -87,7 +87,7 @@ static UPLOADS_LOOKED: Mutex<Option<Instant>> = Mutex::new(None);
 const UPLOADS_LOOK_EVERY: Duration = Duration::from_secs(3);
 
 /// Whether "Send crash reports?" waits for an answer: where the build can send them
-/// (`Platform::uploads_crash_reports`), the user hasn't answered (`send_crash_reports`) and didn't
+/// (`Host::uploads_crash_reports`), the user hasn't answered (`send_crash_reports`) and didn't
 /// close it this run. Each tab is a process of its own (Android, M6) with its own copy of the
 /// settings, so an answer given in another tab is read from the saved file and taken up here,
 /// uploads included, instead of asking again.
@@ -95,12 +95,12 @@ pub fn crash_uploads_waiting(bot: &Bot) -> bool {
     if UPLOADS_DISMISSED.load(Ordering::Relaxed) || bot.settings.read().send_crash_reports.is_some() {
         return false;
     }
-    if !crate::platform::platform().uploads_crash_reports() {
+    if !crate::host::host().uploads_crash_reports() {
         return false;
     }
     if let Some(on) = saved_crash_uploads(bot) {
         bot.settings.write().send_crash_reports = Some(on);
-        crate::platform::platform().set_crash_uploads(on);
+        crate::host::host().set_crash_uploads(on);
         return false;
     }
     true
@@ -127,10 +127,10 @@ fn saved_crash_uploads(bot: &Bot) -> Option<bool> {
 
 /// "Send crash reports?": what it says and its buttons, in a shell's dialog, egui's or the
 /// system's.
-pub fn crash_upload_question() -> crate::platform::Question {
+pub fn crash_upload_question() -> crate::host::Question {
     // "Turu", or "Turu Mas".
     let app = turu_bot::updates::app_name();
-    crate::platform::Question {
+    crate::host::Question {
         title: "Send crash reports?".into(),
         message: format!(
             "When {app} crashes, it can send a report to its developers so they can fix it: what crashed, \
@@ -157,7 +157,7 @@ pub fn answer_crash_upload_question(answer: Option<bool>) {
     settings.send_crash_reports = Some(on);
     *bot.settings.write() = settings;
     bot.save_settings();
-    crate::platform::platform().set_crash_uploads(on);
+    crate::host::host().set_crash_uploads(on);
 }
 
 // --- the Tab Limit ---------------------------------------------------------------------------
@@ -167,7 +167,7 @@ static REFUSED: AtomicBool = AtomicBool::new(false);
 
 /// The Tab Limit, where the platform limits tabs.
 pub fn tab_limit() -> Option<usize> {
-    crate::platform::platform()
+    crate::host::host()
         .limits_tabs()
         .then(|| crate::turu::bot().settings.read().tab_limit.clamp(1, tab_max()) as usize)
 }
@@ -250,7 +250,7 @@ pub fn tip_texts(tip: &Tip) -> (&'static str, String, &'static str) {
 /// The tip was answered: `turn_on` turns Performance mode on.
 pub fn answer_tip(tip: &Tip, turn_on: bool) {
     if turn_on && let Tip::PerformanceMode { level, .. } = tip {
-        crate::platform::platform().set_performance(*level);
+        crate::host::host().set_performance(*level);
     }
     graphics_tips::answered();
 }

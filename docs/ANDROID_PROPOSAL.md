@@ -66,7 +66,7 @@ Ways to use it:
 | `skua.swf` + the Flash bridge | Embedded, written to the data dir, `ExternalInterface`. | Unchanged. |
 | Ruffle + Mugetsu core/render patches | wgpu (Metal/Vulkan/DX12). | Core patches are backend-agnostic. Render patches (arena, atlas, batched filters) are wgpu-level; the `wgpu-hal` patches touch only `dx12/` and `vulkan/` (plus `lib.rs`, `dynamic/`), so they apply to Vulkan on Android and are inert on GLES. |
 | Player building, executor, `FlashHost` | `app/src/player.rs` (window), `app/src/headless.rs` (no window). | `headless.rs`'s pieces (`HeadlessExecutor`, the `mpsc` loop, `DesktopFlashHost::headless`) are the model: the Android loop is that loop plus "render when a surface is attached". |
-| Turu UI (`egui_ui/src/gui/turu/`) | egui; since phase 0 no winit, `rfd` or `webbrowser` (file dialogs and links go through `Platform`). | egui runs on Android through `egui-wgpu` with input fed by hand. The windows need a touch layout (below). |
+| Turu UI (`egui_ui/src/gui/turu/`) | egui; since phase 0 no winit, `rfd` or `webbrowser` (file dialogs and links go through `Host`). | egui runs on Android through `egui-wgpu` with input fed by hand. The windows need a touch layout (below). |
 | Control API, web monitor | hyper on its own thread. | Works. Useful both ways: steer the phone's bot from a desktop, or show the phone's bots on a desktop monitor (`--report-to`). |
 
 ## Feature matrix
@@ -112,7 +112,7 @@ app/                     desktop app: window, headless loop, Mugetsu, rfd dialog
 frontend/                lib crate `turu_frontend` (built): what desktop and Android share
   turu.rs                tabs, TuruFlashHost, ExternalInterface, spawn_action; reaches the
                          player loop only through closures the app hands in
-  platform.rs            `Platform`: file dialogs, browser, file manager
+  platform.rs            `Host`: file dialogs, browser, file manager
   capture.rs, map_items.rs, map_pads.rs, grid.rs
   gui/turu/              the egui windows
 ```
@@ -123,7 +123,7 @@ wraps its `EventLoopProxy`, the headless loop its `mpsc::Sender`, and Android wi
 thread's channel. A shared `PlayerBuilder` setup for window, headless and Android isn't done yet:
 it belongs to phase 1, when the Android loop needs it.
 
-What the egui windows ask of the OS (`frontend/src/platform.rs`):
+What the egui windows ask of the OS (`frontend/src/host.rs`):
 
 ```rust
 pub trait Platform: Send + Sync {
@@ -283,7 +283,7 @@ Android's limits are the biggest behavioural difference from a desktop:
   `turu::start_perf_log(main_thread)` take what came from `mugetsu` and `thread_perf`. The bar
   heights and Mugetsu's palette the windows use are in `turu_egui::gui`; the app's
   `context_menu.rs` takes the palette from there.
-* **`Platform`** as above; `app/src/desktop_platform.rs` implements it with rfd, `webbrowser`
+* **`Host`** as above; `app/src/desktop_host.rs` implements it with rfd, `webbrowser`
   and Mugetsu's `open_folder`. The windows no longer take a `FilePicker` parameter.
 * **`SecretStore`** (`bot/src/accounts.rs`): `set`/`get`/`delete` by lowercased username; the
   keychain (`keyring`) by default, `accounts::set_secret_store` to replace it. `keyring` isn't
@@ -523,7 +523,7 @@ before any Android code.
 
 | Phase | Goal | Done when |
 |---|---|---|
-| 0. Split (built) | `turu_frontend` crate; the event-loop seam; `Platform` trait; `SecretStore`; TLS feature on `turu_bot`. Desktop only. | Desktop and headless behave as before; `cargo test -p turu_bot` and clippy pass. |
+| 0. Split (built) | `turu_frontend` crate; the event-loop seam; `Host` trait; `SecretStore`; TLS feature on `turu_bot`. Desktop only. | Desktop and headless behave as before; `cargo test -p turu_bot` and clippy pass. |
 | 1. Headless spike (built; farmed 20 min on an emulator) | `android/` with no UI: engine thread, null renderer, a script started from `turu-args.txt`, logcat output, control API on. | On a phone, `turu_bot` logs in (credentials from the control API or a file) and runs a farm for an hour. Answers: does QuickJS/oxc run, memory use, socket stability. |
 | 2. Game on screen (built; checked on an emulator) | wgpu surface (Vulkan vs GLES measured), touch, AAudio, soft keyboard for Flash fields, surface detach/attach without restarting the game. | Log in with the game's own screen on a phone; switch apps and back mid-fight without losing the game. |
 | 3. Turu UI (built; checked on an emulator, without the drawer, sheets or SAF) | egui on Android, drawer nav, sheet frames, the "Port" rows of the matrix, SAF import. | Load, configure, start and stop a script without a computer. |

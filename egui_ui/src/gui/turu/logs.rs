@@ -68,16 +68,16 @@ pub fn log_buttons(ui: &mut Ui, buffer: &LogBuffer, save: &mut SaveText, file_na
     }
     // A gap between the one that removes and the ones that don't.
     ui.add_space(10.0);
-    if crate::platform::platform().has_file_dialogs()
+    if crate::host::host().has_file_dialogs()
         && widgets::button(ui, "Save", Kind::Normal, !buffer.is_empty(), size, "").clicked()
     {
         save.ask(ui.ctx(), file_name, buffer.text());
     }
-    if crate::platform::platform().shares_text()
+    if crate::host::host().shares_text()
         && widgets::button(ui, "Share", Kind::Normal, !buffer.is_empty(), size, "").clicked()
     {
         let text = crash_reports::shareable(&buffer.text(), crash_reports::SHARE_BYTES);
-        crate::platform::platform().share_text(&format!("Turu {file_name}"), &text);
+        crate::host::host().share_text(&format!("Turu {file_name}"), &text);
     }
     if widgets::button(ui, "Copy", Kind::Normal, !buffer.is_empty(), size, "").clicked() {
         ui.ctx().copy_text(buffer.text());
@@ -213,7 +213,7 @@ impl Crashes {
         }
         let read = self.text.as_ref().and_then(|(_, read)| read.as_ref().ok());
         ui.add_space(10.0);
-        let platform = crate::platform::platform();
+        let platform = crate::host::host();
         if platform.shares_text()
             && widgets::button(ui, "Share", Kind::Primary, has, size, "").clicked()
             && let Some(read) = read
@@ -327,7 +327,7 @@ pub fn show_crash_upload_question(ctx: &Context) {
     let question = crate::models::prompts::crash_upload_question();
     // Turu Mas asks with Android's own dialog, once a run; it answers through
     // `answer_crash_upload_question`.
-    if crate::platform::platform().ask_crash_uploads(&question) {
+    if crate::host::host().ask_crash_uploads(&question) {
         answer_crash_upload_question(None);
         return;
     }
@@ -346,7 +346,7 @@ pub fn show_crash_upload_question(ctx: &Context) {
             // The AIR SDK's license (section 6.4) wants the policy linked in the app: Turu Mas.
             ui.add_space(6.0);
             if ui.link(&question.link).clicked() {
-                crate::platform::platform().open_url(&question.link_url);
+                crate::host::host().open_url(&question.link_url);
             }
         },
         [question.no.as_str(), question.yes.as_str()],

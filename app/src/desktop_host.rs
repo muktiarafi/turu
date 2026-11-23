@@ -1,17 +1,17 @@
-//! Turu: the desktop's [`Platform`]: rfd's file dialogs (parented to the window), the browser,
+//! Turu: the desktop's [`Host`]: rfd's file dialogs (parented to the window), the browser,
 //! the file manager, crash reports (`crash_uploads`), Notify Drop's beep (`beep`), frame
 //! interpolation saved as Mugetsu saves it.
 
 use crate::gui::FilePicker;
-use crate::platform::{Answer, FileDialog, Platform};
+use crate::host::{Answer, FileDialog, Host};
 use rfd::AsyncFileDialog;
 use std::path::Path;
 
-pub struct DesktopPlatform {
+pub struct DesktopHost {
     picker: FilePicker,
 }
 
-impl DesktopPlatform {
+impl DesktopHost {
     pub fn new(picker: FilePicker) -> Self {
         Self { picker }
     }
@@ -34,7 +34,7 @@ fn rfd_dialog(dialog: FileDialog) -> AsyncFileDialog {
     rfd
 }
 
-impl Platform for DesktopPlatform {
+impl Host for DesktopHost {
     fn pick_file(&self, dialog: FileDialog, answer: Answer) -> bool {
         // The dialog is created here, on the UI thread (macOS needs that); only waiting for it
         // happens on the runtime.

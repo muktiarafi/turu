@@ -116,7 +116,7 @@ impl GuiController {
         if crate::mugetsu::safe_drawing() {
             tracing::info!("Safe Drawing (a safe-drawing file): the drawing speed-ups are off");
         }
-        let off = crate::platform::drawing_switches_off();
+        let off = crate::host::drawing_switches_off();
         if !off.is_empty() {
             tracing::info!("Drawing speed-ups switched off: {off:?}");
         }

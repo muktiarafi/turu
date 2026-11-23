@@ -536,7 +536,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     let _guard = runtime.enter();
     // The UI runs here too: a Flash call from this thread would wait for itself.
     turu::init_main_thread();
-    turu_frontend::platform::set(Arc::new(platform::AndroidPlatform));
+    turu_frontend::host::set(Arc::new(platform::AndroidHost));
     tracing::info!(
         "Turu {} on Android; data folder {}",
         turu::VERSION,
@@ -614,7 +614,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     ruffle_render::tessellator::set_flash_aa(true);
     // Mugetsu 2.0.0's speed-ups (`DEFAULT_ON`), as on a computer; with Safe Drawing, Ruffle's
     // plain ways of drawing instead (`SAFE_DRAWING`). `--env` below can still change one.
-    for (var, value) in turu_frontend::platform::drawing_switches(|_| false, safe_drawing) {
+    for (var, value) in turu_frontend::host::drawing_switches(|_| false, safe_drawing) {
         // SAFETY: before the engine's threads exist and before Ruffle reads them; the
         // process's other threads (Java's) don't read Turu's environment.
         unsafe { std::env::set_var(var, value) };
@@ -684,7 +684,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
             .debug
             .push("Safe Drawing: the drawing speed-ups are off");
     }
-    let off = turu_frontend::platform::drawing_switches_off();
+    let off = turu_frontend::host::drawing_switches_off();
     if !off.is_empty() {
         tracing::info!("Drawing speed-ups switched off: {off:?}");
     }
@@ -781,7 +781,7 @@ pub(crate) fn save_interpolation(on: bool) {
 }
 
 /// Safe Drawing (Options > Application; off by default) is on while this file is in the data
-/// folder: each slot reads it at its start (`turu_frontend::platform::SAFE_DRAWING`).
+/// folder: each slot reads it at its start (`turu_frontend::host::SAFE_DRAWING`).
 const SAFE_DRAWING_FILE: &str = "safe-drawing.txt";
 
 /// Whether Safe Drawing is saved on.

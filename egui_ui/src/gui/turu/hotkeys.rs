@@ -52,7 +52,7 @@ fn matches(gesture: Gesture, key: Key, modifiers: Modifiers) -> bool {
 /// The actions whose keys were pressed this frame; their key presses are taken from egui. A key
 /// that types (no Ctrl or Alt) or moves a caret is left alone while a Turu text box has focus.
 fn pressed(ctx: &Context) -> Vec<&'static str> {
-    if !crate::platform::platform().has_hotkeys() || capturing(ctx) {
+    if !crate::host::host().has_hotkeys() || capturing(ctx) {
         return Vec::new();
     }
     let typing = ctx.egui_wants_keyboard_input();
@@ -97,7 +97,7 @@ pub(super) fn run_pressed(ctx: &Context, tab: &mut TabUi) {
             Needs::ToggleScript => super::script_loader::toggle_script(),
             Needs::Window { key, title, pick } => {
                 tab.windows.open(key);
-                if pick && crate::platform::platform().has_file_dialogs() {
+                if pick && crate::host::host().has_file_dialogs() {
                     tab.script_loader.pick_script(ctx);
                 }
                 raise(ctx, title);

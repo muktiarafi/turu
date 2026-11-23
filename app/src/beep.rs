@@ -1,8 +1,8 @@
-//! Turu: Notify Drop's beep on the desktop (`Platform::beep`): a stream of its own on the
+//! Turu: Notify Drop's beep on the desktop (`Host::beep`): a stream of its own on the
 //! system's default output, as .NET's `Console.Beep()` sounds apart from the game. Ruffle's
 //! audio (and its mute) isn't involved.
 
-use crate::platform::{BEEP_MS, beep_sample};
+use crate::host::{BEEP_MS, beep_sample};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
 use std::sync::Arc;

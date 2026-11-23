@@ -10,7 +10,7 @@ use jni::objects::{JClass, JObject, JString};
 use jni::{Env, EnvUnowned};
 use std::path::{Path, PathBuf};
 use turu_frontend::documents::{self, Waiting};
-use turu_frontend::platform::{Answer, FileDialog};
+use turu_frontend::host::{Answer, FileDialog};
 
 /// Shows the system's "open" picker; false when it can't (no activity, or a dialog is open).
 pub(crate) fn pick_file(dialog: &FileDialog, answer: Answer) -> bool {

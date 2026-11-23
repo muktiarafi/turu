@@ -11,7 +11,7 @@
 
 use std::path::Path;
 use turu_frontend::documents::{self, Waiting};
-use turu_frontend::platform::{Answer, FileDialog};
+use turu_frontend::host::{Answer, FileDialog};
 use turu_frontend::shell::ToShell;
 
 /// Asks the shell's activity for the system's "open" picker (only slots run the engine); its answer

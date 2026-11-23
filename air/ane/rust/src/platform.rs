@@ -1,4 +1,4 @@
-//! What the bot windows can do under AIR (`turu_frontend::platform::Platform`): links and the share
+//! What the bot windows can do under AIR (`turu_frontend::host::Host`): links and the share
 //! sheet through Kotlin's `Bridge`; file dialogs through Android's system picker (`saf.rs`); tabs
 //! (game clients sharing AIR's one stage: `clients`), Army and Butler in tabs, under the Tab
 //! Limit, without Grid View. An update's APK goes to Android's installer (`Bridge.installPackage`).
@@ -8,11 +8,11 @@ use crate::java::Bridge;
 use jni::Env;
 use std::path::Path;
 use turu_frontend::crash_reports::{SHARE_BYTES, shareable};
-use turu_frontend::platform::{Alert, Answer, FileDialog, Platform, Question};
+use turu_frontend::host::{Alert, Answer, FileDialog, Host, Question};
 
-pub(crate) struct AirPlatform;
+pub(crate) struct AirHost;
 
-impl Platform for AirPlatform {
+impl Host for AirHost {
     fn pick_file(&self, dialog: FileDialog, answer: Answer) -> bool {
         crate::saf::pick_file(&dialog, answer)
     }

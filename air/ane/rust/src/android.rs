@@ -48,7 +48,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeStart<'local>(
                     "Couldn't set up the password store; Accounts won't keep passwords: {e}"
                 );
             }
-            turu_frontend::platform::set(Arc::new(crate::platform::AirPlatform));
+            turu_frontend::host::set(Arc::new(crate::platform::AirHost));
             start_engine(root);
             Ok(())
         })

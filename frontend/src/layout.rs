@@ -6,12 +6,12 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// VibeSkua's top nav bar: the window shows the movie this far down.
 pub const NAV_BAR_HEIGHT: u32 = 34;
-/// The nav bar on a touch screen (`Platform::is_touch`): its buttons are 40 points high.
+/// The nav bar on a touch screen (`Host::is_touch`): its buttons are 40 points high.
 pub const TOUCH_NAV_BAR_HEIGHT: u32 = 48;
 
 /// The nav bar's height here: [`NAV_BAR_HEIGHT`], or [`TOUCH_NAV_BAR_HEIGHT`] on a touch screen.
 pub fn nav_bar_height() -> u32 {
-    if crate::platform::platform().is_touch() {
+    if crate::host::host().is_touch() {
         TOUCH_NAV_BAR_HEIGHT
     } else {
         NAV_BAR_HEIGHT
@@ -25,7 +25,7 @@ pub const TOUCH_TAB_STRIP_HEIGHT: u32 = 40;
 /// The tab strip's height here: [`TAB_STRIP_HEIGHT`], or [`TOUCH_TAB_STRIP_HEIGHT`] on a touch
 /// screen.
 pub fn tab_strip_height() -> u32 {
-    if crate::platform::platform().is_touch() {
+    if crate::host::host().is_touch() {
         TOUCH_TAB_STRIP_HEIGHT
     } else {
         TAB_STRIP_HEIGHT
@@ -36,7 +36,7 @@ pub fn tab_strip_height() -> u32 {
 /// touch screen (Android, held sideways). The game is as tall as the screen allows, so a bar
 /// above it would take its height; the rail sits in the room left and right of it instead.
 pub fn nav_rail() -> bool {
-    crate::platform::platform().is_touch()
+    crate::host::host().is_touch()
 }
 
 /// The rail's width, without the display cutout's inset.

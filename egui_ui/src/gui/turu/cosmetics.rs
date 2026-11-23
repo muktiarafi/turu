@@ -941,7 +941,7 @@ impl CosmeticsWindow {
                         "http://aqwwiki.wikidot.com/{}",
                         turu_bot::cosmetics::escape_data(&item.name)
                     );
-                    crate::platform::platform().open_url(&url);
+                    crate::host::host().open_url(&url);
                 }
             };
             ui.with_layout(Layout::bottom_up(Align::Min), |ui| {

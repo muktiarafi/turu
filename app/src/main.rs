@@ -13,7 +13,7 @@ mod cli;
 mod crash_uploads; // Turu: crash reports to Sentry, once the user agreed
 mod custom_event;
 mod dbus;
-mod desktop_platform; // Turu: file dialogs and links for the bot windows
+mod desktop_host; // Turu: file dialogs and links for the bot windows
 mod gui;
 mod client;
 mod headless;
@@ -36,7 +36,7 @@ mod tracy;
 mod thread_perf;
 mod util;
 // Turu: the bridge to the bot, the bot windows and what they share, from `turu_frontend`.
-use turu_frontend::{capture, pacing, platform, turu};
+use turu_frontend::{capture, host, pacing, turu};
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(windows)]

@@ -96,7 +96,7 @@ shell's surface ticks at the    ticks at the
 
 * **The client** is `turu_frontend`'s engine loop with one tab, the screen (generalised from
   `android/src/screen.rs` into `frontend/`: wgpu and egui only, no window type, so the rule "no
-  winit, rfd or window in `frontend/`" holds) and a `Platform` that sends dialogs, URLs and the
+  winit, rfd or window in `frontend/`" holds) and a `Host` that sends dialogs, URLs and the
   like to the shell. It draws the tab strip too, from a tab list the shell sends; tapping another
   tab asks the shell to switch.
 * **The shell** draws only what shows when no client can: "starting", "this tab closed: Restart".
@@ -116,7 +116,7 @@ shell's surface ticks at the    ticks at the
   unchanged.
 * Army sync (`bot/src/api/army.rs`: logs, `army/.<name>.lock`, the barrier, the room from the
   data folder's path) and Butler (`butler/<username>.state`) already work between processes.
-* `Platform` (`frontend/src/platform.rs`): the seam for what the client asks of the shell.
+* `Host` (`frontend/src/host.rs`): the seam for what the client asks of the shell.
 * Android: `screen.rs`'s `attach` / `detach` (a new surface for the same player and renderer),
   `restart.rs` (a script and login back after a kill), `memory.rs`'s readings and `trim`, the crash
   and exit reports.
@@ -292,7 +292,7 @@ script's last step on a phone), phones' GPUs, a 4 GB phone.
 ### M2: client mode and shell messages (shared, built on the desktop)
 
 * `frontend/`: the screen from `android/src/screen.rs`, made to draw to any wgpu target; the
-  message format and both ends; a client loop (one tab, the screen, Turu's UI); a `Platform`
+  message format and both ends; a client loop (one tab, the screen, Turu's UI); a `Host`
   that forwards to the shell; the tab list.
 * **Done when** `cargo test` covers the messages and a fake shell drives a client (input in,
   Platform calls out, show and hide); a desktop shell shows a client's picture by frame copy;
@@ -316,7 +316,7 @@ phone to check a move on); only its window-free pieces moved to `frontend/`
   a window; `ClientScreen` draws the game and Turu's UI into a BGRA texture at the shell's size and
   scale, reads it back without making the engine wait (map, then look next step), and routes input
   as the desktop does (a press egui wants stays egui's until release, else the game's; keys go to
-  egui while one of its text boxes has the focus). `Platform::open_url` goes to the shell; file
+  egui while one of its text boxes has the focus). `Host::open_url` goes to the shell; file
   dialogs aren't offered yet. The client quits when the shell's connection closes. No sound.
 * **Shell** (`turu --shell`, `app/src/shell.rs`): a winit window that starts one client with its
   own flags, accepts it by token, copies each picture into the window's surface (`COPY_DST`) and
@@ -759,7 +759,7 @@ and file dialogs.
   for both names), with no "Fallback font not found". Found on the way, in the window too: the
   Find box lost the focus after its first character, because the count shown before it changed
   the box's egui id; it has a fixed id now.
-* **File dialogs** in a client: `Platform::pick_file` / `save_file` send `ToShell::FileDialog`. The
+* **File dialogs** in a client: `Host::pick_file` / `save_file` send `ToShell::FileDialog`. The
   shell shows rfd's dialog over its window, one at a time, and answers with `ToClient::Answer`
   (a path, or none when cancelled or another dialog is open).
 
@@ -986,12 +986,12 @@ since; none built or run on Windows or Linux yet). The window (`app/src/gui/cont
    (`windows::add_graphics_menu`); choosing there restarts the shell as it restarts the window
    (`start_again`, then `exit`), and its clients quit when it goes. On both, a client's Options >
    Application has **Graphics** (Automatic, Vulkan, DirectX 12, and OpenGL on Linux;
-   `Platform::graphics_choices`, offered only by a client: the window keeps the game's right-click
+   `Host::graphics_choices`, offered only by a client: the window keeps the game's right-click
    menu). A choice goes to the shell (`ToShell::ChooseGraphics`), which asks over its window as
    it does file dialogs (without blocking its loop), saves it (`mugetsu::save_graphics`), leaves
    its loop, stops its tabs and starts again (`run`), every tab with it.
    * The rest of the game's right-click Mugetsu menu, which a client lacks, is in a client's
-     Options > Application too (2026-11-17; `Platform::flash_edges`, `show_fps`, `full_screen`,
+     Options > Application too (2026-11-17; `Host::flash_edges`, `show_fps`, `full_screen`,
      `open_log_folder`, offered only by a client): **Edge Smoothing** (Flash-style or MSAA,
      applied to the tab at once and saved), **Show FPS** (the window's badge, now shared:
      `widgets::fps_badge`, counting the client's pictures of the game a second), **Full Screen**

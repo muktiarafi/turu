@@ -192,9 +192,9 @@ fn press_shrink(ui: &Ui, response: &Response, layer: egui::LayerId, first_shape:
     });
 }
 
-/// Whether the screen is touched (`Platform::is_touch`): no hover, finger-sized targets.
+/// Whether the screen is touched (`Host::is_touch`): no hover, finger-sized targets.
 pub fn touch() -> bool {
-    crate::platform::platform().is_touch()
+    crate::host::host().is_touch()
 }
 
 /// `height` for a pointer; on a touch screen at least `touch_height`.

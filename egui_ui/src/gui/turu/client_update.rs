@@ -62,7 +62,7 @@ fn contents(ui: &mut Ui, view: &ClientUpdateView) {
         );
         ui.add_space(2.0);
         if ui.link("Release notes").on_hover_text(&release.notes_url).clicked() {
-            crate::platform::platform().open_url(&release.notes_url);
+            crate::host::host().open_url(&release.notes_url);
         }
     });
 
@@ -140,7 +140,7 @@ fn link_only(ui: &mut Ui, view: &ClientUpdateView) {
         Layout::right_to_left(Align::Center),
         |ui| {
             if widgets::button(ui, &view.link_label, Kind::Primary, true, vec2(150.0, height), "").clicked() {
-                crate::platform::platform().open_url(&view.link_url);
+                crate::host::host().open_url(&view.link_url);
             }
         },
     );

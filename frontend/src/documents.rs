@@ -1,5 +1,5 @@
 //! File dialogs through Android's system picker (the Storage Access Framework), the part both
-//! Android apps share: the bot windows' [`Platform::pick_file`](crate::platform::Platform::pick_file)
+//! Android apps share: the bot windows' [`Host::pick_file`](crate::host::Host::pick_file)
 //! and `save_file` answer with a path as on a desktop, so their callers (Load Script, Junk Items'
 //! and Loadouts' import and export, the Scheduler, the Interceptor's export, the logs' Save, ...)
 //! work as they are. Each app shows the picker its own way (Turu: `android/src/saf.rs`; Turu Mas:
@@ -15,7 +15,7 @@
 //!
 //! One dialog at a time, like a desktop's modal one.
 
-use crate::platform::{Answer, FileDialog};
+use crate::host::{Answer, FileDialog};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};

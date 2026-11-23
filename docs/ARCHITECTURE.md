@@ -85,8 +85,8 @@ frontend/                crate `turu_frontend`: what any Turu frontend shares (n
   src/turu/ruffle_host.rs  `TuruFlashHost` and the ExternalInterface provider (`TuruExternalInterface`)
   src/players.rs         the process's one player (a tab's client, `--headless`, an Android slot,
                          the window for a movie given on the command line)
-  src/platform.rs        `Platform`: file dialogs, browser, file manager for the bot windows; the
-                         app installs its own (`app/src/desktop_platform.rs`, rfd)
+  src/host.rs            `Host`: file dialogs, browser, file manager for the bot windows; the
+                         app installs its own (`app/src/desktop_host.rs`, rfd)
   src/capture.rs         wraps Ruffle's navigator so the game socket goes through `bot.capture`
   src/map_items.rs, map_pads.rs   the map SWF's AS3 bytecode readers (Grabber, Jump's pads)
   src/grid.rs            Grid View's tiles

@@ -228,7 +228,7 @@ impl StatsWindow {
                 {
                     clicked = Some(HistoryAction::Clear);
                 }
-                let platform = crate::platform::platform();
+                let platform = crate::host::host();
                 if (platform.has_file_dialogs() || platform.shares_text())
                     && widgets::button(ui, "Export", Kind::Normal, has_history, size, "")
                         .on_hover_text("Export the history to a CSV file")
@@ -373,7 +373,7 @@ impl StatsWindow {
         let Some(csv) = model::export(&crate::turu::bot()) else {
             return;
         };
-        let platform = crate::platform::platform();
+        let platform = crate::host::host();
         if platform.has_file_dialogs() {
             self.export.ask(ctx, "StatsRateHistory.csv", csv);
         } else {

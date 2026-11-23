@@ -28,7 +28,7 @@ use std::time::Duration;
 use turu_egui::client_screen::{ClientScreen, Picture};
 use turu_frontend::engine::{self, EngineEvent, STAGE};
 use turu_frontend::movie_texture::{Blit, MovieTexture};
-use turu_frontend::platform::{Answer, FileDialog, Platform};
+use turu_frontend::host::{Answer, FileDialog, Host};
 use turu_frontend::players::{Players, Slot};
 use turu_frontend::shell::{self, ClientEnd, FrameSender, ToClient, ToShell};
 use url::Url;
@@ -57,12 +57,12 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
         shell::connect(address, &token).with_context(|| format!("Couldn't reach the shell at {address}"))?;
     let out = FrameSender::start(writer);
     let answers: Answers = Arc::default();
-    let platform = ClientPlatform {
+    let platform = ClientHost {
         out: out.clone(),
         answers: answers.clone(),
         next_id: AtomicU32::new(1),
     };
-    if !turu_frontend::platform::set(Arc::new(platform)) {
+    if !turu_frontend::host::set(Arc::new(platform)) {
         tracing::warn!("Another platform was installed first: the client's requests won't reach the shell");
     }
 
@@ -615,7 +615,7 @@ fn gpu(preferences: &GlobalPreferences) -> Result<Gpu, Error> {
     if crate::mugetsu::safe_drawing() {
         tracing::info!("Safe Drawing (a safe-drawing file): the drawing speed-ups are off");
     }
-    let off = crate::platform::drawing_switches_off();
+    let off = crate::host::drawing_switches_off();
     if !off.is_empty() {
         tracing::info!("Drawing speed-ups switched off: {off:?}");
     }
@@ -643,13 +643,13 @@ fn backend_names(backends: wgpu::Backends) -> String {
 type Answers = Arc<Mutex<HashMap<u32, Answer>>>;
 
 /// What the client asks of the shell: file dialogs over its window (answered by id) and links.
-struct ClientPlatform {
+struct ClientHost {
     out: FrameSender,
     answers: Answers,
     next_id: AtomicU32,
 }
 
-impl ClientPlatform {
+impl ClientHost {
     fn dialog(&self, dialog: FileDialog, save: bool, answer: Answer) -> bool {
         if self.out.is_closed() {
             return false;
@@ -671,7 +671,7 @@ impl ClientPlatform {
     }
 }
 
-impl Platform for ClientPlatform {
+impl Host for ClientHost {
     // The window has the game's right-click menu for this; a client has none.
     fn graphics_choices(&self) -> Option<(Vec<(&'static str, &'static str)>, &'static str)> {
         use crate::mugetsu::Graphics;

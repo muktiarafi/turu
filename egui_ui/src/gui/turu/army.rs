@@ -11,7 +11,7 @@ use super::theme::{DANGER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
 use crate::models::army::{self as model, MISC_OPTIONS, Row, RowAction as ModelAction};
 use crate::models::scheduler::Tint;
-use crate::platform::FileDialog;
+use crate::host::FileDialog;
 use egui::{Align, Checkbox, CollapsingHeader, Context, Label, Layout, RichText, ScrollArea, Ui, vec2};
 use serde_json::json;
 use std::collections::HashSet;
@@ -61,7 +61,7 @@ pub struct ArmyWindow {
     confirm: Option<(&'static str, Instant)>,
     /// Search… asked for a script: the answer goes to Search Scripts' pick mode
     /// ([`Self::take_script_search`]).
-    script_search: Option<crate::platform::Answer>,
+    script_search: Option<crate::host::Answer>,
 }
 
 impl Default for ArmyWindow {
@@ -98,7 +98,7 @@ impl ArmyWindow {
             window.show(ctx);
         }
         // The clients' visited maps are recorded while Turu runs, as VibeSkua's.
-        if crate::platform::platform().has_army() {
+        if crate::host::host().has_army() {
             // The shell's other tabs are polled while Army Control is drawn: and while Map Travel
             // or its pickers are open, which read where they are.
             if self.travel.is_open() {
@@ -132,7 +132,7 @@ impl ArmyWindow {
     }
 
     /// Search…'s request: Search Scripts should open in its pick mode with this answer.
-    pub fn take_script_search(&mut self) -> Option<crate::platform::Answer> {
+    pub fn take_script_search(&mut self) -> Option<crate::host::Answer> {
         self.script_search.take()
     }
 
@@ -385,7 +385,7 @@ impl ArmyWindow {
                     });
                     self.script_search = asked;
                 }
-                if crate::platform::platform().has_file_dialogs() {
+                if crate::host::host().has_file_dialogs() {
                     let size = grid.next(ui);
                     let load = widgets::button(ui, "Load file…", Kind::Normal, any && !waiting, size, "")
                         .on_hover_text("Pick a script file and load it in each client");

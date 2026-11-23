@@ -1,7 +1,8 @@
 //! Turu: what the bot windows ask of the operating system (file dialogs, the browser, the file
 //! manager), so the same windows run where those work differently (Android's system picker
-//! answers through an `Intent`). The app installs its [`Platform`] once, with [`set`]; until then
-//! (and without a window) nothing opens.
+//! answers through an `Intent`). The app installs its [`Host`] once, with [`set`]; until then
+//! (and without a window) nothing opens. Called `Platform` until 2026-11-23
+//! (docs/NATIVE_UI_PROPOSAL.md, L1): in a process tab's client it forwards to the shell.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -48,12 +49,12 @@ impl FileDialog {
 /// Gets a file dialog's answer: the chosen path, `None` when cancelled. Called on any thread.
 pub type Answer = Box<dyn FnOnce(Option<PathBuf>) + Send>;
 
-pub trait Platform: Send + Sync {
+pub trait Host: Send + Sync {
     /// Shows an "open file" dialog; false when it can't (one is open already). Called on the UI
     /// thread, and never waits for the answer.
     fn pick_file(&self, dialog: FileDialog, answer: Answer) -> bool;
 
-    /// Shows a "save file" dialog, like [`Platform::pick_file`].
+    /// Shows a "save file" dialog, like [`Host::pick_file`].
     fn save_file(&self, dialog: FileDialog, answer: Answer) -> bool;
 
     /// Opens a web page in the browser.
@@ -65,13 +66,13 @@ pub trait Platform: Send + Sync {
     /// Opens a file with the program the system associates with it.
     fn open_file(&self, path: &Path);
 
-    /// Whether [`Platform::pick_file`] and [`Platform::save_file`] show dialogs; the windows
+    /// Whether [`Host::pick_file`] and [`Host::save_file`] show dialogs; the windows
     /// hide what needs one when they don't.
     fn has_file_dialogs(&self) -> bool {
         true
     }
 
-    /// Whether [`Platform::open_file`] opens files in an app (Edit Script, Open VSCode).
+    /// Whether [`Host::open_file`] opens files in an app (Edit Script, Open VSCode).
     fn opens_files(&self) -> bool {
         true
     }
@@ -118,7 +119,7 @@ pub trait Platform: Send + Sync {
         true
     }
 
-    /// Whether [`Platform::share_text`] opens the system's share sheet (Android): the log and
+    /// Whether [`Host::share_text`] opens the system's share sheet (Android): the log and
     /// crash report windows show Share then.
     fn shares_text(&self) -> bool {
         false
@@ -143,7 +144,7 @@ pub trait Platform: Send + Sync {
         false
     }
 
-    /// Whether [`Platform::alert`] tells the user anything (Android's notifications): the tabs
+    /// Whether [`Host::alert`] tells the user anything (Android's notifications): the tabs
     /// are watched for alerts only then (`turu::watch_alerts`).
     fn posts_alerts(&self) -> bool {
         false
@@ -154,7 +155,7 @@ pub trait Platform: Send + Sync {
     /// of its own.
     fn alert(&self, _kind: Alert, _title: &str, _text: &str) {}
 
-    /// Whether [`Platform::install_package`] installs a downloaded app package (Android's APK):
+    /// Whether [`Host::install_package`] installs a downloaded app package (Android's APK):
     /// the update window then downloads and installs an update instead of linking to it.
     fn installs_packages(&self) -> bool {
         false
@@ -357,7 +358,7 @@ pub const BEEP_MS: u64 = 200;
 
 /// The beep's sample `frame` at `sample_rate`, in -1..=1: a sine at [`BEEP_HZ`] for [`BEEP_MS`],
 /// faded in and out over 5 ms so it doesn't click, then silence.
-/// What an alert ([`Platform::alert`]) is about; Android posts each kind in a channel of its own
+/// What an alert ([`Host::alert`]) is about; Android posts each kind in a channel of its own
 /// (`Alerts.kt`, which numbers them the same).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Alert {
@@ -367,7 +368,7 @@ pub enum Alert {
     ScriptStopped = 1,
 }
 
-/// A question for the system's own dialog ([`Platform::ask_crash_uploads`]): `message` and,
+/// A question for the system's own dialog ([`Host::ask_crash_uploads`]): `message` and,
 /// smaller, `note`; a link (`link`, opening `link_url`) that leaves it open; `no` and `yes`.
 #[derive(Clone, Debug)]
 pub struct Question {
@@ -392,22 +393,22 @@ pub fn beep_sample(frame: u64, sample_rate: u32) -> f32 {
     0.4 * envelope * (std::f32::consts::TAU * BEEP_HZ * t / rate).sin()
 }
 
-static PLATFORM: OnceLock<Arc<dyn Platform>> = OnceLock::new();
+static HOST: OnceLock<Arc<dyn Host>> = OnceLock::new();
 
-/// Installs the app's platform; false when one is already installed.
-pub fn set(platform: Arc<dyn Platform>) -> bool {
-    PLATFORM.set(platform).is_ok()
+/// Installs the app's host; false when one is already installed.
+pub fn set(host: Arc<dyn Host>) -> bool {
+    HOST.set(host).is_ok()
 }
 
-/// The installed platform, or one that opens nothing.
-pub fn platform() -> &'static dyn Platform {
-    PLATFORM.get().map_or(&NoPlatform, |p| p.as_ref())
+/// The installed host, or one that opens nothing.
+pub fn host() -> &'static dyn Host {
+    HOST.get().map_or(&NoHost, |p| p.as_ref())
 }
 
 /// Without a window: dialogs don't open, and what would open is logged.
-struct NoPlatform;
+struct NoHost;
 
-impl Platform for NoPlatform {
+impl Host for NoHost {
     fn pick_file(&self, _dialog: FileDialog, _answer: Answer) -> bool {
         false
     }

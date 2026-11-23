@@ -1,7 +1,7 @@
 //! Options > Application (VibeSkua's `ApplicationOptionsView`): Turu's own settings in five
 //! sections, every one saved at once: `settings.json` (`AppSettings`); Relogin Try Delay and
 //! Relogin Watchdog, which are bot options, just those two fields of `options.json`; and what the
-//! frontend keeps (Frame Interpolation, Graphics, Safe Drawing, ..., `Platform`). The egui window
+//! frontend keeps (Frame Interpolation, Graphics, Safe Drawing, ..., `Host`). The egui window
 //! (`gui/turu/application_options.rs`) lays out [`entries`]; a native shell reads [`view`] and
 //! sends [`set`] and [`act`]. The Web Monitor's links, phone QR code and keys are only in the full
 //! window ([`KindView::Elsewhere`]).
@@ -80,27 +80,27 @@ pub enum Field {
     CrashReports,
     /// Check Now, for client updates.
     CheckClientUpdates,
-    /// Mugetsu's frame interpolation, applied and saved by the frontend (`Platform`).
+    /// Mugetsu's frame interpolation, applied and saved by the frontend (`Host`).
     FrameInterpolation,
-    /// The graphics API, chosen by the frontend, which restarts (`Platform::graphics_choices`).
+    /// The graphics API, chosen by the frontend, which restarts (`Host::graphics_choices`).
     Graphics,
-    /// Safe Drawing, saved by the frontend for the next start (`Platform::safe_drawing`).
+    /// Safe Drawing, saved by the frontend for the next start (`Host::safe_drawing`).
     SafeDrawing,
-    /// The FPS counter (`Platform::show_fps`).
+    /// The FPS counter (`Host::show_fps`).
     ShowFps,
-    /// Mugetsu 2.0.0's frame pacing, V-sync or Uncapped (`Platform::frame_pacing`).
+    /// Mugetsu 2.0.0's frame pacing, V-sync or Uncapped (`Host::frame_pacing`).
     FramePacing,
-    /// Mugetsu 2.0.0's FPS limit while uncapped (`Platform::frame_pacing`).
+    /// Mugetsu 2.0.0's FPS limit while uncapped (`Host::frame_pacing`).
     FpsLimit,
-    /// Mugetsu 2.0.0's Performance mode (`Platform::performance`).
+    /// Mugetsu 2.0.0's Performance mode (`Host::performance`).
     Performance,
-    /// Mugetsu 2.0.0's memory limit (`Platform::memory_limit_mb`).
+    /// Mugetsu 2.0.0's memory limit (`Host::memory_limit_mb`).
     MemoryLimit,
-    /// Free Memory Now (`Platform::free_memory`).
+    /// Free Memory Now (`Host::free_memory`).
     FreeMemory,
-    /// The window full screen (`Platform::full_screen`).
+    /// The window full screen (`Host::full_screen`).
     FullScreen,
-    /// Open, for the log's folder (`Platform::open_log_folder`).
+    /// Open, for the log's folder (`Host::open_log_folder`).
     OpenLogFolder,
 }
 
@@ -128,7 +128,7 @@ macro_rules! entry {
 /// Every setting, in VibeSkua's order, then Turu's own.
 pub fn entries() -> Vec<Entry> {
     let mut entries = vibeskua_entries();
-    if crate::platform::platform().uploads_crash_reports() {
+    if crate::host::host().uploads_crash_reports() {
         entries.insert(
             1,
             entry!(
@@ -139,7 +139,7 @@ pub fn entries() -> Vec<Entry> {
             ),
         );
     }
-    if crate::platform::platform().graphics_choices().is_some() {
+    if crate::host::host().graphics_choices().is_some() {
         entries.push(Entry {
             restart: true,
             ..entry!(
@@ -150,7 +150,7 @@ pub fn entries() -> Vec<Entry> {
             )
         });
     }
-    if crate::platform::platform().safe_drawing().is_some() {
+    if crate::host::host().safe_drawing().is_some() {
         entries.push(Entry {
             restart: true,
             ..entry!(
@@ -162,7 +162,7 @@ pub fn entries() -> Vec<Entry> {
         });
     }
     // The rest of the game's right-click menu in the window, where there's none (a process tab).
-    let platform = crate::platform::platform();
+    let platform = crate::host::host();
     if platform.show_fps().is_some() {
         entries.push(entry!(
             General,
@@ -223,7 +223,7 @@ pub fn entries() -> Vec<Entry> {
             Field::OpenLogFolder
         ));
     }
-    if crate::platform::platform().limits_tabs() {
+    if crate::host::host().limits_tabs() {
         entries.push(entry!(
             General,
             "Tab Limit",
@@ -505,7 +505,7 @@ fn note(text: impl Into<String>, failed: bool) {
 
 /// The choices a platform-backed option offers: (key, words).
 fn choices(field: &Field) -> Option<Vec<(String, String)>> {
-    let platform = crate::platform::platform();
+    let platform = crate::host::host();
     let pairs = |list: &[(i64, &str)]| list.iter().map(|(v, w)| (v.to_string(), (*w).to_owned())).collect();
     Some(match field {
         Field::Graphics => platform
@@ -565,7 +565,7 @@ fn kind(field: &Field) -> KindView {
 
 /// An option's value now.
 fn value(field: &Field, settings: &AppSettings, options: &BotOptions) -> OptionValue {
-    let platform = crate::platform::platform();
+    let platform = crate::host::host();
     let (mut settings, mut options) = (settings.clone(), options.clone());
     match field {
         Field::Bool(access) | Field::Unused(access) | Field::ClientUpdates(access) => {
@@ -675,7 +675,7 @@ pub fn set(bot: &Arc<Bot>, section: &str, label: &str, value: &Value) -> Result<
         return Err(format!("{label} can't be changed here"));
     }
     let wrong = || format!("not a value for {label}: {value}");
-    let platform = crate::platform::platform();
+    let platform = crate::host::host();
     let mut settings = bot.settings.read().clone();
     let mut options = bot.options.read().clone();
     let (mut settings_changed, mut options_changed) = (false, false);
@@ -766,8 +766,8 @@ pub fn run(bot: &Arc<Bot>, label: &str) -> Result<(), String> {
             crate::turu::check_client_updates_now();
             note("Checking for updates…", false);
         }
-        Field::FreeMemory => crate::platform::platform().free_memory(),
-        Field::OpenLogFolder => crate::platform::platform().open_log_folder(),
+        Field::FreeMemory => crate::host::host().free_memory(),
+        Field::OpenLogFolder => crate::host::host().open_log_folder(),
         _ => return Err(format!("{label} isn't an action")),
     }
     Ok(())

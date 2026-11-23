@@ -2,7 +2,7 @@
 //! Turu's own settings in five sections. Changes are saved at once: `settings.json`
 //! (`AppSettings`), and for Relogin Try Delay and Relogin Watchdog, which are bot options,
 //! just those two fields of `options.json`. Frame Interpolation is Mugetsu's, saved by the
-//! frontend (`Platform::set_frame_interpolation`), as is Safe Drawing where it's offered. Web Monitor replaces VibeSkua's Skua Nexus webhook.
+//! frontend (`Host::set_frame_interpolation`), as is Safe Drawing where it's offered. Web Monitor replaces VibeSkua's Skua Nexus webhook.
 
 use super::native_field;
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT};
@@ -248,18 +248,18 @@ impl ApplicationOptionsWindow {
                                         #[cfg(not(feature = "ruffle"))]
                                         let mut on = false;
                                         if widgets::switch(ui, &mut on).changed() {
-                                            crate::platform::platform().set_frame_interpolation(on);
+                                            crate::host::host().set_frame_interpolation(on);
                                         }
                                     }
                                     Field::SafeDrawing => {
-                                        let platform = crate::platform::platform();
+                                        let platform = crate::host::host();
                                         let mut on = platform.safe_drawing() == Some(true);
                                         if widgets::switch(ui, &mut on).changed() {
                                             platform.set_safe_drawing(on);
                                         }
                                     }
                                     Field::Graphics => {
-                                        let platform = crate::platform::platform();
+                                        let platform = crate::host::host();
                                         if let Some((choices, saved)) = platform.graphics_choices() {
                                             ui.horizontal_wrapped(|ui| {
                                                 for (value, name) in choices {
@@ -271,14 +271,14 @@ impl ApplicationOptionsWindow {
                                         }
                                     }
                                     Field::ShowFps => {
-                                        let platform = crate::platform::platform();
+                                        let platform = crate::host::host();
                                         let mut on = platform.show_fps() == Some(true);
                                         if widgets::switch(ui, &mut on).changed() {
                                             platform.set_show_fps(on);
                                         }
                                     }
                                     Field::FramePacing => {
-                                        let platform = crate::platform::platform();
+                                        let platform = crate::host::host();
                                         let uncapped = platform.frame_pacing().is_some_and(|(on, _)| on);
                                         ui.horizontal(|ui| {
                                             for (on, label) in [(false, "V-sync"), (true, "Uncapped")] {
@@ -289,7 +289,7 @@ impl ApplicationOptionsWindow {
                                         });
                                     }
                                     Field::FpsLimit => {
-                                        let platform = crate::platform::platform();
+                                        let platform = crate::host::host();
                                         let limit = platform.frame_pacing().map_or(0, |(_, limit)| limit);
                                         // A number set elsewhere (the window's Custom) shows as one more choice.
                                         let mut choices = vec![(0, "Off".to_owned()), (1, "Screen".to_owned())];
@@ -306,7 +306,7 @@ impl ApplicationOptionsWindow {
                                         });
                                     }
                                     Field::Performance => {
-                                        let platform = crate::platform::platform();
+                                        let platform = crate::host::host();
                                         let level = platform.performance().unwrap_or(0);
                                         ui.horizontal(|ui| {
                                             for (i, label) in ["Off", "Balanced", "Fast"].into_iter().enumerate() {
@@ -317,7 +317,7 @@ impl ApplicationOptionsWindow {
                                         });
                                     }
                                     Field::MemoryLimit => {
-                                        let platform = crate::platform::platform();
+                                        let platform = crate::host::host();
                                         let limit = platform.memory_limit_mb().unwrap_or(0);
                                         ui.horizontal(|ui| {
                                             for (mb, label) in
@@ -336,11 +336,11 @@ impl ApplicationOptionsWindow {
                                         if widgets::button(ui, "Free", Kind::Normal, true, vec2(80.0, 24.0), "")
                                             .clicked()
                                         {
-                                            crate::platform::platform().free_memory();
+                                            crate::host::host().free_memory();
                                         }
                                     }
                                     Field::FullScreen => {
-                                        let platform = crate::platform::platform();
+                                        let platform = crate::host::host();
                                         let mut on = platform.full_screen() == Some(true);
                                         if widgets::switch(ui, &mut on).changed() {
                                             platform.set_full_screen(on);
@@ -350,14 +350,14 @@ impl ApplicationOptionsWindow {
                                         if widgets::button(ui, "Open", Kind::Normal, true, vec2(80.0, 24.0), "")
                                             .clicked()
                                         {
-                                            crate::platform::platform().open_log_folder();
+                                            crate::host::host().open_log_folder();
                                         }
                                     }
                                     Field::CrashReports => {
                                         let mut on = settings.send_crash_reports == Some(true);
                                         if widgets::switch(ui, &mut on).changed() {
                                             settings.send_crash_reports = Some(on);
-                                            crate::platform::platform().set_crash_uploads(on);
+                                            crate::host::host().set_crash_uploads(on);
                                             settings_changed = true;
                                         }
                                     }
@@ -473,7 +473,7 @@ impl ApplicationOptionsWindow {
             && let Some(addr) = serving
             && let Ok(url) = url::Url::parse(&format!("http://127.0.0.1:{}/", addr.port()))
         {
-            crate::platform::platform().open_url(url.as_str());
+            crate::host::host().open_url(url.as_str());
         }
     }
 

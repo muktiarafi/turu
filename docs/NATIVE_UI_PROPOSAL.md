@@ -62,7 +62,7 @@ The steps, with their state:
 | L5a | Android: design pass, then the tab strip and Accounts in Compose | Built 2026-11-20 (emulator); checkpoint next |
 | L1 (shell) | The desktop shell's logic out of winit, into `turu_shell` | Built 2026-11-23 (macOS), `SlotShell` with it |
 | Checkpoint | Go on to native bot windows, or stop at L5a | Owner, after L5a |
-| L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | Split built 2026-11-23 (`turu_egui`); `Host` and `Client` later |
+| L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | Split built 2026-11-23 (`turu_egui`), `Platform` renamed `Host`; `Client` later |
 | L2 | View models in the client, by feature | Pilot and the Android windows' models done 2026-11-20 |
 | L3 | Questions, dialogs and alerts as events with an ID and an answer | After the checkpoint |
 | L4 | Generated types for Kotlin and Swift in CI; `turu_ffi` for macOS | Kotlin done 2026-11-20 (Android build); Swift with L6 |
@@ -379,7 +379,7 @@ impl ScriptsModel {
 * **Actions never block**: every one posts work, as `turu::spawn_action` does. The rule "never call
   into Flash from the UI thread" becomes part of the API.
 * **Events are queued**: nothing reaches the shell from inside `Bot::on_flash_call`.
-* **`Host` is today's `Platform`**: in a client it forwards to the shell, as now; in Turu Mas the
+* **`Host` is today's `Platform`** (renamed 2026-11-23): in a client it forwards to the shell, as now; in Turu Mas the
   ANE implements it.
 
 ### Commands stay in the engine
@@ -609,8 +609,8 @@ to the background when no native screen is open).
   `client_screen.rs`'s egui drawing to the egui side; `client_link.rs` to the client once it asks
   a model, not `gui`, for the bar's size and whether the tab is busy. Rename `Platform` to `Host`.
   Add `Client` as a handle over the globals. *The split is built (2026-11-23, "L1's client part
-  as built"), keeping the name `turu_frontend` for the client library (the owner's choice); the
-  rename and the handle are later steps.*
+  as built"), keeping the name `turu_frontend` for the client library (the owner's choice);
+  `Platform` is `Host` since the same day; the handle is a later step.*
 
 **Done when**, for the shell part: `turu_shell` builds without a player and without winit, CI
 checks it, and the shell starts with two tabs, Grid View and a client killed and back. For the
@@ -688,7 +688,15 @@ for arm64; clippy passes for every crate, both ways; the tests pass (the app's 5
 `TURU_SHELL_TEST` drew as before: two tabs, the bar and tab strip, a client killed and back, Grid
 View. Not checked: an APK or Turu Mas run after the split (their code changed only its paths).
 
-Not done: `Platform` renamed `Host`, and `Client` as a handle over `turu.rs`'s globals.
+`Platform` became `Host` the same day (the owner's request): the trait, its module
+(`turu_frontend::host`, `host::set` and `host::host()`, which was `platform::platform()`) and its
+implementations (`DesktopHost` in `app/src/desktop_host.rs`, `ClientHost`, `AndroidHost`,
+`AirHost`, `NoHost`), with the docs and comments that named them. Android's and Turu Mas's
+`platform.rs` modules keep their names: they hold more than their `Host` (the activity's calls).
+No behaviour changed. Checked: the app, `turu_frontend` and `turu_egui` alone, the Android app's
+and Turu Mas's crates for arm64, clippy and the tests.
+
+Not done: `Client` as a handle over `turu.rs`'s globals.
 
 ### L2: View models (XL, after the checkpoint)
 
@@ -841,7 +849,7 @@ script's message box and options request.
   queue, Move, Remove, Save, Load, and Script options on a script without options. Not checked:
   Script options on a script that has some, and a running queue's statuses.
 * **Army Queue stays hidden on Android**: its squads run as `turu` processes of their own, which
-  Android can't start (`Platform::launches_processes`; docs/ANDROID.md). Nothing to port.
+  Android can't start (`Host::launches_processes`; docs/ANDROID.md). Nothing to port.
 * **Army Control** (2026-11-20): `models::army` holds the rows (with `Peer`, which Gear, a
   client's logs and Map Travel use; native since 2026-11-21, below), who a command goes to, the commands and their outcomes; the
   egui window draws from it. A row's key is the same whichever slot answers (`tab:<the shell's

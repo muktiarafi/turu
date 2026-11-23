@@ -61,7 +61,7 @@ Console, Spammer, Packet Logger, Interceptor), **Plugins** (Butler, Cosmetics; n
 Turu builds its plugins in), **Army** (Accounts, Army Control, Army Queue, New Tab; Turu's: VibeSkua has them
 in its Manager app and its tabbed host). Android has them too (its tabs run in one engine
 thread; Butler and Army Control are full-screen sheets with finger-sized buttons there, and the
-tab strip's tabs are taller, with "×" on the active one only), but not HotKeys (`Platform::has_hotkeys`). Everything in the bar is one height (26, 40 on a touch screen), so the labels share
+tab strip's tabs are taller, with "×" on the active one only), but not HotKeys (`Host::has_hotkeys`). Everything in the bar is one height (26, 40 on a touch screen), so the labels share
 a baseline; an open menu and an open Auto or Jump are tinted the same accent.
 
 Right: **Update** (only while a newer Turu is out: below), the game's quick actions **Grid** (two tabs or more), **Auto**, **Jump** and **Bank**
@@ -80,7 +80,7 @@ When the menus would run into the right side (its width is measured each frame i
 full), they fold: first to **Scripts** and **More** (the other menus as its submenus), then, as
 on a phone held upright, to one **Menu** with everything and Bank as its last row; the symbol is
 left out and the script's name gets what room is left, up to 72 px (150 otherwise), or is left
-out (it stays in the tooltip). On a touch screen (`Platform::is_touch`, Android) the nav bar is a **rail** down the left side
+out (it stays in the tooltip). On a touch screen (`Host::is_touch`, Android) the nav bar is a **rail** down the left side
 instead (`gui::nav_rail`): Android is held sideways, where the game is as tall as the screen
 allows, so a bar above it took its height; the rail sits in the room beside the game, which now
 gets the whole height. It is 64 points wide (`gui::RAIL_WIDTH`), plus a display cutout on its side
@@ -152,7 +152,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Pause's place, enabled after `FORCE_STOP_AFTER` (1.5 s, which its reason names; F10 forces only
   then too), so a double press only stops; then,
   14 px lower, the setup buttons, outlined and 28 px high (VibeSkua's grid is reordered so the
-  run controls lead; on a touch screen (`Platform::is_touch`, Android) every button is 48 points
+  run controls lead; on a touch screen (`Host::is_touch`, Android) every button is 48 points
   high, the log's Clear/Copy 40, the small labels 12 (11 otherwise), and why Start or Edit Script
   Options is disabled shows as a line under its group instead of a tooltip; buttons the platform
   can't serve are hidden: Load Script and the log's Save without file dialogs, the editor button
@@ -339,7 +339,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   (the window title gets " – <character>" while you play), Grandpa Mode (larger log and packet text), Client Animation Frame-rate (the
   `stage.frameRate` set when the client loads, default 24; the game's own FPS setting, or Set FPS, takes over in game; VibeSkua
   stores it and never reads it), Frame Interpolation (Turu's: Mugetsu's switch, also in the game's
-  right-click menu on a computer, which a phone can't open; `Platform::set_frame_interpolation`
+  right-click menu on a computer, which a phone can't open; `Host::set_frame_interpolation`
   applies it and saves it as `mugetsu-interpolation.txt`, in Mugetsu's folder on a computer and
   the data folder on Android; both pace it with `turu_frontend::pacing`), Relogin Try Delay and Relogin Watchdog (bot options: applied
   and saved into `options.json` on their own), Clear Flash Cache (deletes Ruffle's SharedObjects
@@ -416,7 +416,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   the list is read and again a minute later; without the server list, the names alone), Where (In a tab, In its own window, Without a
   window), the script (Browse / Clear) with Auto-start (disabled without a script, saying so on
   hover), Start Selected, Start All. Saved on every change.
-  Where Army can't start a `turu` of its own (`Platform::launches_processes`; Android, whose
+  Where Army can't start a `turu` of its own (`Host::launches_processes`; Android, whose
   executable is app_process), Launch shows "In a tab" and starts accounts in tabs whatever the
   saved mode; without file dialogs "Use the loaded script" (the Script Loader's) replaces Browse.
   A launch reports on the rows (not only in the bottom line, which each account overwrote): a
@@ -650,7 +650,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   list (from 720 px wide, in the WATCHING row, so a phone on its side keeps three rows of list;
   under 440 px, Test beep takes a row of its own). A listed item that drops (`itemDropped`, and again
   `itemAdded` when it reaches the inventory, as VibeSkua's `ItemDroppedMessage`; exact,
-  case-sensitive names) plays the beeps on a thread of their own: `Platform::beep`, .NET's
+  case-sensitive names) plays the beeps on a thread of their own: `Host::beep`, .NET's
   `Console.Beep()` (800 Hz, 200 ms) on a sound stream apart from the game's (cpal's default output
   on the desktop, AAudio on Android), so it sounds while the game is muted. On Android, while the
   app isn't on screen, the drop is also a notification ("<item> dropped", in the Drops channel;

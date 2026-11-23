@@ -6,7 +6,7 @@
 use super::files::Pending;
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
-use crate::platform::FileDialog;
+use crate::host::FileDialog;
 use egui::{Align, ComboBox, Context, Layout, Modal, RichText, ScrollArea, Ui, vec2};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -401,7 +401,7 @@ impl ArmyQueueWindow {
         let accounts_file = crate::turu::bot().paths.accounts_file();
         let mode = Accounts::load(&accounts_file).mode;
         let in_tabs = (mode == turu_bot::accounts::LaunchMode::Tab
-            || !crate::platform::platform().launches_processes())
+            || !crate::host::host().launches_processes())
             && crate::turu::shell_tabs().is_some();
         let launcher: Arc<dyn QueueLauncher> = if in_tabs {
             let timeout = Duration::from_secs(self.config.timeout_minutes.max(1) * 60);

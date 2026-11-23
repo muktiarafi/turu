@@ -106,7 +106,7 @@ pub struct Input<'a> {
 
 pub fn view() -> ClientUpdateView {
     let state = updates::state();
-    let platform = crate::platform::platform();
+    let platform = crate::host::host();
     let others = crate::turu::shell_tabs()
         .map(|(tabs, _)| {
             tabs.into_iter()

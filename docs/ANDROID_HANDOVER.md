@@ -17,7 +17,7 @@ Phases 0 to 4 of the proposal are built and committed, and were checked on an em
 
 | Phase | What works (emulator, Android 16, arm64) | Commit |
 |---|---|---|
-| 0 | `turu_frontend` crate split out of the app; `Platform`, `SecretStore`, TLS feature on `turu_bot` | `5d1bf2307` |
+| 0 | `turu_frontend` crate split out of the app; `Host`, `SecretStore`, TLS feature on `turu_bot` | `5d1bf2307` |
 | 1 | The engine without a UI (null renderer), set up from `turu-args.txt`; logged in and farmed 20 min | `21baaba70`, `19d8b804b` |
 | 2 | The game on screen (Vulkan), touch, keys, soft keyboard, AAudio sound, foreground service | `661e8091e` |
 | 3 | Turu's nav bar and bot windows (egui) over the game; scripts found, loaded, configured, started, stopped by touch | `2442a71db`, `9c99a2256` |
@@ -94,7 +94,7 @@ system moving the dialog above the keyboard).
 | `android/src/lib.rs` | `android_main` (forwards window and input events to the engine), `start_engine` (once per process, from the activity or the service), the engine thread, `turu-args.txt`, `--graphics`. |
 | `android/src/screen.rs` | The GPU (`gpu`, set up without a window), `MovieTexture` the player draws into, `Screen` (surface, blit, egui painting `TuruUi`), who gets a touch or a key. |
 | `android/src/notify.rs` | A slot's notification: `SlotService.nativeAction` (its buttons) and the status sent to it every 2 s; the calls into `TuruService`'s statics (crash reports, alerts, the GPU's warnings). |
-| `android/src/input.rs`, `audio.rs`, `ui.rs`, `platform.rs` | Touch and keys; AAudio (from ruffle-android); the game's soft keyboard; the bot windows' `Platform` (browser via `Intent`; file dialogs through `saf.rs`). |
+| `android/src/input.rs`, `audio.rs`, `ui.rs`, `platform.rs` | Touch and keys; AAudio (from ruffle-android); the game's soft keyboard; the bot windows' `Host` (browser via `Intent`; file dialogs through `saf.rs`). |
 | `android/app/src/main/kotlin/com/muktiarafi/turu/` | `TuruActivity` (a GameActivity: full screen, Back to background, one-time prompts, starts the service) `SlotService` (one per tab: the tab's engine in its own process, its notification, wake lock) and `TuruService` (until process tabs the foreground service; now the statics Rust calls in every process: crash reports, alerts, the GPU's warnings). |
 | `android/rustls-platform-verifier/` + submodule `android/vendor/rustls-platform-verifier` | The Kotlin half of HTTPS certificate checks, pinned to `252e2516`. A Gradle check compares it with `Cargo.lock`. |
 | `android/app/build.gradle.kts` | The `cargoNdk` task (runs `cargo ndk` into `app/src/main/jniLibs/`, sets the bindgen env). |

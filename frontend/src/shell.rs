@@ -298,7 +298,7 @@ pub enum ToShell {
     /// surfaces; the others get [`ToShell::Frame`]s.
     Surface { id: u64, width: u32, height: u32 },
     /// Desktop: an "open" (or with `save`, "save") file dialog over the shell's window, as
-    /// `Platform::pick_file` describes it; answered with [`ToClient::Answer`] and this `id`.
+    /// `Host::pick_file` describes it; answered with [`ToClient::Answer`] and this `id`.
     FileDialog {
         id: u32,
         #[serde(default)]
@@ -309,7 +309,7 @@ pub enum ToShell {
         directory: Option<String>,
         #[serde(default)]
         file_name: Option<String>,
-        /// Name and extensions (without the dot), as `platform::FileDialog`'s.
+        /// Name and extensions (without the dot), as `host::FileDialog`'s.
         #[serde(default)]
         filters: Vec<(String, Vec<String>)>,
     },
@@ -371,7 +371,7 @@ pub enum ToShell {
         #[serde(default)]
         memory_type: u32,
     },
-    /// `Platform::open_url`: the shell opens it (in the browser).
+    /// `Host::open_url`: the shell opens it (in the browser).
     OpenUrl { url: String },
     /// The client's tab strip asked for another tab.
     SelectTab { id: u32 },

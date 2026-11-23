@@ -133,7 +133,7 @@ pub struct ScriptRepoWindow {
 struct Pick {
     /// Who the script is for, on the banner ("launched accounts").
     purpose: &'static str,
-    answer: crate::platform::Answer,
+    answer: crate::host::Answer,
 }
 
 /// How [`ScriptRepoWindow::row`] lays a row out.
@@ -200,7 +200,7 @@ impl ScriptRepoWindow {
     /// Opens the window's pick mode: the rows offer Pick, which calls `answer` with the
     /// script's local path (downloaded first if needed) and closes the window. Closing it
     /// without a pick drops `answer`. The caller opens the window.
-    pub fn pick(&mut self, purpose: &'static str, answer: crate::platform::Answer) {
+    pub fn pick(&mut self, purpose: &'static str, answer: crate::host::Answer) {
         self.pick = Some(Pick { purpose, answer });
         self.picked = false;
     }
@@ -909,7 +909,7 @@ impl ScriptRepoWindow {
                 }
                 let dir = crate::turu::bot().paths.scripts_dir();
                 if ui.button("Open the scripts folder").clicked() {
-                    crate::platform::platform().open_folder(&dir);
+                    crate::host::host().open_folder(&dir);
                     ui.close();
                 }
                 let code = self.vscode.get_or_insert_with(files::find_vscode).clone();

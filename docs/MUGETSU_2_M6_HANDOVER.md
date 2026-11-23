@@ -74,7 +74,7 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
 
 **App** (`app/`, `frontend/`, `android/`):
 
-- Mugetsu 2.0.0's speed-ups on by default (`frontend/src/platform.rs` `DEFAULT_ON`, set by
+- Mugetsu 2.0.0's speed-ups on by default (`frontend/src/host.rs` `DEFAULT_ON`, set by
   `app/src/mugetsu.rs` `apply_drawing_switches` and `android/src/lib.rs`); `no-<name>` files turn
   one off. Forgiving child removal, least tessellation size by GPU, GPU state released at close.
 - Mugetsu's 2.0.0 right-click menu (`app/src/gui/context_menu.rs`): Performance mode, memory
@@ -87,7 +87,7 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
 - M6, desktop: `shell::runs_as_shell` (every AQW start, Army's "In its own window" too);
   `--in-process` accepted and ignored; the window keeps one player, no tabs or Grid View.
   Clients got: `app/src/memory.rs` (memory watch, limit, Free memory; every 5 s), Options >
-  Application's Performance Mode / Memory Limit / Free Memory Now (`Platform` methods,
+  Application's Performance Mode / Memory Limit / Free Memory Now (`Host` methods,
   `egui_ui/src/client_screen.rs` scales the viewport and the mouse), `headless::build_player`
   with the window's setup, GPU loss → exit 86 → the shell restarts it (`client.rs` `gpu_check`),
   `ToShell::Cursor`, the perf log, the engine thread's close.

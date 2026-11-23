@@ -105,7 +105,7 @@ pub fn start_quick(bot: &Arc<Bot>, path: &str) -> Result<(), String> {
 /// platform can't do: HotKeys without a keyboard, Butler and Army Queue without several clients'
 /// processes.
 pub fn menus(bot: &Bot) -> Vec<MenuView> {
-    let platform = crate::platform::platform();
+    let platform = crate::host::host();
     let on = super::Control::on;
     let item = |label, window| MenuItem {
         label,

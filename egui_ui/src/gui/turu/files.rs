@@ -1,6 +1,6 @@
 //! File dialogs (never blocking the UI thread) and opening files with other programs.
 
-use crate::platform::{FileDialog, platform};
+use crate::host::{FileDialog, host};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, channel};
 
@@ -31,17 +31,17 @@ impl Pending {
 
     /// Opens an "open file" dialog.
     pub fn pick_file(&mut self, ctx: &egui::Context, dialog: FileDialog) {
-        self.open(ctx, |answer| platform().pick_file(dialog, answer));
+        self.open(ctx, |answer| host().pick_file(dialog, answer));
     }
 
     /// Opens a "save file" dialog.
     pub fn save_file(&mut self, ctx: &egui::Context, dialog: FileDialog) {
-        self.open(ctx, |answer| platform().save_file(dialog, answer));
+        self.open(ctx, |answer| host().save_file(dialog, answer));
     }
 
     /// Waits for an answer `show` hands on (a dialog, or a window that picks: Search Scripts'
     /// pick mode); `show` says whether it was shown.
-    pub fn open(&mut self, ctx: &egui::Context, show: impl FnOnce(crate::platform::Answer) -> bool) {
+    pub fn open(&mut self, ctx: &egui::Context, show: impl FnOnce(crate::host::Answer) -> bool) {
         if self.is_open() {
             return;
         }
@@ -84,7 +84,7 @@ impl SaveText {
 
 /// Opens `path` with the program the OS associates with it.
 pub fn open_with_default(path: &Path) {
-    platform().open_file(path);
+    host().open_file(path);
 }
 
 /// The VS Code launcher, when there is one: the `code` command on `PATH`, or the macOS app.

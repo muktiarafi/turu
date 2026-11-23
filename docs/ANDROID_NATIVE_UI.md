@@ -16,7 +16,7 @@ and what was learned doing it. Read `docs/ANDROID_HANDOVER.md` and `docs/TURU_MA
 | Drop and script-stopped alerts as notifications | "Alert drops and stopped scripts" (after `67ec55652`) | `Alerts.kt`, `Foreground.kt` (shared), `notify.rs` | `Alerts.kt`, `Foreground.kt` (shared), `platform.rs`, `Bridge` |
 
 What both apps share lives in `turu_frontend` (`gui/turu/native_field.rs`, `documents.rs`, the
-`Platform` hooks) and in the Gradle module `android/shared` (package `com.muktiarafi.turu.shared`):
+`Host` hooks) and in the Gradle module `android/shared` (package `com.muktiarafi.turu.shared`):
 `NativeField`, `CrashQuestion`, `CrashReports`, `CrashUploads`, `Tombstone`, `PackageUpdate`, `Alerts`,
 `Foreground`. Turu's app depends on it
 (`android/settings.gradle.kts`); Turu Mas's extension includes it by path
@@ -94,20 +94,20 @@ the answer (`models::prompts`: `crash_uploads_waiting`, `crash_upload_question`,
 up; closing it without an answer asks again at the next start.
 
 * **Turu**: since process tabs the engine runs in each slot's process, which has no activity, so
-  `Platform::ask_crash_uploads` couldn't show `CrashQuestion.kt` there and egui drew its dialog in
+  `Host::ask_crash_uploads` couldn't show `CrashQuestion.kt` there and egui drew its dialog in
   the slot's picture (seen 2026-11-21). It is now one of the engine's prompts (`uploads`, after
   the crash notice), shown by the shell's `PromptsHost` as the same Material dialog as the others,
   with the link as a text button. Each slot keeps its own copy of the settings, so a slot reads
   `sendCrashReports` from `settings.json` (every 3 s while it would ask) and takes up an answer
   another tab gave, uploads included, instead of asking again.
-* **Turu Mas**: `show_crash_upload_question` (`logs.rs`) calls `Platform::ask_crash_uploads`, and
+* **Turu Mas**: `show_crash_upload_question` (`logs.rs`) calls `Host::ask_crash_uploads`, and
   `CrashQuestion.kt` (shared) shows an `AlertDialog`; it has AIR's focus while it's up: acceptable
   once, at first start.
 * **The desktop**: egui asks.
 
 ## File dialogs
 
-The bot windows' `Platform::pick_file` and `save_file` answer with a path, as on a desktop, so
+The bot windows' `Host::pick_file` and `save_file` answer with a path, as on a desktop, so
 their callers work unchanged. `turu_frontend::documents` holds what both apps share: one dialog at
 a time (`begin`), what the picker is asked for (`open_request`: MIME types and, for a script, the
 scripts folder's `Imported/`; `save_request`: MIME type and suggested name), and the answers
@@ -127,7 +127,7 @@ The update window's Android button was Download APK, which opened the APK's URL 
 the browser downloaded it, and the user found it and opened it. Now it's **Download & install**
 (`client_update.rs`, `turu::install_update`), as on a desktop: the engine downloads the APK with
 `turu_bot::updates::download`, the desktops' code, which checks it against the release's
-`SHA256SUMS.txt`, and `Platform::install_package` hands it to `PackageUpdate.kt` (shared). That
+`SHA256SUMS.txt`, and `Host::install_package` hands it to `PackageUpdate.kt` (shared). That
 writes it into a `PackageInstaller` session and commits it; Android asks, the first time, to
 allow installs from this app ("install unknown apps", which needs `REQUEST_INSTALL_PACKAGES` in
 both manifests), installs it and stops the app. The user opens the new version. On Android 12+
@@ -211,9 +211,9 @@ keys (voice, emoji) and choosing a file to open.
 
 ## Alerts
 
-Notify Drop's beep (`Platform::beep`) and a stopped script's place in the windows say it only
+Notify Drop's beep (`Host::beep`) and a stopped script's place in the windows say it only
 to someone looking at the phone. Now both are notifications too, heard with the screen off, through
-`Platform::alert` and `Alerts.kt` (shared), each kind in a channel of its own ("Drops", "Script
+`Host::alert` and `Alerts.kt` (shared), each kind in a channel of its own ("Drops", "Script
 stopped", high importance) that the user can silence or turn off in Android's settings, instead of
 a switch in Options.
 

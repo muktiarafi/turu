@@ -7,7 +7,7 @@
 //!
 //! Keys reach Turu through egui, so a hotkey works while Turu's window has focus (VibeSkua's
 //! main window handler; its Windows-only global hook isn't ported). Platforms without keyboard
-//! shortcuts (`Platform::has_hotkeys` false: both Android apps) neither run nor show them.
+//! shortcuts (`Host::has_hotkeys` false: both Android apps) neither run nor show them.
 
 use super::tab_state::lock;
 use serde::{Deserialize, Serialize};
@@ -1178,7 +1178,7 @@ pub static STORE: std::sync::LazyLock<Store> = std::sync::LazyLock::new(|| {
 
 /// " (F10)": an action's key for a tooltip, or "" when it has none (or there are no hotkeys).
 pub fn hint(action: &str) -> String {
-    if !crate::platform::platform().has_hotkeys() {
+    if !crate::host::host().has_hotkeys() {
         return String::new();
     }
     STORE
@@ -1402,7 +1402,7 @@ fn action_view(a: &Action) -> HotKeyAction {
 pub fn view() -> HotKeysView {
     let bindings = STORE.bindings();
     HotKeysView {
-        available: crate::platform::platform().has_hotkeys(),
+        available: crate::host::host().has_hotkeys(),
         catalog: ACTIONS
             .iter()
             .filter(|a| !bindings.iter().any(|b| b.action == a.id))

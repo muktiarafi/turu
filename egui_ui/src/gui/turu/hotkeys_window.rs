@@ -68,7 +68,7 @@ enum RowAction {
 
 impl HotKeysWindow {
     pub fn show(&mut self, ctx: &Context, open: &mut bool) {
-        if !crate::platform::platform().has_hotkeys() {
+        if !crate::host::host().has_hotkeys() {
             *open = false;
         }
         if !*open {

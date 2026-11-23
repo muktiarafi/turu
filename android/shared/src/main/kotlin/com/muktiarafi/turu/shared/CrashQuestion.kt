@@ -11,7 +11,7 @@ import android.view.WindowInsetsController
 /**
  * "Send crash reports?", asked once at first start with Android's own dialog, next to the
  * notification and battery questions. The Rust side decides when and says what
- * (`turu_frontend`'s `logs.rs`, `Platform::ask_crash_uploads`) and keeps the answer. In Turu Mas
+ * (`turu_frontend`'s `logs.rs`, `Host::ask_crash_uploads`) and keeps the answer. In Turu Mas
  * the dialog, a window of its own, has AIR's focus while it's up: asked once, at first start.
  */
 object CrashQuestion {

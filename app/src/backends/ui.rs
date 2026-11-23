@@ -546,7 +546,7 @@ impl UiBackend for ClientUiBackend {
 
     // Turu: the shell's window goes full screen, as Options' Full Screen makes it.
     fn set_fullscreen(&mut self, is_full: bool) -> Result<(), FullscreenError> {
-        turu_frontend::platform::platform().set_full_screen(is_full);
+        turu_frontend::host::host().set_full_screen(is_full);
         Ok(())
     }
 
@@ -565,7 +565,7 @@ impl UiBackend for ClientUiBackend {
             tracing::warn!("The game tried to open {url}, which isn't allowed");
             return;
         }
-        turu_frontend::platform::platform().open_url(url.as_str());
+        turu_frontend::host::host().open_url(url.as_str());
     }
 
     fn load_device_font(&self, query: &FontQuery, register: &mut dyn FnMut(FontDefinition)) {

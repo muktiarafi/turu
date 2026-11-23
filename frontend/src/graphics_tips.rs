@@ -47,7 +47,7 @@ pub enum Tip {
     /// Slow on the built-in graphics `chip` at AQW's Quality `quality` ("High" or "Medium").
     QualityLow { chip: String, quality: &'static str },
     /// Still slow on the built-in graphics `chip` at Quality Low: Performance mode at `level`
-    /// (`Platform::set_performance`'s 1 balanced, 2 fast) is offered.
+    /// (`Host::set_performance`'s 1 balanced, 2 fast) is offered.
     PerformanceMode { chip: String, level: u8 },
 }
 
@@ -230,7 +230,7 @@ pub fn window(drawn_fps: Option<f64>, frame_rate: f64, quality: Quality) {
         drawn_fps,
         frame_rate,
         quality_low: quality == Quality::Low,
-        performance_offerable: crate::platform::platform().performance() == Some(0),
+        performance_offerable: crate::host::host().performance() == Some(0),
     });
     let marker_dir = turu_bot::paths::Paths::new().root;
     for due in state.watch.window(measured, test_low, test_offer) {

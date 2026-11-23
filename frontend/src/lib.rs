@@ -30,7 +30,7 @@ pub mod movie_texture;
 // (docs/TURU_MAS.md, "Licenses").
 #[cfg(feature = "ruffle")]
 pub mod pacing;
-pub mod platform;
+pub mod host;
 #[cfg(feature = "ruffle")]
 pub mod players;
 pub mod process_memory;

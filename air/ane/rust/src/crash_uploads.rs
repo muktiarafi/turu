@@ -1,6 +1,6 @@
 //! Crash reports sent to Turu's developers through Sentry, once the user said yes (the question the
 //! windows ask once, and Options > Application's switch: `sendCrashReports` in `settings.json`,
-//! through `Platform`). Sentry itself is the extension's Kotlin (`CrashUploads.kt`, with
+//! through `Host`). Sentry itself is the extension's Kotlin (`CrashUploads.kt`, with
 //! `io.sentry:sentry-android`), as in Turu's Android app: it catches Java and native crashes (the
 //! engine's and AIR's runtime's), ANRs and tombstones, and sends the exits Android records. This is
 //! the engine's side: whether the build can send them, the user's answer, and a panic's message.

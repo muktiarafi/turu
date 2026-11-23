@@ -10,7 +10,7 @@ use super::widgets::{self, Kind};
 use egui::{Align, Color32, Context, Key, Label, Layout, RichText, ScrollArea, Sense, TextEdit, Ui, vec2};
 
 use crate::models::scheduler::{self as model, EntryView, Tint};
-use crate::platform::FileDialog;
+use crate::host::FileDialog;
 use std::time::Duration;
 use turu_bot::script::options::ScriptOptions;
 

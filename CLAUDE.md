@@ -85,7 +85,7 @@ Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
 ## Rules that keep it working
 
 * **No egui, winit, rfd or window in `frontend/`, and no winit, rfd or window in `shell/` or `egui_ui/`** (CI checks `turu_frontend`'s and `turu_shell`'s dependencies): a window's layout and drawing go in `egui_ui/`, what it knows and does in `frontend/` (a model). Reach the app through `turu::set_tab_requests`,
-  `TuruFlashHost::new` and `platform::platform()`; desktop-only pieces stay in `app/`.
+  `TuruFlashHost::new` and `host::host()`; desktop-only pieces stay in `app/`.
 * **Never call into Flash from the winit/UI thread.** `Flash::call` marshals to the event
   loop and blocks; from the UI thread it would wait for itself (the host refuses). UI actions
   that touch the game go through `turu::spawn_action`.

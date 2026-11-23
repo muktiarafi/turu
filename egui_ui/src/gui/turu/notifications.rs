@@ -201,7 +201,7 @@ impl NotificationCenterWindow {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 // A fixed width (VibeSkua's `w84`) where there's room.
                 let size = vec2(if narrow { 0.0 } else { 84.0 }, height);
-                let platform = crate::platform::platform();
+                let platform = crate::host::host();
                 if danger_soft_button(ui, "Clear", size)
                     .on_hover_text("Clear every event")
                     .clicked()

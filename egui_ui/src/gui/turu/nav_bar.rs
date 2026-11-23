@@ -45,7 +45,7 @@ const MENUS: [(Menu, &str); 7] = [
 
 /// The menus this platform has: all but Army where several clients don't work (Android).
 fn menus() -> &'static [(Menu, &'static str)] {
-    if crate::platform::platform().has_army() {
+    if crate::host::host().has_army() {
         &MENUS
     } else {
         &MENUS[..MENUS.len() - 1]
@@ -652,7 +652,7 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
                 windows.core_bots = true;
             }
             // Not where there's no keyboard to bind (Android).
-            if crate::platform::platform().has_hotkeys() && item(ui, "HotKeys") {
+            if crate::host::host().has_hotkeys() && item(ui, "HotKeys") {
                 windows.hotkeys = true;
             }
         }
@@ -709,7 +709,7 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
         }
         Menu::Plugins => {
             // Turu: VibeSkua's ButlerV5 plugin, built in. Not without several clients (Android).
-            if crate::platform::platform().has_army() && item(ui, "Butler") {
+            if crate::host::host().has_army() && item(ui, "Butler") {
                 windows.butler = true;
             }
             // Turu: VibeSkua's Cosmetics plugin, built in.
@@ -726,7 +726,7 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             }
             // VibeSkua Manager's Army Queue tab. Its squads run as processes of their own, which
             // Android can't start (`Army::launch`), so it isn't offered there.
-            if crate::platform::platform().launches_processes() && item(ui, "Army Queue") {
+            if crate::host::host().launches_processes() && item(ui, "Army Queue") {
                 windows.army_queue = true;
             }
             // A client in a new tab, at the login screen (VibeSkua's tab strip "+").
@@ -817,7 +817,7 @@ fn update_notice(ui: &mut Ui, windows: &mut Windows, compact: bool) {
 /// Grid View (VibeSkua's tabbed host's): every tab at once, with two tabs or more, where the
 /// platform offers it (not on a phone).
 fn grid_toggle(ui: &mut Ui) {
-    if !crate::platform::platform().has_grid_view() || crate::turu::tab_strip_count() < 2 {
+    if !crate::host::host().has_grid_view() || crate::turu::tab_strip_count() < 2 {
         return;
     }
     let on = crate::grid::on();
@@ -1368,8 +1368,8 @@ impl NavBar {
         let status = bot.scripts.status();
         let cells = run_cells(&bot, status);
         let update = turu_bot::updates::state();
-        // As the bar's button: phones have no Grid View (`Platform::has_grid_view`).
-        let grid = crate::platform::platform().has_grid_view() && crate::turu::tab_strip_count() > 1;
+        // As the bar's button: phones have no Grid View (`Host::has_grid_view`).
+        let grid = crate::host::host().has_grid_view() && crate::turu::tab_strip_count() > 1;
         let fit = rail_fit(ui.available_height(), update.available.is_some(), grid);
 
         if fit.symbol {

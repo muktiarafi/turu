@@ -153,7 +153,7 @@ pub struct ClientScreen {
     /// The button held, and whether its press went to the UI (else the game).
     pressed: Option<(Button, bool)>,
     /// The game's viewport, last set, and Performance mode's share of the game's area it was
-    /// drawn at (`Platform::render_scale`).
+    /// drawn at (`Host::render_scale`).
     movie_size: (u32, u32),
     render_scale: f64,
     started: Instant,
@@ -966,7 +966,7 @@ impl ClientScreen {
         let frame_rate = player.frame_rate();
         let pace = if !interpolates {
             Pace::Frames
-        } else if let Some((true, setting)) = crate::platform::platform().frame_pacing() {
+        } else if let Some((true, setting)) = crate::host::host().frame_pacing() {
             let limit = crate::pacing::fps_limit(setting, self.pacing.refresh_interval());
             self.uncapped_interval = limit.map(|fps| Duration::from_secs_f64(1.0 / fps));
             // Not even 1.5 pictures per game frame: one per frame, as without interpolation.
@@ -1484,7 +1484,7 @@ impl ClientScreen {
         let movie_size = self.movie_size(size);
         // Mugetsu 2.0.0's Performance mode: the game drawn with fewer pixels, stretched over its
         // area by the blit below.
-        let scale = crate::platform::platform().render_scale();
+        let scale = crate::host::host().render_scale();
         if movie_size != self.movie_size || scale != self.render_scale {
             self.movie_size = movie_size;
             self.render_scale = scale;
@@ -1548,7 +1548,7 @@ impl ClientScreen {
         }
         let top_points = top / ppp;
         let ui = &mut self.ui;
-        let fps = (crate::platform::platform().show_fps() == Some(true)).then_some(self.fps);
+        let fps = (crate::host::host().show_fps() == Some(true)).then_some(self.fps);
         let mut menu = self.menu.as_mut();
         let mut menu_done = None;
         let output = self.egui.run_ui(raw_input, |root| {
@@ -1594,7 +1594,7 @@ impl ClientScreen {
         for command in output.platform_output.commands {
             match command {
                 egui::OutputCommand::OpenUrl(open) => {
-                    crate::platform::platform().open_url(&open.url)
+                    crate::host::host().open_url(&open.url)
                 }
                 egui::OutputCommand::CopyText(text) => {
                     if let Some(clipboard) = &mut self.clipboard {

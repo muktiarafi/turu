@@ -1,4 +1,4 @@
-//! What the bot windows ask of Android (`turu_frontend::platform`). File dialogs are the system's
+//! What the bot windows ask of Android (`turu_frontend::host`). File dialogs are the system's
 //! picker (`saf.rs`), answering with a path as on a desktop. Web pages open in the browser;
 //! folders and files only get logged, so Edit Script and Open VSCode are hidden.
 //! Logs and crash reports go out through the share sheet (Share), and Copy (egui's
@@ -16,12 +16,12 @@ use jni::objects::{JClass, JObject, JString};
 use jni::sys::{jint, jobject};
 use std::path::Path;
 use turu_frontend::crash_reports::{SHARE_BYTES, shareable};
-use turu_frontend::platform::{Alert, Answer, FileDialog, Platform, Question};
+use turu_frontend::host::{Alert, Answer, FileDialog, Host, Question};
 use turu_frontend::shell::ToShell;
 
-pub struct AndroidPlatform;
+pub struct AndroidHost;
 
-impl Platform for AndroidPlatform {
+impl Host for AndroidHost {
     fn pick_file(&self, dialog: FileDialog, answer: Answer) -> bool {
         crate::saf::pick_file(&dialog, answer)
     }

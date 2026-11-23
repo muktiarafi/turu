@@ -87,7 +87,7 @@ impl AudioBackend for AAudioAudioBackend {
     }
 }
 
-/// Notify Drop's beep (`Platform::beep`): an AAudio stream of its own, apart from the game's, so
+/// Notify Drop's beep (`Host::beep`): an AAudio stream of its own, apart from the game's, so
 /// it sounds while the game is muted. Returns once it has played (or failed, logged).
 pub fn beep() {
     if let Err(e) = play_beep() {
@@ -99,7 +99,7 @@ fn play_beep() -> Result<(), Error> {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, Instant};
-    use turu_frontend::platform::{BEEP_MS, beep_sample};
+    use turu_frontend::host::{BEEP_MS, beep_sample};
 
     const RATE: u32 = 44100;
     let played = Arc::new(AtomicU64::new(0));

@@ -5,7 +5,7 @@
 use super::files::Pending;
 use super::theme::{DANGER, MUTED, SUCCESS, TEXT, WARNING};
 use super::widgets::{self, Kind};
-use crate::platform::FileDialog;
+use crate::host::FileDialog;
 use egui::{Align, Context, Key, Label, Layout, RichText, ScrollArea, Ui, vec2};
 use std::time::Duration;
 

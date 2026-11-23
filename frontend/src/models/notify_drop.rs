@@ -1,5 +1,5 @@
 //! Combat > Runtime > Notifications (VibeSkua `NotifyDropView` / `NotifyDropViewModel`): a list
-//! of item names, and a beep (`Platform::beep`, VibeSkua's `ISoundService.Beep`) played a number
+//! of item names, and a beep (`Host::beep`, VibeSkua's `ISoundService.Beep`) played a number
 //! of times when one of them drops. As VibeSkua, the list isn't saved: it lasts as long as the tab
 //! (closing the window keeps it), and each tab has its own. Where the platform posts alerts
 //! (Android), a drop is also a notification, heard with the screen off.
@@ -74,7 +74,7 @@ pub fn view(bot: &Arc<Bot>) -> NotifyDropView {
         delay: s.delay,
         delay_min: DELAY.0,
         delay_max: DELAY.1,
-        alerts: crate::platform::platform().posts_alerts(),
+        alerts: crate::host::host().posts_alerts(),
     }
 }
 
@@ -184,7 +184,7 @@ fn play(state: &Mutex<State>) {
         .name("Turu Notify Drop".into())
         .spawn(move || {
             for i in 0..count {
-                crate::platform::platform().beep();
+                crate::host::host().beep();
                 if i + 1 < count {
                     std::thread::sleep(delay);
                 }
@@ -238,7 +238,7 @@ fn unsubscribe(bot: &Arc<Bot>, state: &Shared<State>) {
 /// [`ALERT_AGAIN_AFTER`] alerts once.
 fn alert(tab: Weak<Bot>, item: &str) {
     static LAST: Mutex<Option<(String, Instant)>> = Mutex::new(None);
-    if !crate::platform::platform().posts_alerts() {
+    if !crate::host::host().posts_alerts() {
         return;
     }
     {
@@ -256,7 +256,7 @@ fn alert(tab: Weak<Bot>, item: &str) {
         let Some(bot) = tab.upgrade() else { return };
         let text = format!("{}: {item}", crate::turu::tab_label(&bot));
         tracing::info!("Alert: {item} dropped: {text}");
-        crate::platform::platform().alert(crate::platform::Alert::Drop, &format!("{item} dropped"), &text);
+        crate::host::host().alert(crate::host::Alert::Drop, &format!("{item} dropped"), &text);
     });
     if let Err(e) = spawned {
         tracing::warn!("Notify Drop alert failed: {e}");

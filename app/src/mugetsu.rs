@@ -944,7 +944,7 @@ pub fn apply_drawing_switches() {
         unsafe { std::env::set_var(var, value) };
     };
     let set = |var: &str| set_to(var, "1");
-    crate::platform::drawing_switches(exe_flag, safe_drawing())
+    crate::host::drawing_switches(exe_flag, safe_drawing())
         .into_iter()
         .for_each(|(var, value)| set_to(var, value));
     for (file, var) in BY_FILE {
