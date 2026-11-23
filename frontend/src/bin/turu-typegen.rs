@@ -15,7 +15,7 @@ use facet_generate::generation::kotlin;
 use facet_generate::reflection::RegistryBuilder;
 use std::fmt::Write as _;
 use turu_frontend::models::{
-    CopiedText, ModelActs, ModelView,
+    CopiedText, Model, ModelActs, ModelView,
     application_options::{AppOptionsAct, AppOptionsView},
     army::{ArmyAct, ArmyView},
     army_client::{ArmyClientAct, ArmyGearView, ClientLog},
@@ -56,6 +56,46 @@ use turu_frontend::native_shell::{
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+/// A model's name as a Kotlin field: `game-options` is `gameOptions`.
+fn field_name(name: &str) -> String {
+    let mut parts = name.split('-');
+    let mut field = parts.next().unwrap_or_default().to_owned();
+    for part in parts {
+        let mut chars = part.chars();
+        field.extend(chars.next().map(|c| c.to_ascii_uppercase()));
+        field.push_str(chars.as_str());
+    }
+    field
+}
+
+/// `--samples <dir>`: each model's view as the control API answers it (`{revision, view}`), read
+/// in process from a fresh tab with no game ([`turu_frontend::client`]), as `<name>.json`. The
+/// Android build's tests decode each into its generated type, so a view Rust writes that Kotlin
+/// can't read fails there. The data folder is a temporary one: nothing of the user's is read.
+fn write_samples(dir: &std::path::Path) -> Result<()> {
+    let data = std::env::temp_dir().join(format!("turu-typegen-samples-{}", std::process::id()));
+    turu_bot::paths::set_default_root(data.clone());
+    std::fs::create_dir_all(dir)?;
+    let client = turu_frontend::client::client();
+    let tab = client.active_tab();
+    for model in Model::ALL {
+        if model == Model::ArmyClient {
+            // Its rows answer actions; it has no view.
+            continue;
+        }
+        let copy = client
+            .view(tab, model)
+            .map_err(|e| format!("model {}'s view: {e}", model.name()))?;
+        let json = serde_json::json!({ "revision": copy.revision, "view": copy.view });
+        std::fs::write(
+            dir.join(format!("{}.json", model.name())),
+            serde_json::to_vec_pretty(&json)?,
+        )?;
+    }
+    let _ = std::fs::remove_dir_all(&data);
+    Ok(())
+}
 
 /// The registry, and each model's entry for `ModelApi.kt`: its name, its view's and actions' types.
 struct Gen {
@@ -108,13 +148,7 @@ impl Gen {
              object Api {\n",
         );
         for (name, view, acts) in &self.models {
-            let mut parts = name.split('-');
-            let mut field = parts.next().unwrap_or_default().to_owned();
-            for part in parts {
-                let mut chars = part.chars();
-                field.extend(chars.next().map(|c| c.to_ascii_uppercase()));
-                field.push_str(chars.as_str());
-            }
+            let field = field_name(name);
             let (view_type, view) = match view {
                 Some(v) => (v.as_str(), format!("serializer<{v}>()")),
                 None => ("Nothing", "null".to_owned()),
@@ -124,13 +158,41 @@ impl Gen {
                 "    val {field} = ModelApi<{view_type}, {acts}>(\"{name}\", {view}, serializer<{acts}>())"
             );
         }
-        kotlin.push_str("}\n");
+        kotlin.push_str("\n    /** Every model, for the tests that decode each one's view. */\n    val all: List<ModelApi<*, *>> = listOf(");
+        let fields: Vec<String> = self.models.iter().map(|(name, _, _)| field_name(name)).collect();
+        kotlin.push_str(&fields.join(", "));
+        kotlin.push_str(")\n}\n");
         kotlin
+    }
+
+    /// Every model has its types here: one added to `models::Model` but not to this list would
+    /// have no Kotlin types, and a shell couldn't use it.
+    fn check_every_model(&self) -> Result<()> {
+        let missing: Vec<&str> = Model::ALL
+            .iter()
+            .map(|model| model.name())
+            .filter(|name| !self.models.iter().any(|(listed, _, _)| listed == name))
+            .collect();
+        if missing.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "no types generated for model(s) {}: add them in turu-typegen",
+                missing.join(", ")
+            )
+            .into())
+        }
     }
 }
 
 fn main() -> Result<()> {
-    let out = std::env::args().nth(1).ok_or("give the folder to write into")?;
+    let mut args = std::env::args().skip(1);
+    let out = args.next().ok_or("give the folder to write into")?;
+    let samples = match (args.next().as_deref(), args.next()) {
+        (Some("--samples"), Some(dir)) => Some(dir),
+        (None, _) => None,
+        _ => return Err("turu-typegen <out> [--samples <dir>]".into()),
+    };
     let generated = Gen {
         registry: RegistryBuilder::new(),
         models: Vec::new(),
@@ -188,6 +250,7 @@ fn main() -> Result<()> {
     .add::<ServersView>()?
     .add::<AccountsAsk>()?
     .add::<AccountsAnswer>()?;
+    generated.check_every_model()?;
     let api = generated.api();
     let registry = generated.registry.build()?;
     let out = std::path::Path::new(&out);
@@ -197,5 +260,8 @@ fn main() -> Result<()> {
     let dir = out.join("com/muktiarafi/turu/models");
     std::fs::create_dir_all(&dir)?;
     std::fs::write(dir.join("ModelApi.kt"), api)?;
+    if let Some(samples) = samples {
+        write_samples(std::path::Path::new(&samples))?;
+    }
     Ok(())
 }

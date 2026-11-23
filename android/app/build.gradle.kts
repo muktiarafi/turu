@@ -99,6 +99,7 @@ dependencies {
     implementation(libs.kotlinxSerializationJson)
     implementation(libs.composeUiToolingPreview)
     debugImplementation(libs.composeUiTooling)
+    testImplementation(libs.junit)
 }
 
 /// The version: `-PturuVersion=0.2.0-alpha.1` (the release tag without its `v`), else the
@@ -184,7 +185,9 @@ tasks.named("preBuild") {
 /**
  * The view models' Kotlin types (docs/NATIVE_UI_PROPOSAL.md, L4), generated from the Rust records
  * (`turu_frontend::models`) by `turu-typegen` on the build machine, into the build folder: never
- * committed, so a record changed in Rust can't ship with stale types here.
+ * committed, so a record changed in Rust can't ship with stale types here. With them, each model's
+ * view as Rust writes it (`samplesDir`, from a fresh tab with no game), which the JVM tests decode
+ * into the generated types (`GeneratedTypesTest`).
  */
 abstract class TuruTypes : DefaultTask() {
     @get:InputFiles
@@ -196,18 +199,23 @@ abstract class TuruTypes : DefaultTask() {
     @get:OutputDirectory
     abstract val outDir: DirectoryProperty
 
+    @get:OutputDirectory
+    abstract val samplesDir: DirectoryProperty
+
     @get:Inject
     abstract val exec: ExecOperations
 
     @TaskAction
     fun generate() {
         val out = outDir.get().asFile
+        val samples = samplesDir.get().asFile
         out.deleteRecursively()
+        samples.deleteRecursively()
         exec.exec {
             workingDir = workspace.get().asFile
             commandLine(
                 "cargo", "run", "-q", "-p", "turu_frontend", "--no-default-features", "--features", "typegen",
-                "--bin", "turu-typegen", "--", out.absolutePath,
+                "--bin", "turu-typegen", "--", out.absolutePath, "--samples", samples.absolutePath,
             )
         }
         // The generator writes a Gradle project of its own: its sources are what's wanted.
@@ -219,6 +227,15 @@ val turuTypes = tasks.register<TuruTypes>("turuTypes") {
     workspace.set(rootProject.layout.projectDirectory.dir(".."))
     sources.from(rootProject.fileTree("../frontend/src/models"), rootProject.file("../frontend/src/bin/turu-typegen.rs"))
     outDir.set(layout.buildDirectory.dir("generated/turu-models"))
+    samplesDir.set(layout.buildDirectory.dir("generated/turu-samples"))
+}
+
+// The JVM tests read the views Rust wrote beside the types.
+tasks.withType<Test>().configureEach {
+    dependsOn(turuTypes)
+    val samples = turuTypes.flatMap { it.samplesDir }
+    inputs.dir(samples)
+    systemProperty("turu.samples", samples.get().asFile.absolutePath)
 }
 
 /**

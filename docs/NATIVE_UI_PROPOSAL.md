@@ -65,7 +65,7 @@ The steps, with their state:
 | L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | Built 2026-11-23: the split (`turu_egui`), `Platform` renamed `Host`, the `Client` handle |
 | L2 | View models in the client, by feature | Pilot and the Android windows' models done 2026-11-20 |
 | L3 | Questions, dialogs and alerts as events with an ID and an answer | Built 2026-11-23, but the link's own answers |
-| L4 | Generated types for Kotlin and Swift in CI; `turu_ffi` for macOS | Kotlin done 2026-11-20 (Android build); Swift with L6 |
+| L4 | Generated types for Kotlin and Swift in CI; `turu_ffi` for macOS | Kotlin done 2026-11-23 (CI checks, the views decoded in a test); Swift with L6 |
 | L5b | Android: navigation and the daily features in Compose | Built 2026-11-20 (emulator); on `main` since 2026-11-22 |
 | L6, L7 | macOS: the game view behind a native window, then the app | After the checkpoint |
 | L8 | Windows and Linux native shells | Not planned: egui |
@@ -813,6 +813,33 @@ Kotlin and JNI. egui still reads a few engine states for display (the bar's "wai
 
 **Done when** the Android build decodes a slot's scripts view into generated types in a test, and
 (for macOS) a Swift test reads `turu_shell`'s tab list.
+
+#### L4 as built (2026-11-23)
+
+The Android half is done; the macOS half (Swift types, `turu_ffi`) waits for L6, as macOS itself
+waits for the owner's decision.
+
+* **Every model generates, checked.** `turu-typegen` fails when a `models::Model` has no types in
+  its list (a model added to Rust but not to the generator had no Kotlin before and nothing
+  said so), and `ModelApi.kt` gains `Api.all`, every model in one list.
+* **The views Rust writes, decoded by the Kotlin types.** `turu-typegen <out> --samples <dir>`
+  also writes each model's view as a fresh tab with no game answers `GET /models/<name>`
+  (`client::Client::view`, in process, a temporary data folder), one `<name>.json` each. The
+  Android build's `turuTypes` writes them beside the types, and its first JVM tests
+  (`android/app/src/test/.../GeneratedTypesTest.kt`, `./gradlew :app:testDebugUnitTest`) decode
+  the scripts view, then every model's, as `ModelClient` decodes them (`ignoreUnknownKeys`). A
+  view Rust writes that the types can't read (serde's attributes and facet's drifting apart, as
+  L0 found with `#[serde(default)]` and the variant fields' renames) fails the build's tests
+  instead of a page.
+* **CI** runs the generator with samples on every pull request ("Generate the native shells'
+  types"), which checks the Rust side: every model listed and every view read. CI has no Android
+  SDK, so the Kotlin decoding runs in the Android build (locally, and in the release workflow's
+  `assembleRelease`, which doesn't run unit tests: a CI job for them is a later step).
+
+Checked: the generator writes 35 samples (every model but Army client, which has no view) and
+fails without one; `./gradlew :app:testDebugUnitTest` passes both tests. The samples come from a
+fresh tab: a view's fields that only fill in game (a loaded script, a roster) decode as their
+empty forms, not with data.
 
 #### L4 and L5b so far (2026-11-20)
 

@@ -134,8 +134,6 @@ jobs:
       - name: Install Linux dependencies
         uses: ./.github/actions/linux-deps
 
-      # The shell's logic is a library any shell's window hosts (docs/NATIVE_UI_PROPOSAL.md, L1):
-      # alone, with no window toolkit, dialogs or player in it.
       # The client library has no UI toolkit (docs/NATIVE_UI_PROPOSAL.md, L1): the egui windows are
       # turu_egui's. Built alone, with and without Ruffle, as the workspace would unify features.
       - name: Keep the client library free of egui
@@ -150,7 +148,19 @@ jobs:
           cargo check --locked -p turu_frontend --all-targets
           cargo check --locked -p turu_frontend --no-default-features --all-targets
 
-      # Built alone, as the workspace's other crates would otherwise turn `ruffle` on for it.
+      # The native shells' types (docs/NATIVE_UI_PROPOSAL.md, L4): every model's records generate
+      # for Kotlin (turu-typegen fails on a model it doesn't list), and every model's view reads
+      # in process from a fresh tab. The Android build decodes those views into the types
+      # (GeneratedTypesTest); this job has no Android SDK, so it checks the Rust side.
+      - name: Generate the native shells' types
+        run: |
+          cargo run --locked -q -p turu_frontend --no-default-features --features typegen \
+            --bin turu-typegen -- "$RUNNER_TEMP/types" --samples "$RUNNER_TEMP/samples"
+          ls "$RUNNER_TEMP/samples"
+
+      # The shell's logic is a library any shell's window hosts (docs/NATIVE_UI_PROPOSAL.md, L1):
+      # alone, with no window toolkit, dialogs or player in it. Built alone, as the workspace's
+      # other crates would otherwise turn `ruffle` on for it.
       - name: Keep the shell library windowless
         run: |
           cargo tree --locked -p turu_shell -e normal --prefix none > "$RUNNER_TEMP/shell-tree.txt"

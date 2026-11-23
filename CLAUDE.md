@@ -62,6 +62,7 @@ cargo run -p turu_host                   # rebuild bot/assets/turu.swf from host
 cargo test -p turu -p turu_frontend -p turu_egui --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen   # app + bot windows (see STATUS.md); cargo test here, not nextest (see below)
 cargo clippy -p turu_bot -p turu_frontend -p turu_egui -p turu_shell -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -D warnings -A clippy::redundant_clone   # see STATUS.md
 cd android && ./gradlew assembleDebug   # Android APK (SDK, NDK 27, cargo-ndk: docs/ANDROID.md)
+cd android && ./gradlew :app:testDebugUnitTest   # the generated Kotlin types decode every model's view as Rust writes it
 air/app/build.sh --no-install           # Turu Mas APK (AIR SDK, JDK 17: docs/TURU_MAS.md)
 docker build -t turu .                  # headless image (Dockerfile, compose.yaml: docs/HEADLESS.md, "Docker")
 cd scripts && npx -y -p typescript@5.9.3 tsc --noEmit -p .    # type-check scripts
