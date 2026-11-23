@@ -8,6 +8,7 @@
 pub mod capture;
 #[cfg(feature = "gpu")]
 pub mod blit;
+pub mod client;
 pub mod client_link;
 pub mod crash_reports;
 pub mod documents;

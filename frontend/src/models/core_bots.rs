@@ -907,7 +907,7 @@ pub fn view(bot: &Arc<Bot>) -> CoreBotsView {
 }
 
 /// CoreBots' actions (`POST /models/core-bots/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

@@ -703,7 +703,7 @@ pub fn view(bot: &Arc<Bot>) -> ScriptOptionsView {
 }
 
 /// Script Options' actions (`POST /models/script-options/do`); `category` is a group's name.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

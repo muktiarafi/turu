@@ -657,7 +657,7 @@ fn outfit(library: &Library, index: usize, name: &str) -> Result<CosmeticSet, St
 
 /// A change to the item list's filter from a shell: the fields given (`category` and `sort` by
 /// their words). A new search, category or weapon kind starts at page 1 unless `page` is given.
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct CosmeticsQuery {
@@ -670,7 +670,7 @@ pub struct CosmeticsQuery {
 
 /// Cosmetics' actions (`POST /models/cosmetics/do`). `key` is an item's; an outfit is named by
 /// its `position` and its `name`, so a list changed meanwhile isn't changed in the wrong place.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

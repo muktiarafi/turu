@@ -1429,7 +1429,7 @@ pub struct KeyMoved {
 }
 
 /// HotKeys' actions (`POST /models/hotkeys/do`); `id` is an action's ("OpenBank").
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

@@ -302,7 +302,7 @@ fn selected(bot: &Arc<Bot>) -> HashSet<Key> {
 }
 
 /// Junk's actions (`POST /models/junk/do`), on the native page's selection.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

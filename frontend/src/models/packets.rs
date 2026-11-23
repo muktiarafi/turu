@@ -81,7 +81,7 @@ pub fn logger_view(bot: &Arc<Bot>) -> PacketLoggerView {
 }
 
 /// The Packet Logger's actions (`POST /models/packet-logger/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),
@@ -156,7 +156,7 @@ pub fn spammer_view(bot: &Arc<Bot>) -> SpammerView {
 }
 
 /// The Spammer's actions (`POST /models/spammer/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),
@@ -359,7 +359,7 @@ pub fn interceptor_view(bot: &Arc<Bot>) -> InterceptorView {
 }
 
 /// The Interceptor's actions (`POST /models/interceptor/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

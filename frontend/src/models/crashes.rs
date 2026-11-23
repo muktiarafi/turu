@@ -178,7 +178,7 @@ pub fn restore(name: &str) -> Result<(), String> {
 }
 
 /// Crash reports' actions (`POST /models/crashes/do`), each on the report named `name`.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

@@ -798,7 +798,7 @@ pub fn view(bot: &Arc<Bot>) -> ButlerView {
 }
 
 /// Butler's actions (`POST /models/butler/do`); `name` is an account's.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

@@ -214,7 +214,7 @@ fn jump_to(bot: &Arc<Bot>, cell: String, pad: String, auto: bool) {
 }
 
 /// Jump's actions (`POST /models/jump/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

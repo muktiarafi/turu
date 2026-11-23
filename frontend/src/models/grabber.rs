@@ -493,7 +493,7 @@ pub fn copy_text(bot: &Arc<Bot>, kind: GrabKind, targets: &[&Grabbed]) -> Option
 
 /// Grabber's actions (`POST /models/grabber/do`). `kind` is a list's title ("Inventory"); without
 /// one, the list the page shows. `positions` and `revision` are rows checked in that grab.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

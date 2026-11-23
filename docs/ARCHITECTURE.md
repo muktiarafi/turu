@@ -80,6 +80,8 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on the 
     script/              ScriptManager: load/start/stop/pause, TS transpile, QuickJS runtime, bindings,
                          script options (`options.rs`: the `scriptOptions` declaration and its values)
 frontend/                crate `turu_frontend`: what any Turu frontend shares (no egui, winit, rfd or window)
+  src/client.rs          `Client`: a handle over the process's client (tabs, services, the view
+                         models read and acted on in process, typed)
   src/turu.rs            Flash integration: tabs, spawn_action; the app hands in how to reach its
                          loop (`set_tab_requests`, `TuruFlashHost::new`)
   src/turu/ruffle_host.rs  `TuruFlashHost` and the ExternalInterface provider (`TuruExternalInterface`)

@@ -73,7 +73,7 @@ pub fn pickup(bot: &Arc<Bot>, ids: Vec<i64>) {
 }
 
 /// Drops' actions (`POST /models/drops/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

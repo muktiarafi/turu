@@ -281,7 +281,7 @@ pub fn take_read(bot: &Arc<Bot>) -> Option<turu_bot::script::options::ScriptOpti
 }
 
 /// The Scheduler's actions (`POST /models/scheduler/do`); `id` is an entry's.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

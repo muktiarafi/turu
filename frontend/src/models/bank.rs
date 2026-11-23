@@ -78,7 +78,7 @@ pub fn open(bot: &Arc<Bot>) {
 }
 
 /// The bank's actions (`POST /models/bank/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

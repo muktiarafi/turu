@@ -138,7 +138,7 @@ pub fn clear(bot: &Arc<Bot>) {
 }
 
 /// Notifications' actions (`POST /models/notifications/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

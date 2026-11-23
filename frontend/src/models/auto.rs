@@ -236,7 +236,7 @@ pub fn set_map_ids(bot: &Arc<Bot>, map_ids: String) {
 }
 
 /// Auto's actions (`POST /models/auto/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

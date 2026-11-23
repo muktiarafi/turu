@@ -385,7 +385,7 @@ pub struct StatsCsv {
 }
 
 /// Stats' actions (`POST /models/stats/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

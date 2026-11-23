@@ -64,7 +64,7 @@ pub fn clear(bot: &Bot, kind: &str) -> Result<(), String> {
 }
 
 /// The logs' actions (`POST /models/logs/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

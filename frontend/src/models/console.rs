@@ -179,7 +179,7 @@ pub fn copy_text(bot: &Arc<Bot>) -> String {
 }
 
 /// The Console's actions (`POST /models/console/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

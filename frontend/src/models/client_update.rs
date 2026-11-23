@@ -275,7 +275,7 @@ pub fn install(on_quit: bool) -> Result<(), String> {
 }
 
 /// The client update's actions (`POST /models/client-update/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

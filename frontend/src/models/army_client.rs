@@ -187,7 +187,7 @@ fn json_of(answer: &impl Serialize) -> Result<Json, String> {
 }
 
 /// An Army client's actions (`POST /models/army-client/do`), each on the row whose key is `key`.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

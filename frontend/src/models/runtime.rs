@@ -191,7 +191,7 @@ pub fn set_boosting(bot: &Arc<Bot>, on: bool) {
 }
 
 /// Runtime's actions (`POST /models/runtime/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

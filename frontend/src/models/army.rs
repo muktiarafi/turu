@@ -224,7 +224,7 @@ impl Peer {
 }
 
 /// What a row's own buttons ask for (Gear and Logs are windows: each shell opens its own).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "kebab-case"))]
 #[serde(rename_all = "kebab-case")]
 #[repr(C)]
@@ -811,7 +811,7 @@ fn row_view(row: &Row) -> ArmyRow {
 
 /// The checked keys in a shell's action (`keys`: none means every row still running).
 /// A command Army Control sends to its clients.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),
@@ -856,7 +856,7 @@ pub enum ArmyCommand {
 }
 
 /// Army Control's actions (`POST /models/army/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

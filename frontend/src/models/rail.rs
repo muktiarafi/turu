@@ -198,7 +198,7 @@ pub fn menus(bot: &Bot) -> Vec<MenuView> {
 }
 
 /// The rail's actions (`POST /models/rail/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

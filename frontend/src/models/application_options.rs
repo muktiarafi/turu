@@ -774,7 +774,7 @@ pub fn run(bot: &Arc<Bot>, label: &str) -> Result<(), String> {
 }
 
 /// Application Options' actions (`POST /models/app-options/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

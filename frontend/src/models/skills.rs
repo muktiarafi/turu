@@ -612,7 +612,7 @@ pub fn view(bot: &Arc<Bot>) -> SkillsView {
 }
 
 /// A change to the editor from a shell: the fields given.
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct EditorChange {
@@ -627,7 +627,7 @@ pub struct EditorChange {
 
 /// Skills' actions (`POST /models/skills/do`). `position` is a skill's in the sequence, or (the
 /// saved sets') a set's.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

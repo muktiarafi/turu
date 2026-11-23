@@ -244,8 +244,9 @@ pub trait ModelView: Serialize {
     const MODEL: Model;
 }
 
-/// A model's actions, as one enum: what `POST /models/<name>/do` takes.
-pub trait ModelActs: serde::de::DeserializeOwned {
+/// A model's actions, as one enum: what `POST /models/<name>/do` takes (and, serialized, what
+/// `client::Client::act` posts in process).
+pub trait ModelActs: serde::de::DeserializeOwned + Serialize {
     const MODEL: Model;
 }
 

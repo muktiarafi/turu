@@ -336,7 +336,7 @@ pub fn load_quests(bot: &Arc<Bot>, ids: Vec<i64>) {
 }
 
 /// The Loader's actions (`POST /models/loader/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

@@ -381,7 +381,7 @@ pub fn view(bot: &Arc<Bot>) -> PromptsView {
 }
 
 /// The prompts' actions (`POST /models/prompts/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

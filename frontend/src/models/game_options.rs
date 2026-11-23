@@ -743,7 +743,7 @@ pub fn view(bot: &Bot) -> GameOptionsView {
 }
 
 /// Game Options' actions (`POST /models/game-options/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

@@ -62,7 +62,7 @@ The steps, with their state:
 | L5a | Android: design pass, then the tab strip and Accounts in Compose | Built 2026-11-20 (emulator); checkpoint next |
 | L1 (shell) | The desktop shell's logic out of winit, into `turu_shell` | Built 2026-11-23 (macOS), `SlotShell` with it |
 | Checkpoint | Go on to native bot windows, or stop at L5a | Owner, after L5a |
-| L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | Split built 2026-11-23 (`turu_egui`), `Platform` renamed `Host`; `Client` later |
+| L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | Built 2026-11-23: the split (`turu_egui`), `Platform` renamed `Host`, the `Client` handle |
 | L2 | View models in the client, by feature | Pilot and the Android windows' models done 2026-11-20 |
 | L3 | Questions, dialogs and alerts as events with an ID and an answer | After the checkpoint |
 | L4 | Generated types for Kotlin and Swift in CI; `turu_ffi` for macOS | Kotlin done 2026-11-20 (Android build); Swift with L6 |
@@ -610,7 +610,7 @@ to the background when no native screen is open).
   a model, not `gui`, for the bar's size and whether the tab is busy. Rename `Platform` to `Host`.
   Add `Client` as a handle over the globals. *The split is built (2026-11-23, "L1's client part
   as built"), keeping the name `turu_frontend` for the client library (the owner's choice);
-  `Platform` is `Host` since the same day; the handle is a later step.*
+  `Platform` is `Host` and `Client` is a handle since the same day.*
 
 **Done when**, for the shell part: `turu_shell` builds without a player and without winit, CI
 checks it, and the shell starts with two tabs, Grid View and a client killed and back. For the
@@ -696,7 +696,25 @@ implementations (`DesktopHost` in `app/src/desktop_host.rs`, `ClientHost`, `Andr
 No behaviour changed. Checked: the app, `turu_frontend` and `turu_egui` alone, the Android app's
 and Turu Mas's crates for arm64, clippy and the tests.
 
-Not done: `Client` as a handle over `turu.rs`'s globals.
+`Client` came the same day (`turu_frontend::client`): a handle over the process's state, which
+stays in `turu.rs`'s statics, so it is a copy of nothing and every copy is the same client; the
+free functions it wraps still work, and nothing was moved onto it. It groups the tabs and their
+bots (`bot`, `tabs`, `tab_bot`, `add_tab`, `remove_tab`, `set_active_tab`, `request_tab`,
+`spawn_action` for a tab), the shared services (`army`, `monitor_hub`, `script_repo`), where it
+runs (`headless`, `shell`), and the view models in process: `view(tab, Model)` answers as `GET
+/models/<name>` does (`{revision, view}`), and `act(tab, &<Name>Act)` posts a typed action as a
+shell's `POST /models/<name>/do`, through `control_api::local` (no HTTP; the models' routes are
+added once on first use). For that, every model's actions are `Serialize` as well as
+`Deserialize` now (`ModelActs` requires it), with the types inside them; a test reads a shell's
+JSON for actions with data (Grabber's run and search, an answer to a prompt, Game Options' four
+kinds of value) and writes the same JSON back. Checked: its tests, the typegen binary, clippy and
+the tests of every crate, the Android app's and Turu Mas's crates for arm64. Its users come with
+the steps that need one (a macOS binding, L4; questions as events, L3): the frontends still call
+the free functions.
+
+L1's "done when" for the client part holds: `turu_frontend` builds with and without `ruffle` and
+has no egui, winit or rfd, and the frontends pass their tests and start (the desktop app; the
+APK and Turu Mas weren't run after the split).
 
 ### L2: View models (XL, after the checkpoint)
 

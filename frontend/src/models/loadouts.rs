@@ -614,7 +614,7 @@ pub fn view(bot: &Arc<Bot>) -> LoadoutsView {
 }
 
 /// Loadouts' actions (`POST /models/loadouts/do`); `name` is a loadout's.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

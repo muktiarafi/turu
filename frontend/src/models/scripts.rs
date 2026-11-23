@@ -322,7 +322,7 @@ pub fn toggle_favourite(bot: &Bot) {
 }
 
 /// The Script Loader's actions (`POST /models/scripts/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

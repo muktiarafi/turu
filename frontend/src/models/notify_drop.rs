@@ -132,7 +132,7 @@ pub fn test(bot: &Arc<Bot>) {
 }
 
 /// Notify Drop's actions (`POST /models/notify-drop/do`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

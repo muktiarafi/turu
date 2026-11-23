@@ -293,7 +293,7 @@ pub fn view(bot: &Arc<Bot>) -> FastTravelView {
 
 /// Fast Travel's actions (`POST /models/fast-travel/do`). A destination is named by its
 /// `position` and its name, so a list changed meanwhile isn't changed in the wrong place.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

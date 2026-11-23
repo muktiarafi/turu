@@ -577,7 +577,7 @@ pub fn view(bot: &Arc<Bot>) -> RepoView {
 }
 
 /// A change to the tab's query from a shell: the fields given, after `clearFilters`.
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct RepoQuery {
@@ -724,7 +724,7 @@ pub struct LaunchScript {
 }
 
 /// Search Scripts' actions (`POST /models/repo/do`); `path` is a script's in the repository.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),

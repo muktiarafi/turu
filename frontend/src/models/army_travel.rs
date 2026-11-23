@@ -440,7 +440,7 @@ pub fn view() -> ArmyTravelView {
 }
 
 /// A place a shell sends: where to jump, or a preset (`name` is a preset's; empty for a jump).
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(default, rename_all = "camelCase")]
 pub struct Place {
@@ -464,7 +464,7 @@ pub fn destination(place: &Place) -> Destination {
 }
 
 /// Army Travel's actions (`POST /models/army-travel/do`). Jumps are Army Control's commands.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "typegen",
     derive(facet::Facet),
