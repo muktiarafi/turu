@@ -7570,6 +7570,7 @@ dependencies = [
  "tracing-tracy",
  "turu_bot",
  "turu_frontend",
+ "turu_shell",
  "unic-langid",
  "unicode-bidi",
  "url",
@@ -7685,6 +7686,7 @@ dependencies = [
  "tracing",
  "turu_bot",
  "url",
+ "wgpu",
 ]
 
 [[package]]
@@ -7696,6 +7698,19 @@ dependencies = [
  "build_playerglobal",
  "swf 0.4.0",
  "tempfile",
+]
+
+[[package]]
+name = "turu_shell"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "image",
+ "tracing",
+ "turu_bot",
+ "turu_frontend",
+ "webbrowser",
+ "wgpu",
 ]
 
 [[package]]

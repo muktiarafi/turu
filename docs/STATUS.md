@@ -1308,7 +1308,8 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
   build script compiles the AS3 playerglobals again, with Java and `ruffle/tools/asc/asc.jar`;
   that failed here with Java 25 ("Could not find or load main class
   macromedia.asc.embedding.ScriptCompiler"), while the app's cached build is reused.
-- **Formatting:** the bot crate uses `cargo fmt`. Not the app (Ruffle's files keep their own
+- **Formatting:** the bot crate uses `cargo fmt`, and so does the shell library (`cargo fmt -p
+  turu_shell`: its own `rustfmt.toml` sets `max_width = 120`, as `app/src/shell.rs` is). Not the app (Ruffle's files keep their own
   layout: `cargo fmt -p turu` rewraps 50 of them). The files in `frontend/src/gui/turu/` are
   formatted with `max_width = 120`, so format them with rustfmt rather than `cargo fmt`
   (`rustfmt --edition 2024 --config max_width=120 <file>`; on `mod.rs` it formats every

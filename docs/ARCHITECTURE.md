@@ -107,6 +107,10 @@ air/                     Turu Mas (docs/TURU_MAS.md): crate `turu_air` (`ane/rus
                          `app.xml` (`app/`); built with the AIR SDK (`air/app/build.sh`)
 air_patch/               crate `turu_air_patch`: patches AQW's client and the SWFs it loads for AIR's
                          sandbox at run time
+shell/                   crate `turu_shell`: the desktop shell's logic without a window (the tabs'
+                         clients and their restarts, the tab list, Grid View, the pictures on the
+                         shell's GPU, pacing, dialogs asked for, updates, Army launches); a front
+                         owns the window and carries out the `Action`s it returns
 app/                     crate `turu`, the desktop app: started from ruffle-aqw's desktop frontend
                          (Ruffle's, with Mugetsu's changes marked `AQW build:`), plus the window,
                          the headless loop and the dialogs; it re-exports `turu_frontend`'s modules
@@ -131,8 +135,8 @@ Android. A process with a game holds one `Player` and its `Bot` (`frontend/src/p
   one Player + Bot, Turu's UI, drawn into GPU surfaces the shell shows
 ```
 
-* **Desktop.** Every start of Turu's window is the shell (`app/src/shell.rs`,
-  `shell::runs_as_shell`). It runs no game: it starts each tab as `turu --client=<address>`
+* **Desktop.** Every start of Turu's window is the shell (`shell/`, crate `turu_shell`, behind
+  its winit front `app/src/shell.rs`; `shell::runs_as_shell`). It runs no game: it starts each tab as `turu --client=<address>`
   (`app/src/client.rs`), shows the picture of the tab on screen, and sends that tab the window's
   mouse, keys, size, IME and gamepads. A client runs the windowless loop below, with a GPU set up
   without a window. `frontend/src/client_screen.rs` draws the game and Turu's egui UI into

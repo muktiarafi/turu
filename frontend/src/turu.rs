@@ -1831,8 +1831,8 @@ pub fn client_of() -> Option<String> {
     CLIENT_OF.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
-/// `--shell`: this process owns the window and runs each tab in a client process
-/// (`app/src/shell.rs`).
+/// `--shell`: this process owns the window and runs each tab in a client process (`turu_shell`,
+/// behind `app/src/shell.rs`).
 pub fn shell() -> bool {
     SHELL.load(Ordering::Relaxed)
 }

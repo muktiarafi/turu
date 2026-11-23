@@ -30,6 +30,8 @@ fontdb = "0.23"
 turu_bot = { path = "../bot" }
 # Turu: the bridge to the bot and the bot windows, shared with other frontends.
 turu_frontend = { path = "../frontend" }
+# Turu: the shell's logic without the window (`shell.rs` is its winit front).
+turu_shell = { path = "../shell" }
 ruffle_core = { path = "../ruffle/core", features = ["audio", "clap", "mp3", "aac", "nellymoser", "default_compatibility_rules", "egui"] }
 ruffle_render = { path = "../ruffle/render", features = ["clap"] }
 ruffle_render_wgpu = { path = "../ruffle/render/wgpu", features = ["clap"] }

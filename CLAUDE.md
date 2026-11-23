@@ -30,6 +30,7 @@ Turu builds on **ruffle-aqw** (`ruffle/`, submodule `muktiarafi/ruffle-aqw`, bra
 | `bot/js/turu.ts` | **The script API contract** (runtime + types, embedded). Rust implements each `"module.method"` it calls in `bot/src/api/<module>.rs`. Change both sides together. |
 | `host/` | crate `turu_host`: Turu's own host SWF, `turu.swf`, the default (`docs/HOST_SWF_PROPOSAL.md`): its AS3 (`as3/`, package `turu.host`, written from `docs/VIBESKUA_SPEC.md`, not from VibeSkua's source) and its build with Ruffle's `asc.jar`. Rebuild and commit `bot/assets/turu.swf` after changing `as3/`; CI checks they match. |
 | `app/` | crate `turu`: the app. Started from ruffle-aqw's `desktop/` (Ruffle's frontend + Mugetsu's changes, marked `AQW build:`); Turu's code is the rest. |
+| `shell/` | crate `turu_shell`: the desktop shell's logic without a window (docs/NATIVE_UI_PROPOSAL.md, L1): the tabs' clients started and restarted, the tab list, Grid View, the clients' pictures on the shell's GPU and their pacing, the dialog queue, updates, Army launches, the monitor's peers. `app/src/shell.rs` is its winit front (the window, its GPU choice, input, rfd); the front carries out the `Action`s the shell returns. Takes `turu_frontend` without `ruffle`; tested with a fake client (`tests/shell.rs`). |
 | `frontend/` | crate `turu_frontend`: what frontends share, with no winit/rfd (shared with both Android apps: `docs/ANDROID.md`, `docs/TURU_MAS.md`). The app re-exports its modules (`crate::turu`, ...). |
 | `android/` | crate `turu_android` + the Gradle app (`docs/ANDROID.md`): `TuruActivity` (AndroidX's GameActivity) and `TuruService` (foreground service: starts the engine, also alone after a kill; notification; wake lock), the engine thread on `turu_frontend::engine` drawing the game and `TuruUi` with wgpu (`screen.rs`), setup from `turu-args.txt`. Submodule `android/vendor/rustls-platform-verifier` (HTTPS checks). `android/shared`: the Kotlin both Android apps share (crash records and uploads, the text field above the keyboard); Turu Mas's extension includes it by path. |
 | `air/`, `air_patch/` | Turu Mas (`docs/TURU_MAS.md`): crate `turu_air` (`air/ane/rust`, the engine as an AIR native extension, with its Kotlin in `air/ane/android`), the host SWF and `app.xml` (`air/app`), and crate `turu_air_patch` (patches AQW's client and the SWFs it loads for AIR's sandbox at run time). Built with the AIR SDK: `air/app/build.sh`. |
@@ -55,9 +56,10 @@ it before re-applying Turu's commits (ruffle-aqw's `.github/CONTRIBUTING.md`), t
 cargo build -p turu --no-default-features --features software_video,external_video,lzma,jpegxr,fontconfig-dlopen
 ./target/debug/turu                      # starts turu.swf -> AQW; log in with the game's own screen
 cargo nextest run -p turu_bot            # engine + script runtime tests (fake Flash host): ~25 s, `cargo test` ~30 s (see below)
+cargo nextest run -p turu_shell          # the desktop shell's logic with fake clients, no window: a few seconds
 cargo run -p turu_host                   # rebuild bot/assets/turu.swf from host/as3 (Java); `-- --check` as CI
 cargo test -p turu -p turu_frontend --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen   # app + bot windows (see STATUS.md); cargo test here, not nextest (see below)
-cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -D warnings -A clippy::redundant_clone   # see STATUS.md
+cargo clippy -p turu_bot -p turu_frontend -p turu_shell -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -D warnings -A clippy::redundant_clone   # see STATUS.md
 cd android && ./gradlew assembleDebug   # Android APK (SDK, NDK 27, cargo-ndk: docs/ANDROID.md)
 air/app/build.sh --no-install           # Turu Mas APK (AIR SDK, JDK 17: docs/TURU_MAS.md)
 docker build -t turu .                  # headless image (Dockerfile, compose.yaml: docs/HEADLESS.md, "Docker")
@@ -73,7 +75,7 @@ Install it with `brew install cargo-nextest` or `cargo install cargo-nextest --l
 it, use `cargo test`. Keep `cargo test` for the app and frontend on macOS: the system checks each
 newly built test program at launch, and nextest launches one per test (over 100 s against
 seconds).
-CI runs all three crates in one `cargo nextest run --profile ci` (ci.yml).
+CI runs all four crates (`turu_bot`, `turu`, `turu_frontend`, `turu_shell`) in one `cargo nextest run --profile ci` (ci.yml).
 
 Release builds: Mugetsu's `../mugetsu/source/build-*.sh` flow (dist profile, PGO) applies;
 on macOS the feature set above is the one Mugetsu uses (Metal, fontconfig loaded at runtime).
@@ -81,7 +83,7 @@ Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
 
 ## Rules that keep it working
 
-* **No winit, rfd or window in `frontend/`.** Reach the app through `turu::set_tab_requests`,
+* **No winit, rfd or window in `frontend/` or `shell/`** (CI checks `turu_shell`'s dependencies). Reach the app through `turu::set_tab_requests`,
   `TuruFlashHost::new` and `platform::platform()`; desktop-only pieces stay in `app/`.
 * **Never call into Flash from the winit/UI thread.** `Flash::call` marshals to the event
   loop and blocks; from the UI thread it would wait for itself (the host refuses). UI actions

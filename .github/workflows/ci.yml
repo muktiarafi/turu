@@ -67,6 +67,10 @@ jobs:
       - name: Check the bot engine's formatting
         run: cargo fmt -p turu_bot --check
 
+      # turu_shell has its own rustfmt.toml (max_width = 120).
+      - name: Check the shell library's formatting
+        run: cargo fmt -p turu_shell --check
+
       - name: Check the UI windows' formatting
         run: |
           for file in frontend/src/gui/turu/*.rs; do
@@ -130,10 +134,24 @@ jobs:
       - name: Install Linux dependencies
         uses: ./.github/actions/linux-deps
 
+      # The shell's logic is a library any shell's window hosts (docs/NATIVE_UI_PROPOSAL.md, L1):
+      # alone, with no window toolkit, dialogs or player in it.
+      # Built alone, as the workspace's other crates would otherwise turn `ruffle` on for it.
+      - name: Keep the shell library windowless
+        run: |
+          cargo tree --locked -p turu_shell -e normal --prefix none > "$RUNNER_TEMP/shell-tree.txt"
+          found=$(grep -E '^(winit|rfd|ruffle_core|ruffle_render_wgpu|egui-winit|egui-wgpu) ' \
+            "$RUNNER_TEMP/shell-tree.txt" | sort -u || true)
+          if [ -n "$found" ]; then
+            echo "::error::turu_shell depends on $found"
+            exit 1
+          fi
+          cargo check --locked -p turu_shell --all-targets
+
       # redundant_clone is allowed as in CLAUDE.md: it flags clones that are needed.
       - name: Clippy
         run: |
-          cargo clippy --locked -p turu_bot -p turu_frontend -p turu --all-targets \
+          cargo clippy --locked -p turu_bot -p turu_frontend -p turu_shell -p turu --all-targets \
             --no-default-features --features "$FEATURES" -- -D warnings -A clippy::redundant_clone
 
   # bot/assets/turu.swf, Turu's host SWF, is built from host/as3 (turu_host) and committed, so a
@@ -208,7 +226,7 @@ jobs:
 
       - name: Test the bot engine, the app and the frontend
         run: |
-          cargo nextest run --locked --profile ci -p turu_bot -p turu -p turu_frontend \
+          cargo nextest run --locked --profile ci -p turu_bot -p turu -p turu_frontend -p turu_shell \
             --no-default-features --features "$FEATURES"
 
       - uses: actions/setup-node@v5

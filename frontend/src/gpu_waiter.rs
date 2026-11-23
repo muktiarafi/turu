@@ -7,7 +7,6 @@
 //! work itself. A wait holds only what a submit shares with it (wgpu-core's snatch lock, read),
 //! so the threads that submit don't wait for it.
 
-use ruffle_render_wgpu::wgpu;
 use std::sync::mpsc;
 use std::time::Duration;
 

@@ -378,7 +378,7 @@ It also writes the samples to `<log>.csv`.
 |---|---|
 | `TURU_PASSWORD` | The password for `--user`. |
 | `TURU_SHELL_TOKEN` | Set by `--shell` for its clients: the token a `--client` says hello with. |
-| `TURU_SHELL_TEST` | With `--shell`: a file of test steps (`wait`, `open`, `select`, `close`, `kill`, `click`, `dump`; `app/src/shell.rs`). |
+| `TURU_SHELL_TEST` | With `--shell`: a file of test steps (`wait`, `open`, `select`, `close`, `kill`, `click`, `dump`; `shell/src/lib.rs` lists them all). |
 | `TURU_DATA_DIR` | The data folder. |
 | `TURU_API_TOKEN` | The control API token (32+ characters); else the data folder's `api-token`. |
 | `TURU_MONITOR_PUSH_KEY` | The key `--report-to` uses. |

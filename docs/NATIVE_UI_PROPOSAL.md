@@ -7,7 +7,7 @@ and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below)
 window the pass made native, then past it Notification Center, Accounts' selection and groups,
 Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console and Update Turu. The branch `native-ui` is on
 `main` since 2026-11-22, and the typed actions, answers and JNI (2026-11-23) went on `main`
-directly. Continuing: "Handover" under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
+directly. L1's shell part is built (2026-11-23, macOS; "L1's shell part as built"): `turu_shell`. Continuing: "Handover" under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
 
@@ -19,7 +19,7 @@ tabs are built, with the owner's decisions in "Decisions taken". Planned:
 
 Then a **checkpoint**: the owner decides from L5a whether to go on to view models and native bot
 windows (L1 to L5b) and to macOS (L6, L7). Planned any time, as it pays without native UI: the
-desktop shell's logic as a library (L1's second part). Not planned: native shells on Windows and
+desktop shell's logic as a library (L1's second part; built 2026-11-23). Not planned: native shells on Windows and
 Linux (they stay egui), Turu Mas (stays egui unless L9 is reopened). Until each step lands, Turu's
 windows stay egui, drawn by each tab's client, and `docs/ANDROID_NATIVE_UI.md`'s "Kept in egui"
 stands for everything L5a doesn't touch.
@@ -60,7 +60,7 @@ The steps, with their state:
 |---|---|---|
 | L0 | Spike: Compose in the shell, model copies over the control API, type generation | Done 2026-11-20: go (branch `native-ui-l0`) |
 | L5a | Android: design pass, then the tab strip and Accounts in Compose | Built 2026-11-20 (emulator); checkpoint next |
-| L1 (shell) | The desktop shell's logic out of winit, into `turu_shell` | Planned, any time |
+| L1 (shell) | The desktop shell's logic out of winit, into `turu_shell` | Built 2026-11-23 (macOS); Android's `SlotShell` not moved |
 | Checkpoint | Go on to native bot windows, or stop at L5a | Owner, after L5a |
 | L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | After the checkpoint |
 | L2 | View models in the client, by feature | Pilot and the Android windows' models done 2026-11-20 |
@@ -130,6 +130,8 @@ What it costs here, that the 2026-11-15 plan didn't budget:
   keys, IME, gamepads and the cursor for the client, queue dialogs, run updates, Army launches,
   the monitor and the shell's control API forwarding. L1's second part moves it into a winit-free
   library each shell hosts (decided), as `slots::SlotShell` is for Android's shell already.
+  *Done 2026-11-23: `turu_shell` holds that logic; `app/src/shell.rs` keeps the window, its GPU
+  choice, input translation, gamepads and rfd ("L1's shell part as built").*
 * **egui is in the client's picture.** The fallback for windows a shell hasn't ported is the
   client's picture, Turu's egui windows drawn into it. Native windows in the shell and egui windows
   in the client are then a process apart: focus, the keyboard, Back and Escape have to be
@@ -170,7 +172,7 @@ What it costs here, that the 2026-11-15 plan didn't budget:
   `SHELL_CLIENTS`, `SHELL_ARMY`, `UPDATE_REQUESTS`, ...). There is no handle to hold.
 * **The desktop shell is winit.** `app/src/shell.rs` mixes the shell's logic with winit's event
   loop and window; Android's shell is already split (`slots::SlotShell` in Rust, `SlotShell.kt`
-  carrying out its actions).
+  carrying out its actions). *Split since 2026-11-23: `turu_shell` and its winit front.*
 * **The tab strip is drawn by each client** (`gui/turu/tab_strip.rs`, from the shell's list;
   `turu::tab_strip_count` gives the bar its height), with no way for the shell to say it draws the
   strip itself.
@@ -400,6 +402,9 @@ egui_ui/    turu_egui      frontend/src/gui/turu and client_screen.rs's UI: the 
 shell/      turu_shell     on turu_client built without `ruffle`: Android's SlotShell, the desktop
                            shell's logic without winit (its GPU setup from app/src/shell.rs and
                            app/src/mugetsu.rs, the shared surfaces). No player, no egui.
+                           (Built 2026-11-23 on turu_frontend without `ruffle`: the desktop
+                           shell's logic and its pictures on the GPU; the GPU's choice, the shared
+                           surfaces' platform code and SlotShell stay where they were.)
 ffi/        turu_ffi       macOS only (L4): BoltFFI's annotations, written out, over turu_shell
 app/        turu           the egui desktop: winit over turu_shell, and turu --client
 android/, air/ane/rust     as now; android/ adds Compose in the shell
@@ -596,9 +601,10 @@ to the background when no native screen is open).
 
 ### L1: Libraries without egui or winit (M)
 
-* **The desktop shell (planned, any time)**: move the logic of `app/src/shell.rs` into
+* **The desktop shell (built 2026-11-23, below)**: move the logic of `app/src/shell.rs` into
   `turu_shell` (with `frontend/src/slots.rs`'s `SlotShell`); the winit shell keeps only the window,
-  its events and rfd. The shell's tests run without a window, as `SlotShell`'s do.
+  its events and rfd. The shell's tests run without a window, as `SlotShell`'s do. `SlotShell`
+  didn't move.
 * **The client (after the checkpoint)**: split `frontend/` into `client/` and `egui_ui/`:
   `client_screen.rs`'s egui drawing to the egui side; `client_link.rs` to the client once it asks
   a model, not `gui`, for the bar's size and whether the tab is busy. Rename `Platform` to `Host`.
@@ -608,6 +614,47 @@ to the background when no native screen is open).
 checks it, and the shell starts with two tabs, Grid View and a client killed and back. For the
 client part: `turu_client` builds with and without `ruffle` and has no egui, winit or rfd, and the
 three frontends pass their tests and start.
+
+#### L1's shell part as built (2026-11-23)
+
+`shell/`, crate `turu_shell`, holds what `app/src/shell.rs` decided: starting and restarting the
+clients (1, 4, 16, 60 s; closed after 5 deaths in 10 minutes unless no other tab runs; the
+connect timeout), the tab list and `Status`, Grid View's tiles, the clients' pictures on the
+shell's GPU (shared surfaces behind a `SharedSurface` trait the front implements, pixels
+otherwise, the releases from the GPU waiter's thread), the pacing protocol, the dialog queue,
+updates, Army launches, the monitor's and `--api`'s peers, and `TURU_SHELL_TEST`'s lines but
+the window's own. Its threads hand `Event`s to a `Sink` the front gives; what the shell wants of
+the window comes back as `Action`s the front carries out after each call (title, redraw, input
+method, cursor, full screen, a file dialog, the graphics choice, quit), so the library never
+calls into the window from inside one of its methods. It takes `turu_frontend` without `ruffle`,
+which gained a `gpu` feature for what draws without the player (`blit.rs`, moved out of
+`movie_texture.rs`, and `gpu_waiter.rs`). CI checks its dependencies have no winit, rfd or
+player, runs its clippy, tests and format.
+
+`app/src/shell.rs` is the winit front: the window and its event loop, its GPU chosen as the
+clients choose theirs (`make_gpu`: Mugetsu's backend choice, the DirectX 12 fallback, then
+`turu_shell::Gpu::new`), winit's keys, IME and cursor in the link's forms, the gamepads, rfd's
+dialogs, Windows' shared handles (copied from the client's process, then handed to the shell),
+and Mugetsu's startup and shutdown steps.
+
+Checked: `turu_shell`'s tests (a fake client binary over loopback: two tabs, Grid View on and
+off, the tab on screen's client killed, another shown, the dead one back as a new process,
+closing; the restart delays and giving up; the title; one file dialog at a time); and the app on
+macOS with `TURU_SHELL_TEST`, against the build before the move: two tabs at the login screen,
+the same pictures a second, a client killed and back in a second, Grid View from the bar's
+button, `dump`s of each, and the window presenting (71 pictures while it was in view, before it
+was covered). Not checked: Linux (compiled by CI's clippy, not run), Windows (its shared handles
+and the graphics choice compile only in the release workflow: its C dependencies don't
+cross-compile from a Mac), frame interpolation's `Pace::Refresh` in game, a file dialog asked by
+a tab, and real mouse, keys, IME and cursor through winit (`TURU_SHELL_TEST`'s `click`, `key`
+and `text` enter past the front).
+
+Not done: Android's `SlotShell` stays in `turu_frontend::slots`. It shares nothing of the
+desktop's but the link (already `turu_frontend::shell`), only `android/` uses it (`slot_shell.rs`,
+`java.rs`), and moving it would make the Android app link `turu_shell` (with `webbrowser` and
+`image`) for no gain until something needs both shells in one crate; the game view for a
+native macOS window (L6) hands `turu_shell` a layer, which `Gpu::new` takes as any
+`wgpu::Surface`.
 
 ### L2: View models (XL, after the checkpoint)
 

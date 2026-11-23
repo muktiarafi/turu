@@ -1,0 +1,31 @@
+[package]
+# Turu: the desktop shell's logic without a window (docs/NATIVE_UI_PROPOSAL.md, L1's shell part):
+# starting and restarting the tabs' clients, the tab list, Grid View, the clients' pictures on the
+# shell's GPU and the pacing protocol, the dialog queue, updates, Army launches and the monitor's
+# peers. Each shell's window is a front over it (`app/src/shell.rs`: winit). No winit, rfd or
+# player here, and no egui of its own: `turu_frontend` is taken without `ruffle`.
+name = "turu_shell"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+turu_bot = { path = "../bot", default-features = false }
+turu_frontend = { path = "../frontend", default-features = false, features = ["gpu"] }
+wgpu = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+webbrowser = "1.2.4"
+# `TURU_SHELL_TEST`'s `dump`: the window's picture as a PNG.
+image = { workspace = true, features = ["png"] }
+
+# A client that says hello and its status, for the tests (`tests/shell.rs`): no player.
+[[bin]]
+name = "turu-shell-fake-client"
+path = "src/bin/fake_client.rs"
+test = false
+doc = false

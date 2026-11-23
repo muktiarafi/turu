@@ -6,6 +6,8 @@
 
 #[cfg(feature = "ruffle")]
 pub mod capture;
+#[cfg(feature = "gpu")]
+pub mod blit;
 pub mod client_link;
 #[cfg(feature = "ruffle")]
 pub mod client_screen;
@@ -14,7 +16,7 @@ pub mod documents;
 #[cfg(feature = "ruffle")]
 pub mod engine;
 pub mod game_files;
-#[cfg(feature = "ruffle")]
+#[cfg(feature = "gpu")]
 pub mod gpu_waiter;
 pub mod graphics_tips;
 pub mod grid;
