@@ -5,8 +5,9 @@ answers" and "L5a as built" below). Checkpoint passed (2026-11-20): go on with A
 windows (L1's client part to L5b); macOS waits for its own decision. L2's pilot, L4 (Kotlin types)
 and L5b's windows are done (2026-11-20; "L2's pilot", "L4 and L5b so far" below): every Android
 window the pass made native, then past it Notification Center, Accounts' selection and groups,
-Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console and Update Turu. The PR isn't opened yet (the owner's call). Continuing: "Handover"
-under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
+Stats, Current Drops, Skills, Loadouts, Fast Travel, Butler, Cosmetics, Script Options, Runtime, Notify Drop, Loader, Grabber, Junk Items, Console and Update Turu. The branch `native-ui` is on
+`main` since 2026-11-22, and the typed actions, answers and JNI (2026-11-23) went on `main`
+directly. Continuing: "Handover" under L5b.** Proposed on 2026-11-15, reconciled with process tabs on 2026-11-16 and withdrawn the
 same day (`55737175c` records the decision, not a reason). Reopened on 2026-11-20, now that process
 tabs are built, with the owner's decisions in "Decisions taken". Planned:
 
@@ -65,7 +66,7 @@ The steps, with their state:
 | L2 | View models in the client, by feature | Pilot and the Android windows' models done 2026-11-20 |
 | L3 | Questions, dialogs and alerts as events with an ID and an answer | After the checkpoint |
 | L4 | Generated types for Kotlin and Swift in CI; `turu_ffi` for macOS | Kotlin done 2026-11-20 (Android build); Swift with L6 |
-| L5b | Android: navigation and the daily features in Compose | Built 2026-11-20 (emulator); PR next |
+| L5b | Android: navigation and the daily features in Compose | Built 2026-11-20 (emulator); on `main` since 2026-11-22 |
 | L6, L7 | macOS: the game view behind a native window, then the app | After the checkpoint |
 | L8 | Windows and Linux native shells | Not planned: egui |
 | L9 | Turu Mas | Not planned: egui |
@@ -1062,8 +1063,7 @@ shell's memory there.
 
 #### Handover (2026-11-20)
 
-All on branch `native-ui` (from `main`, not pushed; one PR planned for all of it, opened only when
-the owner says so).
+Built on branch `native-ui`, on `main` since 2026-11-22; later work goes on `main`.
 
 **Native on Android now**: Tabs, New tab, Accounts (with long-press selection, Start several and
 groups), the rail (Logs, Army, More, Auto, Jump, Bank, Update, the script chip), Script Loader,
@@ -1176,7 +1176,7 @@ tab; Stats' `0d9ede239` and `e4bb580a4` one with settings and an answer):
    --check <page>` by hand), Impeccable's own skips Kotlin. The shell's look is `ShellTheme.kt` and the pass in
    `docs/UI.md`, not DESIGN.md's (the web monitor's).
 
-**Before the PR**: `cargo clippy` and `cargo test` as CLAUDE.md gives them; `air/ane/rust` still
+**Before each change lands**: `cargo clippy` and `cargo test` as CLAUDE.md gives them; `air/ane/rust` still
 builds (it shares `turu_frontend`); CI's Android job can run the host `cargo run -p
 turu_frontend --no-default-features --features typegen --bin turu-typegen` that Gradle's
 `turuTypes` needs.
@@ -1277,7 +1277,7 @@ they get through AIR's `d8`.
     Android needs no generated FFI binding; BoltFFI only for macOS.
 
 11. **The checkpoint** (2026-11-20): go on to Android's bot windows (L1's client part, L2 to
-    L5b). macOS (L6, L7) is not decided. The work stacks on the branch `native-ui`, one PR later.
+    L5b). macOS (L6, L7) is not decided. The work stacked on the branch `native-ui`, on `main` since 2026-11-22.
 12. **Order after the checkpoint** (taken by the session doing it, 2026-11-20): L2's pilot comes
     before L1's client split. The pilot's models live in `turu_frontend::models`, which imports no
     egui (a test checks the module's sources), so the split later moves them as they are; the
