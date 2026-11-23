@@ -260,6 +260,8 @@ struct Tab {
     /// The input method its client last asked for (`ToShell::Ime`: allowed, a password's, the
     /// text's area), applied to the window while it's the tab on screen.
     ime: (bool, bool, Option<[f32; 4]>),
+    /// The last picture size too large for the shell's GPU, said once.
+    too_large: Option<(u32, u32)>,
 }
 
 impl Tab {
@@ -291,7 +293,28 @@ impl Tab {
             adapter: None,
             pixels_only: false,
             ime: (false, false, None),
+            too_large: None,
         }
+    }
+
+    /// Whether a picture of `size` fits a texture of `gpu`'s. A client on a stronger GPU can draw
+    /// one this GPU can't hold (the shell falls back to any GPU that shows the window), and wgpu
+    /// panics on a texture over its limit: such a picture isn't shown, and said once per size.
+    fn fits(&mut self, gpu: &Gpu, size: (u32, u32)) -> bool {
+        let max = gpu.device.limits().max_texture_dimension_2d;
+        if size.0 <= max && size.1 <= max {
+            return true;
+        }
+        if self.too_large != Some(size) {
+            self.too_large = Some(size);
+            tracing::warn!(
+                "Shell: tab {}'s {}x{} picture is larger than this GPU's {max}: not shown",
+                self.id,
+                size.0,
+                size.1
+            );
+        }
+        false
     }
 
     fn pid(&self) -> Option<u32> {
@@ -986,6 +1009,9 @@ impl<S: SharedSurface> Shell<S> {
             }
         };
         spawn_reader(tab.id, tab.generation, reader, tab.picture.clone(), sink);
+        // A client that stops reading (suspended, swapped out) would otherwise hold the window's
+        // thread once its socket's buffer is full; a write that times out ends its connection.
+        let _ = stream.set_write_timeout(Some(WRITE_TIMEOUT));
         tab.release_out = stream.try_clone().ok().map(Arc::new);
         tab.out = Some(stream);
         tab.pace = Pace::Frames;
@@ -1453,8 +1479,14 @@ impl<S: SharedSurface> Shell<S> {
             return;
         }
         let mut failed = std::mem::take(&mut self.fail_surfaces);
+        let mut oversized = false;
+        let tab = &mut self.tabs[index];
         let opened = match (&self.gpu, self.surfaces.get_mut(&pid)) {
             (Some(gpu), Some(kept)) => kept.iter_mut().find(|kept| kept.id == surface).and_then(|kept| {
+                if kept.opened.is_none() && !tab.fits(gpu, kept.surface.size()) {
+                    oversized = true;
+                    return None;
+                }
                 if kept.opened.is_none() {
                     kept.opened = kept.surface.texture(&gpu.device).map(|texture| {
                         let view = texture.create_view(&Default::default());
@@ -1468,6 +1500,11 @@ impl<S: SharedSurface> Shell<S> {
             }),
             _ => None,
         };
+        // Over the GPU's limit: not opened, and given back (as a picture over it isn't shown).
+        if oversized {
+            self.retiring.push((id, pid, surface));
+            return;
+        }
         if failed {
             self.retiring.push((id, pid, surface));
             self.no_surfaces(index, pid, "the shell couldn't open one");
@@ -1543,6 +1580,9 @@ impl<S: SharedSurface> Shell<S> {
         if picture.pixels.len() < size.0 as usize * size.1 as usize * 4 || size.0 == 0 || size.1 == 0 {
             return;
         }
+        if !tab.fits(gpu, size) {
+            return;
+        }
         if tab
             .upload
             .as_ref()
@@ -1612,7 +1652,7 @@ impl<S: SharedSurface> Shell<S> {
                 .into_iter()
                 .filter_map(|(id, pid, surface)| {
                     let tab = self.tabs.iter().find(|tab| tab.id == id && tab.pid() == Some(pid))?;
-                    Some((tab.release_out.clone()?, tab.write_lock.clone(), surface))
+                    Some((tab.id, tab.release_out.clone()?, tab.write_lock.clone(), surface))
                 })
                 .collect();
             if releases.is_empty() {
@@ -1620,9 +1660,9 @@ impl<S: SharedSurface> Shell<S> {
             }
             let index = gpu.queue.submit([]);
             waiter.after(index, move || {
-                for (out, lock, surface) in releases {
+                for (id, out, lock, surface) in releases {
                     let _writing = lock.lock().unwrap_or_else(|e| e.into_inner());
-                    let _ = shell::write(&mut &*out, &ToClient::Release { id: surface }, None);
+                    write_or_drop(id, &out, &ToClient::Release { id: surface });
                 }
             });
             return;
@@ -2098,12 +2138,27 @@ impl<S: SharedSurface> Shell<S> {
 }
 
 /// Sends to a tab's client, if it's connected.
-fn send(tab: &mut Tab, message: &ToClient) {
+fn send(tab: &Tab, message: &ToClient) {
     let _writing = tab.write_lock.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(out) = tab.out.as_mut()
-        && let Err(e) = shell::write(out, message, None)
-    {
-        tracing::info!("Shell: couldn't reach tab {}'s client: {e}", tab.id);
+    if let Some(out) = tab.out.as_ref() {
+        write_or_drop(tab.id, out, message);
+    }
+}
+
+/// How long a write to a client may wait for room in its socket.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Writes `message` to tab `id`'s client. A write that timed out may have left part of it in the
+/// stream, so the connection ends there: its reader sees that, and the client starts again (`gone`).
+fn write_or_drop(id: u32, mut out: &TcpStream, message: &ToClient) {
+    let Err(e) = shell::write(&mut out, message, None) else {
+        return;
+    };
+    if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) {
+        tracing::warn!("Shell: tab {id}'s client stopped reading for {WRITE_TIMEOUT:?}: it starts again");
+        let _ = out.shutdown(std::net::Shutdown::Both);
+    } else {
+        tracing::info!("Shell: couldn't reach tab {id}'s client: {e}");
     }
 }
 

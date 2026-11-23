@@ -178,3 +178,29 @@ fn clients_get_the_shells_flags_but_its_servers() {
         ]
     );
 }
+
+#[test]
+fn a_client_that_stops_reading_is_let_go_not_waited_for() {
+    let (tab, mut theirs) = running_tab(1);
+    let ours = tab.out.as_ref().expect("connected");
+    ours.set_write_timeout(Some(Duration::from_millis(100)))
+        .expect("timeout");
+    // Large enough that the socket's buffers fill while `theirs` reads nothing.
+    let message = ToClient::NoSurfaces {
+        reason: "x".repeat(256 * 1024),
+    };
+    let started = Instant::now();
+    for _ in 0..64 {
+        send(&tab, &message);
+    }
+    // Each write waits at most its timeout, and once one has timed out the rest fail at once.
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "took {:?}",
+        started.elapsed()
+    );
+    // The connection was ended: the client reads what came, then the end.
+    theirs.set_read_timeout(Some(Duration::from_secs(5))).expect("timeout");
+    let mut sink = Vec::new();
+    std::io::Read::read_to_end(&mut theirs, &mut sink).expect("reads to the end");
+}
