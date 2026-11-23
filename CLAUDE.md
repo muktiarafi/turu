@@ -94,6 +94,13 @@ Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
   `air/ane/rust/src/`): every Kotlin method Rust calls and every `external` it implements is
   bound there (`bind_java_type!`) and checked when the app starts. Change both sides together and
   start the build once (docs/ANDROID_NATIVE_UI.md, "Platform calls").
+* **What a native page sends and reads is typed** (the models in `frontend/src/models/`). A
+  model's actions are one `<Name>Act` enum, added with `acts` in `models::register()`; what an
+  action answers is a record, never `json!`; its name is `models::Model`. No action takes the raw
+  body (`body: &Json`), and no Android page reads or builds JSON by hand (`org.json`): it sends
+  `client.act(Api.<model>, <Name>Act...)` from the types `turu-typegen` generates. The
+  `models_stay_typed` test (in CI) and the Compose hook refuse the untyped forms. Adding a model:
+  docs/NATIVE_UI_PROPOSAL.md, "Handover", the steps a page takes.
 * Behaviour follows VibeSkua's C# by default (timeouts in 100 ms "tries", `ActionDelay` 800 ms,
   `world.lock` cooldowns, packet formats). When unsure, read the C#. Turu differs only where
   there is a reason you can state (the server refused it, it hung, the platform differs): mark

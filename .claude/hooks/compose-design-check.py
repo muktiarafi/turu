@@ -6,7 +6,7 @@ log says `skipped: native-platform`), and its detector has no Compose rules: a K
 only its text rules, which find nothing in Compose. This hook covers that gap with the mechanical
 checks of Impeccable's craft floor and Android reference, read against the approved pass in
 docs/UI.md ("Native shells", Android) and `ShellTheme.kt`, plus the owner's Kotlin rules
-(CLAUDE.md). It runs `impeccable detect` on the file as well, so its rules count once they
+(CLAUDE.md), and that pages use the models' generated types, not hand-built JSON. It runs `impeccable detect` on the file as well, so its rules count once they
 learn Compose.
 
 PostToolUse (Edit|Write): checks the edited file and tells the agent what it found (or that it
@@ -62,7 +62,13 @@ RULES: dict[str, str] = {
     "host can show, and waive it saying so)",
     "hardcoded-white-text": "`Color.White` text off the accent: use `Turu.Text` or the role's "
     "`on*` colour",
+    "untyped-json": "JSON read or built by hand (`org.json`) in a page: send and read the generated "
+    "types (`client.act(Api.<model>, <Model>Act...)`, an answer's record), so a change in Rust "
+    "breaks the build, not a tap (docs/NATIVE_UI_PROPOSAL.md, \"Typed actions\")",
 }
+
+# The files that carry the control API's envelope or the shell's own messages, not a model's.
+UNTYPED_JSON_OK = {"ModelClient.kt", "AccountsPanel.kt", "SlotShell.kt", "ShellState.kt", "ShellScreens.kt"}
 
 GLYPHS = "✕✖✗✘×⋮⋯›‹»«★☆✓✔•▶◀▲▼➜→←↑↓☰⚙✎✏🔍"
 STRING_RE = re.compile(r'"((?:[^"\\]|\\.)*)"')
@@ -110,6 +116,10 @@ def check_text(path: str, text: str) -> list[tuple[int, str, str]]:
             continue
         if stripped.startswith("/*"):
             in_block_comment = "*/" not in stripped
+            continue
+        if stripped.startswith("import org.json.") and name not in UNTYPED_JSON_OK and "/android/app/" in path:
+            if "untyped-json" not in file_waived:
+                findings.append((n, "untyped-json", stripped[:140]))
             continue
         if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("import "):
             continue

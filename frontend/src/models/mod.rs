@@ -543,6 +543,104 @@ mod tests {
         assert_eq!(views.len(), Model::ALL.len() - 1, "a view of no model");
         assert_eq!(actions.len(), Model::ALL.len(), "an action of no model");
     }
+    /// What a shell sends and reads stays typed (docs/NATIVE_UI_PROPOSAL.md, "Typed actions"),
+    /// so a change on one side breaks the other's build rather than a tap:
+    ///
+    /// * a model's view and actions are added only through `register()`'s `view` and `acts`;
+    /// * no action takes the raw body (`body: &Json`), and none answers with `json!`: an answer
+    ///   is a record the generator writes for the shells;
+    /// * the generator writes every model's types (`turu-typegen.rs`);
+    /// * Android's pages read no hand-built JSON (`org.json`), but the files that carry the
+    ///   control API's envelope or the shell's own messages.
+    #[test]
+    fn models_stay_typed() {
+        use std::path::{Path, PathBuf};
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        fn files(dir: &Path, ext: &str, out: &mut Vec<PathBuf>) {
+            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if !path.ends_with("build") {
+                        files(&path, ext, out);
+                    }
+                } else if path.extension().is_some_and(|e| e == ext) {
+                    out.push(path);
+                }
+            }
+        }
+        // Code outside the tests.
+        let code = |path: &Path| {
+            let text = std::fs::read_to_string(path).unwrap();
+            match text.find("#[cfg(test)]") {
+                Some(at) => text[..at].to_owned(),
+                None => text,
+            }
+        };
+        let mut rust = Vec::new();
+        files(&root.join("src"), "rs", &mut rust);
+        for path in &rust {
+            let text = code(path);
+            let name = path.strip_prefix(root).unwrap().display().to_string();
+            let adds = text.matches("add_model_action(").count() + text.matches("add_model(").count();
+            let expected = if name.ends_with("models/mod.rs") { 2 } else { 0 };
+            assert_eq!(
+                adds, expected,
+                "{name} adds a model or an action itself: use register()'s view and acts"
+            );
+            if name.contains("models/") {
+                assert!(
+                    !takes_raw_body(&text),
+                    "{name}: an action takes the raw body; give the model an `…Act` enum"
+                );
+                // `json!({})` is "done, nothing to answer"; an answer with fields is a record.
+                for answer in ["Ok(json!({ \"", "Ok(serde_json::json!({ \""] {
+                    assert!(
+                        !text.contains(answer),
+                        "{name}: an action answers with json!; answer a record"
+                    );
+                }
+            }
+        }
+        let typegen = std::fs::read_to_string(root.join("src/bin/turu-typegen.rs")).unwrap();
+        let generated = typegen.matches(".model::<").count() + typegen.matches(".acts::<").count();
+        assert_eq!(
+            generated,
+            Model::ALL.len(),
+            "turu-typegen.rs doesn't write every model's types"
+        );
+
+        let mut kotlin = Vec::new();
+        files(&root.join("../android/app/src/main/kotlin"), "kt", &mut kotlin);
+        assert!(!kotlin.is_empty(), "no Android sources at {}", root.display());
+        const ENVELOPE_OR_SHELL: [&str; 5] = [
+            "ModelClient.kt",
+            "AccountsPanel.kt",
+            "SlotShell.kt",
+            "ShellState.kt",
+            "ShellScreens.kt",
+        ];
+        for path in &kotlin {
+            let text = std::fs::read_to_string(path).unwrap();
+            let file = path.file_name().unwrap().to_string_lossy();
+            if !ENVELOPE_OR_SHELL.contains(&file.as_ref()) {
+                assert!(
+                    !text.contains("import org.json."),
+                    "{file} reads JSON by hand: use the generated types (`Api.<model>`, an answer's record)"
+                );
+            }
+        }
+    }
+
+    /// Whether `text` has a parameter `body: &Json` (or `&Value`): an action reading the raw body.
+    fn takes_raw_body(text: &str) -> bool {
+        ["body: &Json", "body: &Value", "body: &serde_json::Value"]
+            .iter()
+            .any(|needle| {
+                text.match_indices(needle)
+                    .any(|(at, _)| !text[at + needle.len()..].starts_with(|c: char| c.is_alphanumeric() || c == '_'))
+            })
+    }
+
     /// The models stay free of any UI toolkit, so L1's split can move them as they are.
     #[test]
     fn models_import_no_ui() {
