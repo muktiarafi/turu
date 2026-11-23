@@ -11,7 +11,7 @@
 #
 # Defaults: script = scripts/other/farmjoekits/0FarmerJoeDoAll.ts, 120 minutes (0: until the
 # script stops). Env: PERIOD (60), STUCK_MIN (10: nothing moved for this long is "stuck"),
-# API (127.0.0.1:9031), BUILD=0 to skip the cargo build, BIN (default target/debug/turu).
+# API (127.0.0.1:9031), BUILD=0 to skip the cargo build, BIN (default target/debug/turu), SERVER (instead of the file's).
 # Output: tools/farmrun/out/<stamp>-<script>.log, then summarize.py prints the report.
 set -euo pipefail
 
@@ -37,7 +37,7 @@ arg() {
 }
 [[ -r "$args_file" ]] || { echo "Can't read $args_file" >&2; exit 1; }
 user="$(arg --user)"
-server="$(arg --server)"
+server="${SERVER:-$(arg --server)}"
 TURU_PASSWORD="${TURU_PASSWORD:-$(arg --password)}"
 [[ -n "$user" && -n "$TURU_PASSWORD" ]] || { echo "No --user/--password in $args_file" >&2; exit 1; }
 export TURU_PASSWORD

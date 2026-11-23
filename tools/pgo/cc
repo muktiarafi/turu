@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# The C/C++ compiler of tools/pgo/pgo.sh's builds (also as `c++`): the system's, without the
+# profile flags cc-rs passes on from RUSTFLAGS (`-Cprofile-generate` -> `-fprofile-generate`).
+# The system's clang isn't rustc's LLVM: on macOS, Apple's clang writes profile format 10 where
+# rustc's runtime reads 11, and the instrumented C code (mimalloc's) crashed on its first count.
+# The C code is left out of the profile, as before. PGO_REAL_CC / PGO_REAL_CXX name another.
+if [[ "$(basename "$0")" == "c++" ]]; then real="${PGO_REAL_CXX:-c++}"; else real="${PGO_REAL_CC:-cc}"; fi
+args=()
+for a in "$@"; do
+  case "$a" in
+    -fprofile-generate | -fprofile-generate=* | -fprofile-use | -fprofile-use=*) ;;
+    *) args+=("$a") ;;
+  esac
+done
+exec "$real" ${args[@]+"${args[@]}"}

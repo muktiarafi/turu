@@ -1072,8 +1072,10 @@ memory budget (NVIDIA, AMD).
 - Not built in the UI: Themes, Plugins. HotKeys work only while Turu's window has
   focus (no global hook) and not on Android
   (`docs/UI.md` has the full list).
-- **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's
-  speed profile (PGO), and the macOS app is signed ad hoc, not notarized.
+- **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use a speed
+  profile (PGO): `tools/pgo/pgo.sh` records one of Turu's own by playing (docs/HEADLESS.md), but
+  none is committed or measured yet, and CI can't record one (it would need a game login). The
+  macOS app is signed ad hoc, not notarized.
 
 ## Differences from VibeSkua
 

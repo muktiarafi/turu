@@ -81,6 +81,7 @@ CI runs all five crates (`turu_bot`, `turu`, `turu_frontend`, `turu_egui`, `turu
 
 Release builds: Mugetsu's `../mugetsu/source/build-*.sh` flow (dist profile, PGO) applies;
 on macOS the feature set above is the one Mugetsu uses (Metal, fontconfig loaded at runtime).
+A PGO profile of Turu's own, recorded by the bot playing: `tools/pgo/pgo.sh` (docs/HEADLESS.md).
 Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
 
 ## Rules that keep it working

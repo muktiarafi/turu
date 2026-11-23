@@ -357,6 +357,20 @@ also works on a run still going or on any Turu log, reports:
 
 It also writes the samples to `<log>.csv`.
 
+**A speed profile (PGO)** of Turu's own: `tools/pgo/pgo.sh all [script...]` builds a `dist` binary
+that counts what runs (`gen`), logs in from `turu-args.txt` as farmrun does and plays each script
+for `MINUTES` (20) with a window and headless (`record`, `MODES`), merges the counts (`merge`,
+into `tools/pgo/out/turu-<target>.profdata`; needs `rustup component add llvm-tools`) and builds
+`target/<target>/dist/turu` with them (`use`). Each run ends with `POST /script/stop` and
+`--exit-on-script-stop`: only a clean exit writes the counts, so a killed or crashed run's are
+lost. Only Rust is profiled: the C code (mimalloc, QuickJS) goes through `tools/pgo/cc`, which drops
+the profile flags cc-rs passes on (the system's clang writes another profile format, and the
+instrumented mimalloc crashed on it). A headless run draws nothing, so its counts say nothing about drawing; the window's do. It
+needs a quiet server (`SERVER`, and refuses Twilly, Artix and Alteon) and a spare account, and a
+new recording after large changes (a profile covers only the code it saw). Mugetsu's own profile
+(`pgo/aqw.profdata`) applied to Turu changed the render thread little (STATUS.md); compare a
+`use` build with a plain `dist` one on the perf log's lines before shipping one.
+
 ## Reference
 
 | Flag | What |
