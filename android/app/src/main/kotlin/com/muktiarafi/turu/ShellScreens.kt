@@ -8,7 +8,9 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.BankAct
-import org.json.JSONObject
+import com.muktiarafi.turu.models.NativeTabs
+import com.muktiarafi.turu.models.SlotMessage
+import com.muktiarafi.turu.models.TabRequest
 
 /**
  * The shell's own screens, in Compose over the slot's `SurfaceView` (docs/NATIVE_UI_PROPOSAL.md,
@@ -32,10 +34,10 @@ class ShellScreens(private val activity: TuruActivity) {
 
     /** The shell's tab actions, as if from the slot on screen (`SlotShell.asShown`). */
     private val actions = TabActions(
-        select = { id -> activity.shell?.asShown(JSONObject().put("type", "select_tab").put("id", id).toString()) },
-        close = { id -> activity.shell?.asShown(JSONObject().put("type", "close_tab").put("id", id).toString()) },
-        startAgain = { id -> activity.shell?.toSlot(id, JSONObject().put("type", "start_again").toString()) },
-        blank = { activity.shell?.asShown(JSONObject().put("type", "open_tab").toString()) },
+        select = { id -> activity.shell?.asShown(TabRequest.select_tab(id.toUInt())) },
+        close = { id -> activity.shell?.asShown(TabRequest.close_tab(id.toUInt())) },
+        startAgain = { id -> activity.shell?.toSlot(id, SlotMessage.start_again) },
+        blank = { activity.shell?.asShown(TabRequest.open_tab) },
         accounts = AccountsPanel { actions -> activity.shell?.actions(actions) },
         scripts = scripts,
         window = ::openWindow,
@@ -135,8 +137,8 @@ class ShellScreens(private val activity: TuruActivity) {
     }
 
     /** The shell's tab list (`slots::NativeTabs`), on the main thread. */
-    fun tabs(json: String) {
-        state.tabs = ShellTabs.parse(json)
+    fun tabs(tabs: NativeTabs) {
+        state.tabs = ShellTabs.from(tabs)
         models.follow(state.tabs.active)
         updateRail()
         // A tab opened or closed: where each account plays changed.
@@ -197,14 +199,14 @@ class ShellScreens(private val activity: TuruActivity) {
 
     /** One of the slot on screen's egui windows (`Windows::open`'s key), the panel out of its way. */
     private fun openWindow(window: String) {
-        activity.shell?.toShown(JSONObject().put("type", "open_window").put("window", window).toString())
+        activity.shell?.toShown(SlotMessage.open_window(window))
         close()
     }
 
     /** Hides or shows the rail in every tab: each gives the game the room and keeps the choice. */
     private fun railHidden(hidden: Boolean) {
         if (hidden) close()
-        activity.shell?.toAll(JSONObject().put("type", "rail_hidden").put("hidden", hidden).toString())
+        activity.shell?.toAll(SlotMessage.rail_hidden(hidden))
     }
 
     /** The display cutout on the left, in window pixels: the rail and panel keep clear of it. */

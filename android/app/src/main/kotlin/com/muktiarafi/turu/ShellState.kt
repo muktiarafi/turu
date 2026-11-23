@@ -4,8 +4,8 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import org.json.JSONArray
-import org.json.JSONObject
+import com.muktiarafi.turu.models.AccountsView
+import com.muktiarafi.turu.models.NativeTabs
 
 /** One tab, as the shell's Rust side lists it (`slots::NativeTab`). */
 @Immutable
@@ -63,34 +63,30 @@ data class ShellTabs(
     val othersDropped: Boolean get() = tabs.any { it.id != shown && it.dropped }
 
     companion object {
-        fun parse(json: String): ShellTabs {
-            val o = JSONObject(json)
-            val list = o.getJSONArray("tabs")
-            return ShellTabs(
-                tabs = (0 until list.length()).map { i ->
-                    val t = list.getJSONObject(i)
-                    ShellTab(
-                        id = t.getInt("id"),
-                        label = t.getString("label"),
-                        busy = t.optBoolean("busy"),
-                        waits = t.optStringOrNull("waits"),
-                        down = t.optStringOrNull("down"),
-                        game = t.optString("game", "logged_out"),
-                        map = t.optStringOrNull("map"),
-                        script = t.optStringOrNull("script"),
-                        held = t.optStringOrNull("held"),
-                        account = t.optBoolean("account"),
-                        api = t.optStringOrNull("api"),
-                        token = t.optStringOrNull("token"),
-                    )
-                },
-                shown = o.getInt("shown"),
-                railHidden = o.optBoolean("rail_hidden"),
-                full = o.optBoolean("full"),
-                limit = o.optInt("limit", SlotShell.SLOTS),
-                most = o.optInt("most", SlotShell.SLOTS),
-            )
-        }
+        /** The shell's tab list as the Rust side sends it (`slots::NativeTabs`). */
+        fun from(tabs: NativeTabs) = ShellTabs(
+            tabs = tabs.tabs.map { t ->
+                ShellTab(
+                    id = t.id.toInt(),
+                    label = t.label,
+                    busy = t.busy,
+                    waits = t.waits,
+                    down = t.down,
+                    game = t.game.serialName,
+                    map = t.map,
+                    script = t.script,
+                    held = t.held,
+                    account = t.account,
+                    api = t.api,
+                    token = t.token,
+                )
+            },
+            shown = tabs.shown.toInt(),
+            railHidden = tabs.railHidden,
+            full = tabs.full,
+            limit = tabs.limit.toInt(),
+            most = tabs.most.toInt(),
+        )
     }
 }
 
@@ -336,33 +332,30 @@ data class AccountList(
     val streamer: Boolean = false,
 ) {
     companion object {
-        fun parse(json: String): AccountList {
-            if (json == "null") return AccountList()
-            val o = JSONObject(json)
-            val masked = o.optBoolean("streamer")
-            val list = o.getJSONArray("accounts")
+        /** The list as the Rust side sends it (`native_shell::AccountsView`; none before the shell starts). */
+        fun from(view: AccountsView?): AccountList {
+            if (view == null) return AccountList()
             return AccountList(
-                accounts = (0 until list.length()).map { i ->
-                    val a = list.getJSONObject(i)
+                accounts = view.accounts.map { a ->
                     Account(
-                        username = a.getString("username"),
-                        label = a.getString("label"),
-                        displayName = a.optString("displayName"),
-                        tags = a.getJSONArray("tags").strings(),
-                        groups = a.getJSONArray("groups").strings(),
-                        tab = if (a.isNull("tab")) null else a.getInt("tab"),
-                        password = a.optBoolean("password"),
-                        masked = masked,
+                        username = a.username,
+                        label = a.label,
+                        displayName = a.displayName,
+                        tags = a.tags,
+                        groups = a.groups,
+                        tab = a.tab?.toInt(),
+                        password = a.password,
+                        masked = view.streamer,
                     )
                 },
-                groups = o.getJSONArray("groups").strings(),
-                tags = o.getJSONArray("tags").strings(),
-                server = o.optString("server"),
-                script = o.optStringOrNull("script"),
-                autoStart = o.optBoolean("autoStart"),
-                scripts = o.optJSONArray("scripts")?.strings().orEmpty(),
-                keepsPasswords = o.optBoolean("keepsPasswords", true),
-                streamer = masked,
+                groups = view.groups,
+                tags = view.tags,
+                server = view.server,
+                script = view.script,
+                autoStart = view.autoStart,
+                scripts = view.scripts,
+                keepsPasswords = view.keepsPasswords,
+                streamer = view.streamer,
             )
         }
     }
@@ -383,6 +376,3 @@ fun initials(label: String): String {
     return letters.uppercase()
 }
 
-private fun JSONArray.strings(): List<String> = (0 until length()).map { getString(it) }
-
-private fun JSONObject.optStringOrNull(name: String): String? = if (isNull(name)) null else optString(name)

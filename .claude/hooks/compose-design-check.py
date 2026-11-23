@@ -62,13 +62,15 @@ RULES: dict[str, str] = {
     "host can show, and waive it saying so)",
     "hardcoded-white-text": "`Color.White` text off the accent: use `Turu.Text` or the role's "
     "`on*` colour",
-    "untyped-json": "JSON read or built by hand (`org.json`) in a page: send and read the generated "
-    "types (`client.act(Api.<model>, <Model>Act...)`, an answer's record), so a change in Rust "
-    "breaks the build, not a tap (docs/NATIVE_UI_PROPOSAL.md, \"Typed actions\")",
+    "untyped-json": "JSON read or built by hand (`org.json`): send and read the generated types (a "
+    "model's `client.act(Api.<model>, <Model>Act...)` and answer records; the shell's "
+    "`native_shell` records over JNI), so a change in Rust breaks the build, not a tap "
+    "(docs/NATIVE_UI_PROPOSAL.md, \"Typed actions\")",
 }
 
-# The files that carry the control API's envelope or the shell's own messages, not a model's.
-UNTYPED_JSON_OK = {"ModelClient.kt", "AccountsPanel.kt", "SlotShell.kt", "ShellState.kt", "ShellScreens.kt"}
+# The file that reads the control API's envelope (`{ revision, view }`, `/events`, `/log`); the
+# models' and the shell's own messages are generated types.
+UNTYPED_JSON_OK = {"ModelClient.kt"}
 
 GLYPHS = "✕✖✗✘×⋮⋯›‹»«★☆✓✔•▶◀▲▼➜→←↑↓☰⚙✎✏🔍"
 STRING_RE = re.compile(r'"((?:[^"\\]|\\.)*)"')
@@ -99,6 +101,14 @@ def code_part(line: str) -> str:
     return "".join(out)
 
 
+def waived_line(raw: str, lines: list[str], n: int, file_waived: set[str]) -> set[str]:
+    """The rules waived for line `n` (1-based): the file's, the line's, the line above's."""
+    waived = set(file_waived) | set(DISABLE_LINE_RE.findall(raw))
+    if n > 1:
+        waived |= set(DISABLE_NEXT_RE.findall(lines[n - 2]))
+    return waived
+
+
 def check_text(path: str, text: str) -> list[tuple[int, str, str]]:
     """Findings as (line, rule, the line's code)."""
     name = os.path.basename(path)
@@ -124,6 +134,9 @@ def check_text(path: str, text: str) -> list[tuple[int, str, str]]:
         if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("import "):
             continue
         code = code_part(raw)
+        if '"""{"' in code and name not in UNTYPED_JSON_OK and "/android/app/" in path:
+            if "untyped-json" not in waived_line(raw, lines, n, file_waived):
+                findings.append((n, "untyped-json", stripped[:140]))
         waived = set(file_waived) | set(DISABLE_LINE_RE.findall(raw))
         if n > 1:
             waived |= set(DISABLE_NEXT_RE.findall(lines[n - 2]))

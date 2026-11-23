@@ -269,7 +269,13 @@ pub enum Action {
 }
 
 /// The tab list as the shell's native screens show it (`TabsItem.kt`, `TabPanel.kt`).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(rename_all = "camelCase")
+)]
+#[serde(rename_all = "camelCase")]
 pub struct NativeTabs {
     pub tabs: Vec<NativeTab>,
     /// The tab on screen.
@@ -284,7 +290,13 @@ pub struct NativeTabs {
     pub most: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(rename_all = "camelCase")
+)]
+#[serde(rename_all = "camelCase")]
 pub struct NativeTab {
     pub id: u32,
     pub label: String,

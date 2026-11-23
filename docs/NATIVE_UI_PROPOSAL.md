@@ -695,10 +695,21 @@ script's message box and options request.
   `KeyMoved`, `PromptAnswer`; Army client's gear its `ArmyGearView`), read with
   `act(Api.<model>, action, <Answer>.serializer(), { ... })`; its JSON is what the untyped answers
   had (a test pins each). Which answer goes with which action isn't checked by the compiler: one
-  that doesn't decode is logged and reaches `done` as the error. Still read by hand: the control
-  API's envelope (`{ revision, view }`, `/events`, `/log`) and the shell's own JNI calls
-  (`AccountsPanel`'s `Ask`, `SlotShell`'s actions). Checked on the emulator: a crash report's text
-  (Logs > Crashes), Logs and More.
+  that doesn't decode is logged and reaches `done` as the error. Checked on the emulator: a crash
+  report's text (Logs > Crashes), Logs and More.
+* **The shell's JNI typed** (2026-11-23): what `SlotShell.kt` and `AccountsPanel.kt` say to
+  their Rust over JNI is `turu_frontend::native_shell`'s records, generated as the models' are.
+  Each `native*` call answers a list of `ShellAction`s (start, stop, show, send, hello, activity,
+  tabs; a hello is an action now, so the activity no longer reads a slot's messages itself), what
+  only the activity carries out is an `ActivityMessage` (the slots' `ToShell`s of those names),
+  and what the activity sends a slot or asks the shell is a `SlotMessage` or a `TabRequest`, which
+  tests hold to `ToClient`'s and `ToShell`'s JSON (the link's own enums carry types facet can't
+  generate, bot types and arrays, so these are their Kotlin-facing parts). The native Accounts
+  read `AccountsView` and `ServersView`, ask with `AccountsAsk`, and get an `AccountsAnswer`
+  (`error` or `actions`, no longer told apart by a leading `{`). The wire changed only where it
+  was the shell's own: the actions carry their message and tab list as objects, not strings, and
+  `NativeTabs` is camelCase. Only `ModelClient.kt` reads JSON by hand now, the control API's
+  envelope (`{ revision, view }`, `/events`, `/log`). Not tried on the emulator yet.
 * **L5b**: the Script Loader is native (`ScriptsPage.kt`, `ModelClient.kt`), in the shell's
   panel, read from the tab on screen's scripts model and its log over the control API; Search
   Scripts and Edit Script Options open the slot's egui windows (`ToClient::OpenWindow`). However

@@ -6,7 +6,8 @@
 //!
 //! Beside the types it writes `ModelApi.kt`: each model's name on the control API with its view's
 //! and its actions' types, taken from [`ModelView`] and [`ModelActs`], so a page names a model by
-//! a value that carries its types (`Api.grabber`) and can't send it another model's action.
+//! a value that carries its types (`Api.grabber`) and can't send it another model's action. And
+//! what Android's shell activity and its Rust say to each other over JNI (`native_shell`).
 
 use facet::Facet;
 use facet_generate::generation::json::JsonPlugin;
@@ -49,6 +50,9 @@ use turu_frontend::models::{
     scripts::{ScriptsAct, ScriptsView},
     skills::{SkillsAct, SkillsView},
     stats::{StatsAct, StatsCsv, StatsView},
+};
+use turu_frontend::native_shell::{
+    AccountsAnswer, AccountsAsk, AccountsView, ServersView, ShellAction, SlotMessage, TabRequest,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -175,7 +179,15 @@ fn main() -> Result<()> {
     .add::<StatsCsv>()?
     .add::<LaunchScript>()?
     .add::<KeyMoved>()?
-    .add::<PromptAnswer>()?;
+    .add::<PromptAnswer>()?
+    // What the shell's activity and its Rust say over JNI (`native_shell`).
+    .add::<ShellAction>()?
+    .add::<SlotMessage>()?
+    .add::<TabRequest>()?
+    .add::<AccountsView>()?
+    .add::<ServersView>()?
+    .add::<AccountsAsk>()?
+    .add::<AccountsAnswer>()?;
     let api = generated.api();
     let registry = generated.registry.build()?;
     let out = std::path::Path::new(&out);

@@ -24,9 +24,14 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import com.muktiarafi.turu.models.ActivityMessage
+import com.muktiarafi.turu.models.FieldId
+import com.muktiarafi.turu.models.ShellAction
+import com.muktiarafi.turu.models.SlotMessage
+import com.muktiarafi.turu.models.TabRequest
 import com.muktiarafi.turu.shared.PackageUpdate
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -71,7 +76,7 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
     private val ready = mutableSetOf<Int>()
 
     /** The text fields above the keyboard shown for the slot on screen ([GAME], [UI]). */
-    private val fields = mutableSetOf<String>()
+    private val fields = mutableSetOf<FieldId>()
 
     /** The window's keyboard height and cutout sides, for the slots' layout (`insets`). */
     private var insets = Triple(0, 0, 0)
@@ -119,7 +124,6 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
                 val json = msg.data.getString("json") ?: return
                 main.post {
                     if (stopped) return@post
-                    noteReady(slot, json)
                     run(nativeFromSlot(slot, json))
                 }
                 return
@@ -205,24 +209,24 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
         replies.quitSafely()
     }
 
-    /** A message as if from the slot on screen (the adb controls): `{"type": "select_tab", ...}`. */
-    fun asShown(json: String) {
-        run(nativeFromSlot(current, json))
+    /** Asks the shell as if the slot on screen had (the tab list's, the adb controls). */
+    fun asShown(request: TabRequest) {
+        run(nativeFromSlot(current, SHELL_JSON.encodeToString(TabRequest.JsonSerializer, request)))
     }
 
-    /** A message to every slot up (`ToClient`, as JSON). */
-    fun toAll(json: String) {
-        for (slot in messengers.keys) sendJson(slot, json)
+    /** A message to every slot up. */
+    fun toAll(message: SlotMessage) {
+        for (slot in messengers.keys) send(slot, message)
     }
 
-    /** A message to the slot on screen (`ToClient`, as JSON). */
-    fun toShown(json: String) {
-        sendJson(current, json)
+    /** A message to the slot on screen. */
+    fun toShown(message: SlotMessage) {
+        send(current, message)
     }
 
-    /** A message to slot [slot] (`ToClient`, as JSON), whether it's on screen or not. */
-    fun toSlot(slot: Int, json: String) {
-        sendJson(slot, json)
+    /** A message to slot [slot], whether it's on screen or not. */
+    fun toSlot(slot: Int, message: SlotMessage) {
+        send(slot, message)
     }
 
     /** Actions the Rust side sent of its own (keys for the slot on screen), on the main thread. */
@@ -230,20 +234,31 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
         if (!stopped) run(actions)
     }
 
-    /** Carries out the Rust side's actions, in order. */
+    /** Actions an answer of the Rust side's carried (the native Accounts'), on the main thread. */
+    fun actions(actions: List<ShellAction>) {
+        if (!stopped) run(actions)
+    }
+
+    /** Carries out the Rust side's actions (`native_shell::ShellAction`, as JSON), in order. */
     private fun run(actions: String) {
-        val list = JSONArray(actions)
-        for (i in 0 until list.length()) {
-            val action: JSONObject = list.getJSONObject(i)
-            val slot = action.getInt("slot")
-            when (action.getString("kind")) {
-                "start" -> startSlot(slot)
-                "stop" -> stopSlot(slot)
-                "show" -> show(slot)
-                "send" -> sendJson(slot, action.getString("json"))
-                "activity" -> forActivity(slot, JSONObject(action.getString("json")))
+        val list = runCatching { SHELL_JSON.decodeFromString(ListSerializer(ShellAction.JsonSerializer), actions) }
+            .onFailure { Log.e(SlotService.TAG, "The shell's actions don't decode: $it") }
+            .getOrNull() ?: return
+        run(list)
+    }
+
+    private fun run(actions: List<ShellAction>) {
+        for (action in actions) {
+            when (action) {
+                is ShellAction.start -> startSlot(action.slot.toInt())
+                is ShellAction.stop -> stopSlot(action.slot.toInt())
+                is ShellAction.show -> show(action.slot.toInt())
+                // A `ToClient` the Rust side wrote: passed on as it is.
+                is ShellAction.send -> sendJson(action.slot.toInt(), action.json)
+                is ShellAction.hello -> noteReady(action.slot.toInt(), action.ready)
+                is ShellAction.activity -> forActivity(action.slot.toInt(), action.message)
                 // The native Tabs item and panel (`slots::NativeTabs`).
-                "tabs" -> activity.screens.tabs(action.getString("json"))
+                is ShellAction.tabs -> activity.screens.tabs(action.tabs)
             }
         }
     }
@@ -293,23 +308,23 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
     private var picking = 0
 
     /** What only the activity does, for `slot`: its text field, a link, sharing, a picker, an install. */
-    private fun forActivity(slot: Int, message: JSONObject) {
-        when (message.optString("type")) {
-            "field_show", "field_update", "field_hide" -> field(message)
-            "open_url" -> activity.openUrl(message.optString("url"))
-            "share" -> activity.shareText(message.optString("subject"), message.optString("text"))
-            "pick_file" -> {
+    private fun forActivity(slot: Int, message: ActivityMessage) {
+        when (message) {
+            is ActivityMessage.field_show, is ActivityMessage.field_update, is ActivityMessage.field_hide -> field(message)
+            is ActivityMessage.open_url -> activity.openUrl(message.url)
+            is ActivityMessage.share -> activity.shareText(message.subject, message.text)
+            is ActivityMessage.pick_file -> {
                 picking = slot
-                activity.openDocument(message.optString("mime_types"), message.optString("folder"))
+                activity.openDocument(message.mimeTypes, message.folder)
             }
-            "save_file" -> {
+            is ActivityMessage.save_file -> {
                 picking = slot
-                activity.createDocument(message.optString("mime_type"), message.optString("file_name"))
+                activity.createDocument(message.mimeType, message.fileName)
             }
-            "install" -> install(slot, message.optString("path"))
-            "prefer_refresh_rate" -> activity.preferRefreshRate(message.optInt("hz").toFloat())
+            is ActivityMessage.install -> install(slot, message.path)
+            is ActivityMessage.prefer_refresh_rate -> activity.preferRefreshRate(message.hz.toFloat())
             // A window the shell has natively, opened in the slot's egui menus.
-            "open_screen" -> activity.screens.openScreen(message.optString("screen"))
+            is ActivityMessage.open_screen -> activity.screens.openScreen(message.screen.serialName)
         }
     }
 
@@ -318,23 +333,18 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
 
     /** The "open" picker's answer: to the slot that asked. */
     fun documentPicked(path: String?) {
-        val message = JSONObject().put("type", "document_picked").put("path", path ?: JSONObject.NULL)
-        main.post { sendJson(takePicking(), message.toString()) }
+        main.post { send(takePicking(), SlotMessage.document_picked(path)) }
     }
 
     /** The "save" picker's answer: to the slot that asked, which writes the file and copies it in. */
     fun documentCreated(uri: String?, path: String?) {
-        val message = JSONObject().put("type", "document_created")
-            .put("uri", uri ?: JSONObject.NULL).put("path", path ?: JSONObject.NULL)
-        main.post { sendJson(takePicking(), message.toString()) }
+        main.post { send(takePicking(), SlotMessage.document_created(uri, path)) }
     }
 
     /** An update's APK to Android's installer, off the main thread; the outcome goes back to `slot`. */
     private fun install(slot: Int, path: String) {
         val installed = { status: Int, message: String? ->
-            val answer = JSONObject().put("type", "installed").put("status", status)
-                .put("message", message ?: JSONObject.NULL)
-            main.post { sendJson(slot, answer.toString()) }
+            main.post { send(slot, SlotMessage.installed(status, message)) }
         }
         thread(name = "Turu Install") {
             val error = PackageUpdate.install(activity, path) { status, message -> installed(status, message) }
@@ -343,30 +353,32 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
     }
 
     /** The slot on screen's text field above the keyboard: shown, updated or hidden. */
-    private fun field(message: JSONObject) {
-        val game = message.optString("field") == GAME
-        val text = message.optString("text")
-        val (start, end) = message.optInt("start") to message.optInt("end")
-        when (message.optString("type")) {
-            "field_show" -> {
-                fields.add(if (game) GAME else UI)
-                if (game) {
-                    activity.showGameField(text, start, end, message.optBoolean("password"), message.optInt("max"))
+    private fun field(message: ActivityMessage) {
+        when (message) {
+            is ActivityMessage.field_show -> {
+                val (text, start, end) = Triple(message.text, message.start.toInt(), message.end.toInt())
+                fields.add(message.field)
+                if (message.field == GAME) {
+                    activity.showGameField(text, start, end, message.password, message.max.toInt())
                 } else {
                     val kind = when {
-                        message.optBoolean("password") -> 1
-                        message.optBoolean("lines") -> 2
-                        message.optBoolean("number") -> 3
+                        message.password -> 1
+                        message.lines -> 2
+                        message.number -> 3
                         else -> 0
                     }
-                    activity.showUiField(text, start, end, kind, message.optString("hint"))
+                    activity.showUiField(text, start, end, kind, message.hint)
                 }
             }
-            "field_update" -> if (game) activity.updateGameField(text, start, end) else activity.updateUiField(text, start, end)
-            "field_hide" -> {
-                fields.remove(if (game) GAME else UI)
-                if (game) activity.hideGameField() else activity.hideUiField()
+            is ActivityMessage.field_update -> {
+                val (text, start, end) = Triple(message.text, message.start.toInt(), message.end.toInt())
+                if (message.field == GAME) activity.updateGameField(text, start, end) else activity.updateUiField(text, start, end)
             }
+            is ActivityMessage.field_hide -> {
+                fields.remove(message.field)
+                if (message.field == GAME) activity.hideGameField() else activity.hideUiField()
+            }
+            else -> {}
         }
     }
 
@@ -380,21 +392,19 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
     }
 
     /** The field above the keyboard was edited: to the slot on screen. */
-    fun fieldEdited(field: String, text: String, start: Int, end: Int) {
-        val message = JSONObject().put("type", "field_edited").put("field", field)
-            .put("text", text).put("start", start).put("end", end)
-        sendJson(current, message.toString())
+    fun fieldEdited(field: FieldId, text: String, start: Int, end: Int) {
+        send(current, SlotMessage.field_edited(field, text, start.coerceAtLeast(0).toUInt(), end.coerceAtLeast(0).toUInt()))
     }
 
     /** The field's Send. */
-    fun fieldEnter(field: String) {
-        sendJson(current, JSONObject().put("type", "field_enter").put("field", field).toString())
+    fun fieldEnter(field: FieldId) {
+        send(current, SlotMessage.field_enter(field))
     }
 
     /** The field went (Back, a touch outside it). */
-    fun fieldClosed(field: String) {
+    fun fieldClosed(field: FieldId) {
         fields.remove(field)
-        sendJson(current, JSONObject().put("type", "field_closed").put("field", field).toString())
+        send(current, SlotMessage.field_closed(field))
     }
 
     /** The window's insets changed: every slot lays Turu's UI out around them. */
@@ -413,15 +423,13 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
 
     private fun sendRefreshRate(slot: Int) {
         if (refreshHz <= 0f) return
-        val message = JSONObject().put("type", "refresh_rate").put("millihertz", Math.round(refreshHz * 1000f))
-        sendJson(slot, message.toString())
+        send(slot, SlotMessage.refresh_rate(Math.round(refreshHz * 1000f).toUInt()))
     }
 
     private fun sendInsets(slot: Int) {
         val (keyboard, left, right) = insets
-        val message = JSONObject().put("type", "insets").put("keyboard", keyboard)
-            .put("cutout_left", left).put("cutout_right", right)
-        sendJson(slot, message.toString())
+        val px = { n: Int -> n.coerceAtLeast(0).toUInt() }
+        send(slot, SlotMessage.insets(px(keyboard), px(left), px(right)))
     }
 
     /**
@@ -488,13 +496,11 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
      * back (`surfaceCreated`, or its hello).
      */
     /** A slot's hello with its control API: its engine is up, and draws as soon as it has the surface. */
-    private fun noteReady(slot: Int, json: String) {
-        val message = runCatching { JSONObject(json) }.getOrNull() ?: return
-        if (message.optString("type") != "hello") return
+    private fun noteReady(slot: Int, engineUp: Boolean) {
         // A slot that's (back) up learns the window's insets and the display's refresh rate.
         sendInsets(slot)
         sendRefreshRate(slot)
-        if (!message.isNull("api")) {
+        if (engineUp) {
             ready.add(slot)
             updateOverlay()
         }
@@ -605,6 +611,11 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
         send(slot, SlotService.MSG_ON_SCREEN, Bundle().apply { putBoolean("on", onScreen) })
     }
 
+    /** A message to slot [slot] (`ToClient`'s of that name). */
+    private fun send(slot: Int, message: SlotMessage) {
+        sendJson(slot, SHELL_JSON.encodeToString(SlotMessage.JsonSerializer, message))
+    }
+
     private fun sendJson(slot: Int, json: String) {
         send(slot, SlotService.MSG_TO_CLIENT, Bundle().apply { putString("json", json) })
     }
@@ -615,9 +626,12 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
         /** The slots in the manifest (`slots::POOL`). */
         const val SLOTS = 9
 
-        /** The text fields above the keyboard, as the messages name them. */
-        const val GAME = "game"
-        const val UI = "ui"
+        /** The text fields above the keyboard. */
+        val GAME = FieldId.GAME
+        val UI = FieldId.UI
+
+        /** The shell's messages and actions; one from a newer Rust side may carry more fields. */
+        val SHELL_JSON = Json { ignoreUnknownKeys = true }
 
         /** The slot services, by slot less one (also for Quit Turu, [SlotService]). */
         val CLASSES = listOf(

@@ -27,6 +27,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.google.androidgamesdk.GameActivity
+import com.muktiarafi.turu.models.TabRequest
 import com.muktiarafi.turu.shared.CrashQuestion
 import com.muktiarafi.turu.shared.CrashReports
 import com.muktiarafi.turu.shared.CrashUploads
@@ -360,9 +361,9 @@ class TuruActivity : GameActivity() {
     private fun handleSlotIntent(intent: Intent?) {
         val shell = shell ?: return
         val extras = intent?.extras ?: return
-        if (extras.containsKey("slot")) shell.asShown("""{"type":"select_tab","id":${extras.getInt("slot")}}""")
-        if (extras.containsKey("openTab")) shell.asShown("""{"type":"open_tab"}""")
-        if (extras.containsKey("closeTab")) shell.asShown("""{"type":"close_tab","id":${extras.getInt("closeTab")}}""")
+        if (extras.containsKey("slot")) shell.asShown(TabRequest.select_tab(extras.getInt("slot").toUInt()))
+        if (extras.containsKey("openTab")) shell.asShown(TabRequest.open_tab)
+        if (extras.containsKey("closeTab")) shell.asShown(TabRequest.close_tab(extras.getInt("closeTab").toUInt()))
     }
 
     override fun onResume() {

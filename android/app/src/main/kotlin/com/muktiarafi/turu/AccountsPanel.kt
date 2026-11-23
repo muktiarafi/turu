@@ -6,8 +6,13 @@ import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import org.json.JSONArray
-import org.json.JSONObject
+import com.muktiarafi.turu.models.AccountsAnswer
+import com.muktiarafi.turu.models.AccountsAsk
+import com.muktiarafi.turu.models.AccountsView
+import com.muktiarafi.turu.models.ServersView
+import com.muktiarafi.turu.models.ShellAction
+import kotlinx.serialization.builtins.nullable
+import kotlinx.serialization.json.Json
 import java.util.concurrent.Executors
 
 /**
@@ -16,7 +21,7 @@ import java.util.concurrent.Executors
  * folder and the Keystore. Reads and writes run on a thread of their own (the Keystore decrypts);
  * what comes back is set on the main thread, where Compose reads it.
  */
-class AccountsPanel(private val runActions: (String) -> Unit) {
+class AccountsPanel(private val runActions: (List<ShellAction>) -> Unit) {
     var list by mutableStateOf(AccountList())
         private set
 
@@ -43,7 +48,7 @@ class AccountsPanel(private val runActions: (String) -> Unit) {
 
     fun reload() {
         work.execute {
-            val read = runCatching { AccountList.parse(nativeAccounts()) }
+            val read = runCatching { AccountList.from(JSON.decodeFromString(AccountsView.serializer().nullable, nativeAccounts())) }
             main.post {
                 read.onSuccess {
                     list = it
@@ -59,18 +64,11 @@ class AccountsPanel(private val runActions: (String) -> Unit) {
     /** Fetches the servers (and starts measuring their pings); again later for the pings. */
     fun loadServers(tries: Int = 3) {
         work.execute {
-            val read = runCatching { nativeServers() }
+            val read = runCatching { JSON.decodeFromString(ServersView.serializer(), nativeServers()) }
             main.post {
-                val json = read.getOrNull()
-                if (json == null || json.trimStart().startsWith("{")) {
-                    serversError = json?.let { JSONObject(it).optString("error") } ?: read.exceptionOrNull()?.message
-                    return@post
-                }
-                val array = JSONArray(json)
-                servers = (0 until array.length()).map {
-                    val s = array.getJSONObject(it)
-                    Server(s.getString("name"), s.getString("line"), s.optBoolean("online"))
-                }
+                val view = read.getOrElse { serversError = it.message; return@post }
+                view.error?.let { serversError = it; return@post }
+                servers = view.servers.map { Server(it.name, it.line, it.online) }
                 serversError = null
                 // The pings are measured in the background ("..." until then): read them again.
                 if (tries > 1 && servers.orEmpty().any { it.online && it.line.contains(" - ... ") }) {
@@ -92,8 +90,7 @@ class AccountsPanel(private val runActions: (String) -> Unit) {
         val names = accounts.map { it.username }
         starting = starting + names
         failed = failed - names.toSet()
-        val ask = JSONObject().put("do", "startMany").put("usernames", JSONArray(names))
-        ask(ask, opened = { actions -> if (actions.trim() == "[]") fail(names, "No tab was free to start it in") }) { error ->
+        ask(AccountsAsk.startMany(names), opened = { actions -> if (actions.isEmpty()) fail(names, "No tab was free to start it in") }) { error ->
             if (!error.isNullOrEmpty()) fail(names, error)
         }
     }
@@ -105,47 +102,41 @@ class AccountsPanel(private val runActions: (String) -> Unit) {
 
     /** Puts `accounts` in `group` (made if new); `done` gets the error, or null. */
     fun addToGroup(group: String, accounts: List<Account>, done: (String?) -> Unit = {}) =
-        ask(JSONObject().put("do", "addToGroup").put("group", group).put("usernames", JSONArray(accounts.map { it.username })), done = done)
+        ask(AccountsAsk.addToGroup(group, accounts.map { it.username }), done = done)
 
     fun removeFromGroup(group: String, accounts: List<Account>) =
-        ask(JSONObject().put("do", "removeFromGroup").put("group", group).put("usernames", JSONArray(accounts.map { it.username }))) {}
+        ask(AccountsAsk.removeFromGroup(group, accounts.map { it.username })) {}
 
-    fun removeGroup(group: String) = ask(JSONObject().put("do", "removeGroup").put("group", group)) {}
+    fun removeGroup(group: String) = ask(AccountsAsk.removeGroup(group)) {}
 
     /** Adds or changes an account; `done` gets the error, or null once saved. */
     fun save(original: Account?, username: String, password: String, displayName: String, tags: List<String>, done: (String?) -> Unit) {
-        val ask = JSONObject().put("do", "save")
-            .put("original", original?.username ?: JSONObject.NULL)
-            .put("username", username)
-            .put("password", password.ifEmpty { null } ?: JSONObject.NULL)
-            .put("displayName", displayName)
-            .put("tags", JSONArray(tags))
-        ask(ask, done = done)
+        ask(AccountsAsk.save(original?.username, username, password.ifEmpty { null }, displayName, tags), done = done)
     }
 
-    fun remove(account: Account) = ask(JSONObject().put("do", "remove").put("username", account.username)) {}
+    fun remove(account: Account) = ask(AccountsAsk.remove(account.username)) {}
 
     fun move(account: Account, by: Int) =
-        ask(JSONObject().put("do", "move").put("username", account.username).put("by", by)) {}
+        ask(AccountsAsk.move(account.username, by)) {}
 
     fun launch(server: String, script: String?, autoStart: Boolean) {
-        val ask = JSONObject().put("do", "launch").put("server", server)
-            .put("script", script ?: JSONObject.NULL).put("autoStart", autoStart)
-        ask(ask) {}
+        ask(AccountsAsk.launch(server, script, autoStart)) {}
     }
 
     /** Sends `ask`; the answer's actions are the activity's (and `opened`'s), an error goes to `done`. */
-    private fun ask(ask: JSONObject, opened: (String) -> Unit = {}, done: (String?) -> Unit) {
+    private fun ask(ask: AccountsAsk, opened: (List<ShellAction>) -> Unit = {}, done: (String?) -> Unit) {
         work.execute {
-            // Built with JSONObject, not by hand: a message with a quote or a line break must still parse.
-            val answer = runCatching { nativeAccountsDo(ask.toString()) }
-                .getOrElse { JSONObject().put("error", it.message ?: it.toString()).toString() }
+            val answer = runCatching {
+                val json = nativeAccountsDo(JSON.encodeToString(AccountsAsk.JsonSerializer, ask))
+                JSON.decodeFromString(AccountsAnswer.serializer(), json)
+            }.getOrElse { AccountsAnswer(error = it.message ?: it.toString(), actions = emptyList()) }
             main.post {
-                if (answer.trimStart().startsWith("{")) {
-                    done(JSONObject(answer).optString("error"))
+                val error = answer.error
+                if (error != null) {
+                    done(error)
                 } else {
-                    runActions(answer)
-                    opened(answer)
+                    runActions(answer.actions)
+                    opened(answer.actions)
                     done(null)
                 }
                 reload()
@@ -155,6 +146,9 @@ class AccountsPanel(private val runActions: (String) -> Unit) {
 
     companion object {
         private const val TAG = "turu-shell"
+
+        /** The Rust side's answers; one from a newer side may carry more fields. */
+        private val JSON = Json { ignoreUnknownKeys = true }
 
         init {
             System.loadLibrary("turu_android")

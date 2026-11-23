@@ -550,8 +550,9 @@ mod tests {
     /// * no action takes the raw body (`body: &Json`), and none answers with `json!`: an answer
     ///   is a record the generator writes for the shells;
     /// * the generator writes every model's types (`turu-typegen.rs`);
-    /// * Android's pages read no hand-built JSON (`org.json`), but the files that carry the
-    ///   control API's envelope or the shell's own messages.
+    /// * Android's Kotlin reads no hand-built JSON (`org.json`), but `ModelClient.kt`, which reads
+    ///   the control API's envelope (`{ revision, view }`, `/events`, `/log`): the shell's own
+    ///   messages are `native_shell`'s generated types too.
     #[test]
     fn models_stay_typed() {
         use std::path::{Path, PathBuf};
@@ -612,20 +613,15 @@ mod tests {
         let mut kotlin = Vec::new();
         files(&root.join("../android/app/src/main/kotlin"), "kt", &mut kotlin);
         assert!(!kotlin.is_empty(), "no Android sources at {}", root.display());
-        const ENVELOPE_OR_SHELL: [&str; 5] = [
-            "ModelClient.kt",
-            "AccountsPanel.kt",
-            "SlotShell.kt",
-            "ShellState.kt",
-            "ShellScreens.kt",
-        ];
+        const ENVELOPE: [&str; 1] = ["ModelClient.kt"];
         for path in &kotlin {
             let text = std::fs::read_to_string(path).unwrap();
             let file = path.file_name().unwrap().to_string_lossy();
-            if !ENVELOPE_OR_SHELL.contains(&file.as_ref()) {
+            if !ENVELOPE.contains(&file.as_ref()) {
+                // Nor JSON written out as text (`"""{"type": ...}"""`).
                 assert!(
-                    !text.contains("import org.json."),
-                    "{file} reads JSON by hand: use the generated types (`Api.<model>`, an answer's record)"
+                    !text.contains("import org.json.") && !text.contains("\"\"\"{\""),
+                    "{file} reads JSON by hand: use the generated types (`Api.<model>`, an answer's record, `native_shell`'s)"
                 );
             }
         }

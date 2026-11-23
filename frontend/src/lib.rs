@@ -23,6 +23,7 @@ pub mod map_items;
 pub mod map_pads;
 pub mod memory_kills;
 pub mod models;
+pub mod native_shell;
 #[cfg(feature = "ruffle")]
 pub mod movie_texture;
 // Mugetsu's code (GPL-3.0, its author's): only for Ruffle, and kept out of Turu Mas

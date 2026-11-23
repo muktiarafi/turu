@@ -505,7 +505,13 @@ pub enum ToShell {
 /// A screen Android's shell has natively.
 /// Where a tab's game is, for the shell's tab list (`ToShell::Status`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(rename_all = "snake_case")
+)]
 #[serde(rename_all = "snake_case")]
+#[repr(C)]
 pub enum TabGame {
     /// Not logged in (yet).
     #[default]
@@ -519,7 +525,13 @@ pub enum TabGame {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(rename_all = "snake_case")
+)]
 #[serde(rename_all = "snake_case")]
+#[repr(C)]
 pub enum NativeScreen {
     Accounts,
     /// The Script Loader.
@@ -636,7 +648,13 @@ impl UpdateInfo {
 /// Which of Android's two text fields above the keyboard: the game's focused text field, or Turu's
 /// own text box (egui's).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(rename_all = "snake_case")
+)]
 #[serde(rename_all = "snake_case")]
+#[repr(C)]
 pub enum FieldId {
     Game,
     Ui,

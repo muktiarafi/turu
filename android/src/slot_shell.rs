@@ -2,19 +2,19 @@
 //! which runs no engine. `SlotShell.kt` binds the slots and passes on their messages; this keeps
 //! the tab list (`turu_frontend::slots::SlotShell`), writes the slots' records and keeps their
 //! passwords itself, and answers each call with what the activity is to do next: a JSON list of
-//! `{"kind": "start" | "stop" | "show", "slot": n}`, `{"kind": "send", "slot": n, "json": ...}` and
-//! `{"kind": "activity", "slot": n, "json": ...}` (what only the activity does: the text field above
-//! the keyboard, links, sharing, file pickers, installing updates). The soft keyboard it shows and
-//! hides itself, and keys go from here to the slot on screen ([`to_shown`]).
+//! [`ShellAction`]s (`turu_frontend::native_shell`, generated for Kotlin): start, stop or show a
+//! slot, pass a message on to one, what only the activity does (the text field above the keyboard,
+//! links, sharing, file pickers, installing updates) and the tab list. The soft keyboard it shows
+//! and hides itself, and keys go from here to the slot on screen ([`to_shown`]).
 
 use jni::EnvUnowned;
 use jni::errors::ThrowRuntimeExAndDefault;
 use jni::objects::{JClass, JString};
 use jni::sys::jint;
-use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use turu_bot::accounts::SecretStore;
+use turu_frontend::native_shell::{ActivityMessage, ShellAction, actions_json};
 use turu_frontend::shell::{ToClient, ToShell};
 use turu_frontend::slots::{Action, SlotRecord, SlotShell};
 
@@ -22,7 +22,7 @@ use turu_frontend::slots::{Action, SlotRecord, SlotShell};
 static SHELL: Mutex<Option<(SlotShell, PathBuf)>> = Mutex::new(None);
 
 /// Carries out the actions this side does (records, passwords) and returns the activity's.
-fn activity_actions(root: &std::path::Path, actions: Vec<Action>) -> String {
+fn activity_actions(root: &std::path::Path, actions: Vec<Action>) -> Vec<ShellAction> {
     let dir = turu_frontend::slots::dir(root);
     let mut list = Vec::new();
     for action in actions {
@@ -58,35 +58,35 @@ fn activity_actions(root: &std::path::Path, actions: Vec<Action>) -> String {
                     tracing::warn!("Shell: slot {slot}'s password: {e}");
                 }
             }
-            Action::Start(slot) => list.push(json!({ "kind": "start", "slot": slot })),
-            Action::Stop(slot) => list.push(json!({ "kind": "stop", "slot": slot })),
+            Action::Start(slot) => list.push(ShellAction::Start { slot }),
+            Action::Stop(slot) => list.push(ShellAction::Stop { slot }),
             Action::Show(slot) => {
                 // The tab on screen before had it up for a text box of its own.
                 crate::ui::soft_keyboard(false);
-                list.push(json!({ "kind": "show", "slot": slot }));
+                list.push(ShellAction::Show { slot });
             }
             // GameActivity's text input, whose keys come here (`lib.rs`'s `shell_input`).
             Action::Activity(_, ToShell::SoftKeyboard { show }) => crate::ui::soft_keyboard(show),
-            Action::Activity(slot, message) => match serde_json::to_string(&message) {
-                Ok(text) => list.push(json!({ "kind": "activity", "slot": slot, "json": text })),
-                Err(e) => tracing::warn!("Shell: a message I can't write: {e}"),
+            Action::Activity(slot, message) => match ActivityMessage::from_shell(message) {
+                Some(message) => list.push(ShellAction::Activity { slot, message }),
+                None => tracing::warn!("Shell: a message for the activity it doesn't carry out"),
             },
             // The activity's native Tabs item and panel.
-            Action::Tabs(tabs) => match serde_json::to_string(&tabs) {
-                Ok(text) => list.push(json!({ "kind": "tabs", "slot": 0, "json": text })),
-                Err(e) => tracing::warn!("Shell: a tab list I can't write: {e}"),
-            },
+            Action::Tabs(tabs) => list.push(ShellAction::Tabs { tabs }),
+            // Passed on as the link writes it: the activity doesn't read it.
             Action::Send(slot, message) => match serde_json::to_string(&message) {
-                Ok(text) => list.push(json!({ "kind": "send", "slot": slot, "json": text })),
+                Ok(json) => list.push(ShellAction::Send { slot, json }),
                 Err(e) => tracing::warn!("Shell: a message I can't write: {e}"),
             },
         }
     }
-    Value::Array(list).to_string()
+    list
 }
 
 /// [`with_shell`], for the activity's native screens (`shell_accounts.rs`).
-pub(crate) fn with_shell_actions(work: impl FnOnce(&mut SlotShell) -> Vec<Action>) -> String {
+pub(crate) fn with_shell_actions(
+    work: impl FnOnce(&mut SlotShell) -> Vec<Action>,
+) -> Vec<ShellAction> {
     with_shell(work)
 }
 
@@ -105,10 +105,10 @@ pub(crate) fn shell_streamer() -> bool {
 }
 
 /// Runs `work` on the shell, carrying out what comes of it.
-fn with_shell(work: impl FnOnce(&mut SlotShell) -> Vec<Action>) -> String {
+fn with_shell(work: impl FnOnce(&mut SlotShell) -> Vec<Action>) -> Vec<ShellAction> {
     let mut shell = SHELL.lock().unwrap_or_else(|e| e.into_inner());
     let Some((shell, root)) = shell.as_mut() else {
-        return "[]".into();
+        return Vec::new();
     };
     let limit_changed = read_tab_limit(shell, root);
     let mut actions = work(shell);
@@ -153,7 +153,7 @@ pub(crate) fn to_shown(app: &android_activity::AndroidApp, messages: Vec<ToClien
             .collect()
     });
     let sent = crate::platform::with_activity(app, |env, activity| {
-        let actions = env.new_string(&actions)?;
+        let actions = env.new_string(actions_json(&actions))?;
         activity.shell_actions(env, &actions)
     });
     if let Err(e) = sent {
@@ -203,7 +203,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotShell_nativeShellStart<'local>(
             tracing::info!("Shell: process tabs in slots {:?}", shell.slots());
             let answer = activity_actions(&root, actions);
             *SHELL.lock().unwrap_or_else(|e| e.into_inner()) = Some((shell, root));
-            env.new_string(answer)
+            env.new_string(actions_json(&answer))
         })
         .resolve::<ThrowRuntimeExAndDefault>()
 }
@@ -220,13 +220,27 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotShell_nativeFromSlot<'local>(
         .with_env(|env| -> jni::errors::Result<JString<'local>> {
             let json = json.try_to_string(env)?;
             let answer = match serde_json::from_str::<ToShell>(&json) {
-                Ok(message) => with_shell(|shell| shell.message(slot as u32, message)),
+                Ok(message) => {
+                    // A hello first: the activity sends a slot that's (back) up the window's insets
+                    // and the display's refresh rate before anything else.
+                    let hello = match &message {
+                        ToShell::Hello { api, .. } => Some(ShellAction::Hello {
+                            slot: slot as u32,
+                            ready: api.is_some(),
+                        }),
+                        _ => None,
+                    };
+                    hello
+                        .into_iter()
+                        .chain(with_shell(|shell| shell.message(slot as u32, message)))
+                        .collect()
+                }
                 Err(e) => {
                     tracing::warn!("Shell: a message from slot {slot} I can't read: {e}");
-                    "[]".into()
+                    Vec::new()
                 }
             };
-            env.new_string(answer)
+            env.new_string(actions_json(&answer))
         })
         .resolve::<ThrowRuntimeExAndDefault>()
 }
@@ -241,7 +255,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotShell_nativeSlotGone<'local>(
     unowned_env
         .with_env(|env| -> jni::errors::Result<JString<'local>> {
             let answer = with_shell(|shell| shell.disconnected(slot as u32));
-            env.new_string(answer)
+            env.new_string(actions_json(&answer))
         })
         .resolve::<ThrowRuntimeExAndDefault>()
 }
@@ -257,7 +271,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotShell_nativeStillShown<'local>(
     unowned_env
         .with_env(|env| -> jni::errors::Result<JString<'local>> {
             let answer = with_shell(|shell| shell.still_shown(slot as u32));
-            env.new_string(answer)
+            env.new_string(actions_json(&answer))
         })
         .resolve::<ThrowRuntimeExAndDefault>()
 }

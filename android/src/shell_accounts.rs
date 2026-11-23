@@ -8,11 +8,12 @@ use crate::slot_shell::{shell_root, shell_streamer, with_shell_actions};
 use jni::EnvUnowned;
 use jni::errors::ThrowRuntimeExAndDefault;
 use jni::objects::{JClass, JString};
-use serde::Deserialize;
-use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use turu_bot::accounts::ping::{self, Pings};
 use turu_bot::accounts::{self, Account, Accounts};
+use turu_frontend::native_shell::{
+    AccountRow, AccountsAnswer, AccountsAsk as Ask, AccountsView, ServerRow, ServersView,
+};
 
 fn accounts_file(root: &Path) -> PathBuf {
     turu_bot::paths::Paths {
@@ -25,9 +26,13 @@ fn accounts_file(root: &Path) -> PathBuf {
 /// logging in with it) and whether a password is saved; the groups, tags and launch options.
 /// With `streamer` (an open tab's Streamer Mode is on), each is labelled "Account n" and the
 /// panel shows no username (the edit form keeps the real ones, so saving keeps them).
-pub(crate) fn accounts_view(root: &Path, tabs: &[(u32, Option<String>)], streamer: bool) -> Value {
+pub(crate) fn accounts_view(
+    root: &Path,
+    tabs: &[(u32, Option<String>)],
+    streamer: bool,
+) -> AccountsView {
     let list = Accounts::load(&accounts_file(root));
-    let accounts: Vec<Value> = list
+    let accounts: Vec<AccountRow> = list
         .accounts
         .iter()
         .enumerate()
@@ -49,15 +54,19 @@ pub(crate) fn accounts_view(root: &Path, tabs: &[(u32, Option<String>)], streame
             } else {
                 account.label().to_owned()
             };
-            json!({
-                "username": account.username,
-                "label": label,
-                "displayName": account.display_name,
-                "tags": account.tags,
-                "groups": list.groups_of(&account.username),
-                "tab": tab,
-                "password": password,
-            })
+            AccountRow {
+                username: account.username.clone(),
+                label,
+                display_name: account.display_name.clone(),
+                tags: account.tags.clone(),
+                groups: list
+                    .groups_of(&account.username)
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+                tab,
+                password,
+            }
         })
         .collect();
     let quick = turu_bot::quick_scripts::get(&root.join("quick-scripts.json"));
@@ -68,80 +77,30 @@ pub(crate) fn accounts_view(root: &Path, tabs: &[(u32, Option<String>)], streame
             scripts.push(script);
         }
     }
-    json!({
-        "accounts": accounts,
-        "groups": list.groups.iter().map(|g| g.name.clone()).collect::<Vec<_>>(),
-        "tags": list.tags(),
-        "server": list.server,
-        "script": list.script,
-        "autoStart": list.auto_start,
-        "scripts": scripts,
-        "keepsPasswords": accounts::keeps_passwords(),
-        "streamer": streamer,
-    })
+    AccountsView {
+        accounts,
+        groups: list.groups.iter().map(|g| g.name.clone()).collect(),
+        tags: list.tags(),
+        server: list.server.clone(),
+        script: list
+            .script
+            .as_ref()
+            .map(|s| s.to_string_lossy().into_owned()),
+        auto_start: list.auto_start,
+        scripts,
+        keeps_passwords: accounts::keeps_passwords(),
+        streamer,
+    }
 }
 
-/// What the panel asks.
-#[derive(Debug, Deserialize)]
-#[serde(tag = "do", rename_all = "camelCase")]
-enum Ask {
-    /// Starts the account in a new tab, with the launch options.
-    Start {
-        username: String,
-    },
-    /// Starts each account in a new tab of its own, in the list's order, as far as there are free
-    /// tabs (the panel says first which won't fit).
-    StartMany {
-        usernames: Vec<String>,
-    },
-    /// Puts the accounts in the group, making it if there's none of that name.
-    AddToGroup {
-        group: String,
-        usernames: Vec<String>,
-    },
-    /// Takes the accounts out of the group (the group stays, even empty).
-    RemoveFromGroup {
-        group: String,
-        usernames: Vec<String>,
-    },
-    /// Removes the group; its accounts stay.
-    RemoveGroup {
-        group: String,
-    },
-    /// Adds an account, or changes the one named `original`.
-    #[serde(rename_all = "camelCase")]
-    Save {
-        original: Option<String>,
-        username: String,
-        password: Option<String>,
-        display_name: String,
-        tags: Vec<String>,
-    },
-    Remove {
-        username: String,
-    },
-    /// Up (-1) or down (1) the list.
-    Move {
-        username: String,
-        by: isize,
-    },
-    /// The launch options.
-    #[serde(rename_all = "camelCase")]
-    Launch {
-        server: String,
-        script: Option<String>,
-        auto_start: bool,
-    },
-}
-
-/// Carries out `ask`; the activity's actions (a new tab's) as `slot_shell` writes them, or an
-/// error as `{"error": ...}`.
-fn act(root: &Path, ask: Ask) -> String {
+/// Carries out `ask` (`native_shell::AccountsAsk`): the activity's actions (a new tab's), or why
+/// not.
+fn act(root: &Path, ask: Ask) -> AccountsAnswer {
     let file = accounts_file(root);
     let mut list = Accounts::load(&file);
     let saved = |list: &Accounts| match list.save(&file) {
-        Ok(()) => "[]".to_owned(),
-        Err(e) => json!({ "error": format!("Couldn't save the accounts: {e}") }).to_string(),
+        Ok(()) => AccountsAnswer::default(),
+        Err(e) => AccountsAnswer::failed(format!("Couldn't save the accounts: {e}")),
     };
     let start_args = |list: &Accounts, username: String| {
         let script = list
@@ -158,7 +117,10 @@ fn act(root: &Path, ask: Ask) -> String {
     match ask {
         Ask::Start { username } => {
             let args = start_args(&list, username);
-            with_shell_actions(|shell| shell.open(args, None))
+            AccountsAnswer {
+                error: None,
+                actions: with_shell_actions(|shell| shell.open(args, None)),
+            }
         }
         Ask::StartMany { usernames } => {
             // One answer for all: each `open` adds its slot's actions, the last tab shown. A
@@ -167,16 +129,19 @@ fn act(root: &Path, ask: Ask) -> String {
                 .into_iter()
                 .map(|u| start_args(&list, u))
                 .collect();
-            with_shell_actions(|shell| {
-                all.into_iter()
-                    .flat_map(|args| shell.open(args, None))
-                    .collect()
-            })
+            AccountsAnswer {
+                error: None,
+                actions: with_shell_actions(|shell| {
+                    all.into_iter()
+                        .flat_map(|args| shell.open(args, None))
+                        .collect()
+                }),
+            }
         }
         Ask::AddToGroup { group, usernames } => {
             let group = group.trim();
             if group.is_empty() {
-                return json!({ "error": "Name the group" }).to_string();
+                return AccountsAnswer::failed("Name the group");
             }
             for username in &usernames {
                 list.add_to_group(group, username);
@@ -204,14 +169,13 @@ fn act(root: &Path, ask: Ask) -> String {
         } => {
             let username = username.trim().to_owned();
             if username.is_empty() {
-                return json!({ "error": "A username is needed" }).to_string();
+                return AccountsAnswer::failed("A username is needed");
             }
             let renamed = original
                 .as_deref()
                 .filter(|o| !o.eq_ignore_ascii_case(&username));
             if (original.is_none() || renamed.is_some()) && list.find(&username).is_some() {
-                return json!({ "error": format!("{username} is already in the list") })
-                    .to_string();
+                return AccountsAnswer::failed(format!("{username} is already in the list"));
             }
             let account = Account {
                 username: username.clone(),
@@ -257,7 +221,7 @@ fn act(root: &Path, ask: Ask) -> String {
             if let Some(password) = password.filter(|p| !p.is_empty())
                 && let Err(e) = accounts::save_password(&username, &password)
             {
-                return json!({ "error": format!("Couldn't keep the password: {e}") }).to_string();
+                return AccountsAnswer::failed(format!("Couldn't keep the password: {e}"));
             }
             saved(&list)
         }
@@ -269,7 +233,7 @@ fn act(root: &Path, ask: Ask) -> String {
             saved(&list)
         }
         Ask::Move { username, by } => {
-            list.shift(&username, by);
+            list.shift(&username, by as isize);
             saved(&list)
         }
         Ask::Launch {
@@ -286,8 +250,8 @@ fn act(root: &Path, ask: Ask) -> String {
 }
 
 /// The servers, fetched now, each with its ping once measured (measured in the background, at
-/// most once a minute): `[{name, line, online}]`. Blocks: called off the main thread.
-fn servers_view() -> Value {
+/// most once a minute). Blocks: called off the main thread.
+fn servers_view() -> ServersView {
     // The shell is every tab's window: a failure here must not take it down.
     let fetched = std::panic::catch_unwind(turu_bot::api::servers::fetch_list)
         .unwrap_or_else(|_| Err("the server list couldn't be read".into()));
@@ -295,25 +259,30 @@ fn servers_view() -> Value {
         Ok(servers) => {
             let pings = Pings::global();
             pings.measure_in_background(servers.clone());
-            Value::Array(
-                servers
+            ServersView {
+                servers: servers
                     .iter()
                     .map(|server| {
                         let name = server.name.trim();
-                        json!({
-                            "name": name,
-                            "line": ping::status_line(server, pings.get(name)),
-                            "online": server.online,
-                        })
+                        ServerRow {
+                            name: name.to_owned(),
+                            line: ping::status_line(server, pings.get(name)),
+                            online: server.online,
+                        }
                     })
                     .collect(),
-            )
+                error: None,
+            }
         }
-        Err(e) => json!({ "error": e }),
+        Err(e) => ServersView {
+            servers: Vec::new(),
+            error: Some(e.to_string()),
+        },
     }
 }
 
-/// `AccountsPanel.nativeAccounts()`: the account list as JSON.
+/// `AccountsPanel.nativeAccounts()`: the account list (an [`AccountsView`], `null` before the shell
+/// starts).
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_AccountsPanel_nativeAccounts<'local>(
     mut unowned_env: EnvUnowned<'local>,
@@ -321,15 +290,15 @@ pub extern "C" fn Java_com_muktiarafi_turu_AccountsPanel_nativeAccounts<'local>(
 ) -> JString<'local> {
     unowned_env
         .with_env(|env| -> jni::errors::Result<JString<'local>> {
-            let view = shell_root()
-                .map(|(root, tabs)| accounts_view(&root, &tabs, shell_streamer()))
-                .unwrap_or(Value::Null);
-            env.new_string(view.to_string())
+            let view =
+                shell_root().map(|(root, tabs)| accounts_view(&root, &tabs, shell_streamer()));
+            env.new_string(serde_json::to_string(&view).unwrap_or_else(|_| "null".into()))
         })
         .resolve::<ThrowRuntimeExAndDefault>()
 }
 
-/// `AccountsPanel.nativeAccountsDo(json)`: does what the panel asks; the activity's actions.
+/// `AccountsPanel.nativeAccountsDo(json)`: does what the panel asks (an `AccountsAsk`); an
+/// [`AccountsAnswer`].
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_AccountsPanel_nativeAccountsDo<'local>(
     mut unowned_env: EnvUnowned<'local>,
@@ -343,16 +312,17 @@ pub extern "C" fn Java_com_muktiarafi_turu_AccountsPanel_nativeAccountsDo<'local
                 (Ok(ask), Some((root, _))) => act(&root, ask),
                 (Err(e), _) => {
                     tracing::warn!("Accounts: a request I can't read: {e}");
-                    "[]".into()
+                    AccountsAnswer::failed(format!("Turu couldn't read the request: {e}"))
                 }
-                (_, None) => "[]".into(),
+                (_, None) => AccountsAnswer::default(),
             };
-            env.new_string(answer)
+            env.new_string(answer.json())
         })
         .resolve::<ThrowRuntimeExAndDefault>()
 }
 
-/// `AccountsPanel.nativeServers()`: the server list with pings, or `{"error": ...}`. Blocks.
+/// `AccountsPanel.nativeServers()`: the server list with pings, or why not (a [`ServersView`]).
+/// Blocks.
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_com_muktiarafi_turu_AccountsPanel_nativeServers<'local>(
     mut unowned_env: EnvUnowned<'local>,
@@ -360,7 +330,8 @@ pub extern "C" fn Java_com_muktiarafi_turu_AccountsPanel_nativeServers<'local>(
 ) -> JString<'local> {
     unowned_env
         .with_env(|env| -> jni::errors::Result<JString<'local>> {
-            env.new_string(servers_view().to_string())
+            let view = servers_view();
+            env.new_string(serde_json::to_string(&view).unwrap_or_default())
         })
         .resolve::<ThrowRuntimeExAndDefault>()
 }
