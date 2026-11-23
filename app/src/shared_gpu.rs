@@ -834,6 +834,7 @@ pub fn listen(got: impl Fn(u32, u64, Surface) + Send + 'static) -> Option<String
 
 #[cfg(unix)]
 mod unix {
+    use std::io::{Read, Write};
     use std::os::fd::AsRawFd;
     use std::os::unix::net::UnixStream;
 
@@ -881,7 +882,9 @@ mod unix {
         unsafe { libc::CMSG_SPACE(size_of::<libc::c_int>() as u32) as usize }
     }
 
-    /// Sends `fd` (duplicated into the receiver) with `header`.
+    /// Sends `fd` (duplicated into the receiver) with `header`. The stream carries one header after
+    /// another, so a header the kernel took only part of is finished: the next would be read out of
+    /// step otherwise.
     pub fn send(stream: &UnixStream, fd: i32, header: &Header) -> std::io::Result<()> {
         let mut bytes = header.to_bytes();
         let mut iov = libc::iovec {
@@ -890,7 +893,7 @@ mod unix {
         };
         let mut control = vec![0u8; control_len()];
         // SAFETY: a zeroed msghdr, filled with buffers that outlive the call.
-        unsafe {
+        let sent = unsafe {
             let mut message: libc::msghdr = std::mem::zeroed();
             message.msg_iov = &mut iov;
             message.msg_iovlen = 1;
@@ -901,11 +904,14 @@ mod unix {
             (*cmsg).cmsg_type = libc::SCM_RIGHTS;
             (*cmsg).cmsg_len = libc::CMSG_LEN(size_of::<libc::c_int>() as u32) as _;
             std::ptr::write_unaligned(libc::CMSG_DATA(cmsg).cast::<libc::c_int>(), fd);
-            if libc::sendmsg(stream.as_raw_fd(), &message, 0) < 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-        }
-        Ok(())
+            libc::sendmsg(stream.as_raw_fd(), &message, 0)
+        };
+        let Ok(sent) = usize::try_from(sent) else {
+            return Err(std::io::Error::last_os_error());
+        };
+        // The fd went with the first byte: the rest of the header follows without it.
+        let mut stream = stream;
+        stream.write_all(&bytes[sent.min(LEN)..])
     }
 
     /// The next fd and header; `None` when the client is gone.
@@ -933,20 +939,18 @@ mod unix {
                     .then(|| std::ptr::read_unaligned(libc::CMSG_DATA(cmsg).cast::<libc::c_int>()));
                 (read, fd)
             };
-            if read <= 0 {
-                return None;
-            }
-            match fd {
-                Some(fd) if read as usize == LEN => return Some((fd, Header::from_bytes(&bytes))),
-                Some(fd) => {
-                    // A torn message: its fd isn't kept.
+            let read = usize::try_from(read).ok().filter(|&read| read > 0)?;
+            if let Some(fd) = fd {
+                // A header split by the kernel: its fd came with the first part, the rest follows.
+                let mut stream = stream;
+                if read < LEN && stream.read_exact(&mut bytes[read..]).is_err() {
                     // SAFETY: an fd the kernel just gave this process.
                     unsafe { libc::close(fd) };
+                    return None;
                 }
-                None => {}
+                return Some((fd, Header::from_bytes(&bytes)));
             }
-            tracing::warn!("Shell: a surface message without its fd or header; ignored");
+            tracing::warn!("Shell: a surface message without its fd; ignored");
         }
     }
 }
-

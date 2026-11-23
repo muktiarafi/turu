@@ -43,10 +43,17 @@ impl std::fmt::Display for Freed {
             self.after.0,
             self.shapes,
             shapes + textures + heap,
-            if self.heap_waited { "" } else { "; the heap's pages go back in the background" },
+            if self.heap_waited {
+                ""
+            } else {
+                "; the heap's pages go back in the background"
+            },
         )?;
         if let Some((libraries, ms)) = self.libraries {
-            write!(f, "; before that, {libraries} loaded SWFs nothing used any more freed in {ms:.0} ms")?;
+            write!(
+                f,
+                "; before that, {libraries} loaded SWFs nothing used any more freed in {ms:.0} ms"
+            )?;
         }
         Ok(())
     }
@@ -227,9 +234,7 @@ pub(crate) fn memory_watch(player: &mut ruffle_core::Player) -> Option<LimitTrim
     // small, 3 minutes above `mugetsu::shape_store_mb`, 2 minutes above twice that. What is
     // on screen is drawn every picture and is never among them.
     if crate::mugetsu::shape_eviction_enabled()
-        && watch
-            .last_sweep
-            .is_none_or(|t| t.elapsed() >= Duration::from_secs(60))
+        && watch.last_sweep.is_none_or(|t| t.elapsed() >= Duration::from_secs(60))
     {
         watch.last_sweep = Some(Instant::now());
         let store_mb = (ruffle_render_wgpu::perf_counters::live().1.max(0) as u64) >> 20;
@@ -333,4 +338,3 @@ pub(crate) fn memory_watch(player: &mut ruffle_core::Player) -> Option<LimitTrim
     }
     limit_trim
 }
-

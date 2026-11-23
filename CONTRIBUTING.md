@@ -43,7 +43,7 @@ before merging:
 |---|---|---|
 | Rebased on main | branch contains `main`, no merge commits | `git rebase origin/main` |
 | Submodules pushed | `ruffle` and `scripts` point at commits on their branches (`aqw`, `main`) | push the submodule first |
-| Format | `bot/` and `android/` with `cargo fmt`, the UI windows with `max_width = 120` | see below |
+| Format | `bot/` and `android/` with `cargo fmt`, the UI windows and the app's own files with `max_width = 120` | see below |
 | Clippy | `turu_bot`, `turu_frontend`, `turu`, tests included; any warning fails, Ruffle's crates' too | see below |
 | Clippy (Android) | `turu_android` for arm64, with the crates it builds; any warning fails | see below (NDK, cargo-ndk, libclang: docs/ANDROID.md) |
 | Host SWF | `turu_host`: format, clippy, tests, and `bot/assets/turu.swf` built from `host/as3` | `cargo run -p turu_host -- --check` |
@@ -53,6 +53,8 @@ before merging:
 # Format: bot/ with cargo fmt; the UI windows with rustfmt (mod.rs formats them all; never cargo fmt -p turu)
 cargo fmt -p turu_bot -p turu_android
 rustfmt --edition 2024 --config max_width=120 egui_ui/src/gui/turu/mod.rs
+# The app's own files, by name (Ruffle's desktop files in app/ keep their layout; ci.yml lists them)
+rustfmt --edition 2024 --config max_width=120 app/src/{beep,client,crash_uploads,desktop_host,headless,linux,memory,shared_gpu,shared_surface,shell,shell_sockets,thread_perf}.rs
 
 # Clippy
 cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -D warnings -A clippy::redundant_clone

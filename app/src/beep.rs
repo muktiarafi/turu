@@ -17,9 +17,7 @@ pub fn beep() {
 }
 
 fn play() -> Result<(), Box<dyn std::error::Error>> {
-    let device = cpal::default_host()
-        .default_output_device()
-        .ok_or("no sound output")?;
+    let device = cpal::default_host().default_output_device().ok_or("no sound output")?;
     let supported = device.default_output_config()?;
     let format = supported.sample_format();
     let config = supported.config();

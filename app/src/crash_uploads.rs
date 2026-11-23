@@ -69,11 +69,7 @@ pub fn start() {
     let mut options = sentry::ClientOptions::default();
     options.dsn = dsn.trim().parse().ok();
     options.release = Some(Cow::Owned(format!("turu-desktop@{}", turu::VERSION)));
-    options.environment = Some(Cow::Borrowed(if cfg!(debug_assertions) {
-        "debug"
-    } else {
-        "release"
-    }));
+    options.environment = Some(Cow::Borrowed(if cfg!(debug_assertions) { "debug" } else { "release" }));
     options.send_default_pii = false;
     options.before_send = Some(Arc::new(|event| {
         if !ENABLED.load(Ordering::SeqCst) {
@@ -115,9 +111,7 @@ fn scrub(mut event: sentry::protocol::Event<'static>) -> sentry::protocol::Event
         return event;
     }
     match serde_json::to_string(&event) {
-        Ok(json) if json.contains(escaped) => {
-            serde_json::from_str(&json.replace(escaped, "~")).unwrap_or(event)
-        }
+        Ok(json) if json.contains(escaped) => serde_json::from_str(&json.replace(escaped, "~")).unwrap_or(event),
         _ => event,
     }
 }
@@ -294,8 +288,7 @@ mod tests {
     use super::*;
 
     fn folder(name: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("turu-crash-uploads-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("turu-crash-uploads-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -315,10 +308,7 @@ mod tests {
         write_report_in(&dir, PANIC_PREFIX, "Turu crashed (a panic)", "").unwrap();
         let first = take_unsent_in(&dir);
         assert_eq!(first.len(), 1);
-        assert_eq!(
-            first[0].summary,
-            "Turu crashed: exception 0xC0000005 in igvk64.dll"
-        );
+        assert_eq!(first[0].summary, "Turu crashed: exception 0xC0000005 in igvk64.dll");
         assert!(take_unsent_in(&dir).is_empty());
         // The crash list doesn't show the record of what was sent.
         assert_eq!(turu_frontend::crash_reports::list_in(&dir).len(), 2);

@@ -115,7 +115,9 @@ pub(crate) fn log_memory(player: &mut Player) {
     if let Some(n) = std::env::var("TURU_HEAP_CENSUS")
         .ok()
         .and_then(|n| n.parse::<u32>().ok())
-        && CENSUS_READINGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed).is_multiple_of(n.max(1))
+        && CENSUS_READINGS
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .is_multiple_of(n.max(1))
     {
         player.log_heap_census(150);
     }

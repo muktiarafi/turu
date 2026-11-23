@@ -14,9 +14,9 @@ use mach2::bootstrap::{bootstrap_check_in, bootstrap_look_up, bootstrap_port};
 use mach2::kern_return::KERN_SUCCESS;
 use mach2::mach_port::mach_port_deallocate;
 use mach2::message::{
-    MACH_MSG_TYPE_COPY_SEND, MACH_MSG_TYPE_MOVE_SEND, MACH_MSGH_BITS, MACH_MSGH_BITS_COMPLEX, MACH_RCV_MSG,
-    MACH_SEND_MSG, MACH_SEND_TIMEOUT, mach_msg, mach_msg_body_t, mach_msg_header_t, mach_msg_port_descriptor_t,
-    mach_msg_trailer_t,
+    MACH_MSG_PORT_DESCRIPTOR, MACH_MSG_TYPE_COPY_SEND, MACH_MSG_TYPE_MOVE_SEND, MACH_MSGH_BITS, MACH_MSGH_BITS_COMPLEX,
+    MACH_RCV_MSG, MACH_SEND_MSG, MACH_SEND_TIMEOUT, mach_msg, mach_msg_body_t, mach_msg_destroy, mach_msg_header_t,
+    mach_msg_port_descriptor_t, mach_msg_trailer_t,
 };
 use mach2::port::{MACH_PORT_NULL, mach_port_t};
 use mach2::traps::mach_task_self;
@@ -104,12 +104,19 @@ pub fn listen(got: impl Fn(u32, u64, Surface) + Send + 'static) -> Option<String
                     tracing::warn!("Shell: receiving a surface failed ({kr:#x})");
                     continue;
                 }
-                let message = &received.message;
-                let complex = message.header.msgh_bits & MACH_MSGH_BITS_COMPLEX != 0;
-                if message.header.msgh_id != MESSAGE_ID || !complex || message.body.msgh_descriptor_count != 1 {
+                let complex = received.message.header.msgh_bits & MACH_MSGH_BITS_COMPLEX != 0;
+                if received.message.header.msgh_id != MESSAGE_ID
+                    || !complex
+                    || received.message.body.msgh_descriptor_count != 1
+                    || received.message.port.type_ != MACH_MSG_PORT_DESCRIPTOR as u8
+                {
+                    // SAFETY: a message this task received and doesn't use: the rights and memory
+                    // it carries are released, not leaked.
+                    unsafe { mach_msg_destroy(&mut received.message.header) };
                     tracing::warn!("Shell: a Mach message that isn't a surface; ignored");
                     continue;
                 }
+                let message = &received.message;
                 let port = message.port.name;
                 let surface = IOSurfaceRef::lookup_from_mach_port(port);
                 // SAFETY: the send right the message moved to this task, no longer needed (the

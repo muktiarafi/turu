@@ -26,8 +26,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use turu_egui::client_screen::{ClientScreen, Picture};
 use turu_frontend::engine::{self, EngineEvent, STAGE};
-use turu_frontend::movie_texture::{Blit, MovieTexture};
 use turu_frontend::host::{Answer, FileDialog, Host};
+use turu_frontend::movie_texture::{Blit, MovieTexture};
 use turu_frontend::players::{Players, Slot};
 use turu_frontend::shell::{self, Answered, ClientEnd, FrameSender, ToClient, ToShell};
 use url::Url;
@@ -329,10 +329,9 @@ fn gpu_check() {
         return;
     };
     tracing::error!("The GPU stopped working ({why}); this tab's client ends, and the shell starts it again");
-    turu::bot()
-        .logs
-        .debug
-        .push(format!("Graphics: the GPU stopped working ({why}); the tab starts again"));
+    turu::bot().logs.debug.push(format!(
+        "Graphics: the GPU stopped working ({why}); the tab starts again"
+    ));
     crate::crash_uploads::gpu_lost(&why);
     // (Sent before the process ends, 2 s at most.)
     if let Some(client) = sentry::Hub::main().client() {
@@ -371,7 +370,10 @@ fn memory_tick(player: &mut ruffle_core::Player) {
         static LAST: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
     }
     let now = std::time::Instant::now();
-    if LAST.get().is_some_and(|last| now.duration_since(last) < Duration::from_secs(5)) {
+    if LAST
+        .get()
+        .is_some_and(|last| now.duration_since(last) < Duration::from_secs(5))
+    {
         return;
     }
     LAST.set(Some(now));
@@ -403,9 +405,14 @@ fn perf_tick(player: &mut ruffle_core::Player) {
             LAST.set(Some(now));
             crate::headless::log_memory(player);
             let shown = SCREEN.with_borrow_mut(|screen| {
-                screen
-                    .as_mut()
-                    .map(|screen| (screen.shown(), screen.fps(), screen.take_skipped(), screen.pacing_report()))
+                screen.as_mut().map(|screen| {
+                    (
+                        screen.shown(),
+                        screen.fps(),
+                        screen.take_skipped(),
+                        screen.pacing_report(),
+                    )
+                })
             });
             let fps_now = shown.as_ref().map_or(0.0, |(_, fps, ..)| *fps);
             if let Some((shown, fps, skipped, pacing)) = shown {
@@ -716,7 +723,10 @@ impl Host for ClientHost {
 
     fn set_memory_limit_mb(&self, mb: u32) {
         crate::mugetsu::set_memory_limit_mb(mb);
-        tracing::info!("Memory limit: {}", if mb == 0 { "off".to_string() } else { format!("{mb} MB") });
+        tracing::info!(
+            "Memory limit: {}",
+            if mb == 0 { "off".to_string() } else { format!("{mb} MB") }
+        );
     }
 
     fn memory_now_mb(&self) -> Option<u64> {

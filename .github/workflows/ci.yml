@@ -71,6 +71,15 @@ jobs:
       - name: Check the shell library's formatting
         run: cargo fmt -p turu_shell --check
 
+      # The app's own files (not cargo fmt -p turu: Ruffle's desktop files keep their layout), at
+      # 120 columns as the UI windows.
+      - name: Check the app's own files' formatting
+        run: |
+          for file in beep client crash_uploads desktop_host headless linux memory shared_gpu \
+            shared_surface shell shell_sockets thread_perf; do
+            rustfmt --edition 2024 --config max_width=120 --check "app/src/$file.rs"
+          done
+
       # Formatted on any system, though it builds only for Android.
       - name: Check the Android library's formatting
         run: cargo fmt -p turu_android --check
