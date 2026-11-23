@@ -3,11 +3,11 @@
 //! notice the first time Turu starts after a new one.
 
 use super::files::SaveText;
-use super::theme::{MUTED, WARNING};
+use super::theme::MUTED;
 use super::widgets::{self, Kind, LogView};
-use crate::crash_reports::{self, Report};
+use crate::crash_reports;
 use crate::models::crashes::{self, CrashRow, CrashText};
-use egui::{Align, Color32, Context, Frame, Layout, Margin, Modal, RichText, ScrollArea, TextStyle, Ui, vec2};
+use egui::{Align, Context, Layout, RichText, ScrollArea, Ui, vec2};
 use std::sync::Arc;
 use turu_bot::log::{LogBuffer, LogLine};
 
@@ -114,10 +114,10 @@ impl LogsWindow {
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
     }
 
-    /// Opens on the Crashes tab with `report` chosen.
-    fn show_report(&mut self, report: &Report) {
+    /// Opens on the Crashes tab with the report `name` chosen (the crash notice's Show report).
+    pub fn show_report(&mut self, name: &str) {
         self.tab = Tab::Crashes;
-        self.crashes.selected = Some(report.name.clone());
+        self.crashes.selected = Some(name.to_owned());
         self.crashes.listed_at = None;
     }
 
@@ -268,164 +268,4 @@ impl Crashes {
     }
 }
 
-/// "Turu closed unexpectedly" the first time Turu starts after a new crash report, with a way
-/// to the report (Logs > Crashes, where Share is).
-pub fn show_crash_notice(ctx: &Context, logs_open: &mut bool, logs: &mut LogsWindow) {
-    let unseen = crate::models::prompts::unseen_crashes();
-    let Some(newest) = unseen.first().cloned() else {
-        return;
-    };
-    // One box at a time: the script's own first; a native shell shows it itself.
-    if crate::turu::bot().scripts.message_box().is_some() || crate::models::prompts::native_shown() {
-        return;
-    }
-    let more = unseen.len() - 1;
-    // "Turu", or "Turu Mas".
-    let app = turu_bot::updates::app_name();
-    let (clicked, close) = dialog(
-        ctx,
-        "turu_crash_notice",
-        &format!("{app} closed unexpectedly"),
-        |ui| {
-            ui.label(RichText::new(&newest.summary).color(WARNING));
-            if more > 0 {
-                ui.label(RichText::new(format!("And {more} more since the last notice.")).color(MUTED));
-            }
-            ui.add_space(6.0);
-            ui.label(
-                RichText::new(format!(
-                    "Diagnostics > Logs > Crashes has the report. Share it with whoever helps you with {app}."
-                ))
-                .size(widgets::small_label_size() + 1.0)
-                .color(MUTED),
-            );
-        },
-        ["Close", "Show report"],
-    );
-    if clicked.is_some() || close {
-        crate::models::prompts::answer_crashes();
-        if clicked == Some(1) {
-            *logs_open = true;
-            logs.show_report(&newest);
-        }
-    }
-}
-
-/// "Send crash reports automatically?", once: where the build can send them and the user hasn't
-/// answered (`models::prompts::crash_uploads_waiting`). After the crash notice, and never over a
-/// script's message box. Closing it without an answer asks again at the next start; Options >
-/// Application has the switch. A native shell shows it itself (`models::prompts`).
-pub fn show_crash_upload_question(ctx: &Context) {
-    let bot = crate::turu::bot();
-    if crate::models::prompts::native_shown()
-        || !crate::models::prompts::unseen_crashes().is_empty()
-        || bot.scripts.message_box().is_some()
-        || !crate::models::prompts::crash_uploads_waiting(&bot)
-    {
-        return;
-    }
-    let question = crate::models::prompts::crash_upload_question();
-    // Turu Mas asks with Android's own dialog, once a run; it answers through
-    // `answer_crash_upload_question`.
-    if crate::host::host().ask_crash_uploads(&question) {
-        answer_crash_upload_question(None);
-        return;
-    }
-    let (clicked, close) = dialog(
-        ctx,
-        "turu_crash_upload_question",
-        &question.title,
-        |ui| {
-            ui.label(&question.message);
-            ui.add_space(6.0);
-            ui.label(
-                RichText::new(&question.note)
-                    .size(widgets::small_label_size() + 1.0)
-                    .color(MUTED),
-            );
-            // The AIR SDK's license (section 6.4) wants the policy linked in the app: Turu Mas.
-            ui.add_space(6.0);
-            if ui.link(&question.link).clicked() {
-                crate::host::host().open_url(&question.link_url);
-            }
-        },
-        [question.no.as_str(), question.yes.as_str()],
-    );
-    match clicked {
-        Some(i) => answer_crash_upload_question(Some(i == 1)),
-        None if close => answer_crash_upload_question(None),
-        None => {}
-    }
-}
-
 pub use crate::models::prompts::answer_crash_upload_question;
-
-/// The crash dialogs' layout, for a desktop window and a phone alike: as wide as the text reads
-/// well (400 points) but never wider than the screen less a margin, room around the text, the
-/// text scrolling when the screen is short (a phone held sideways), and `buttons` (the second
-/// is the main one) side by side on the right, or stacked full width with the main one on top
-/// when they don't fit. Returns the button clicked, and whether the dialog was closed without
-/// one (Escape, Back, a click outside).
-fn dialog(
-    ctx: &Context,
-    id: &str,
-    heading: &str,
-    body: impl FnOnce(&mut Ui),
-    buttons: [&str; 2],
-) -> (Option<usize>, bool) {
-    let screen = ctx.content_rect();
-    let touch = widgets::touch();
-    let margin: f32 = if touch { 24.0 } else { 20.0 };
-    // Off the screen's edges by at least this much.
-    let edge = 16.0;
-    let width = (screen.width() - 2.0 * (edge + margin)).clamp(200.0, 400.0);
-    let button_height = widgets::target(28.0, 44.0);
-    let frame = Frame::popup(&ctx.global_style()).inner_margin(Margin::same(margin as i8));
-    let mut clicked = None;
-    let response = Modal::new(egui::Id::new(id)).frame(frame).show(ctx, |ui| {
-        ui.set_width(width);
-        ui.label(RichText::new(heading).heading().strong());
-        ui.add_space(10.0);
-        // What the screen leaves for the text once the heading and the buttons (stacked, at
-        // worst) have their room.
-        let chrome = 2.0 * (edge + margin) + 40.0 + 2.0 * button_height + 32.0;
-        ScrollArea::vertical()
-            .max_height((screen.height() - chrome).max(64.0))
-            .show(ui, |ui| {
-                ui.set_width(width);
-                body(ui);
-            });
-        ui.add_space(if touch { 20.0 } else { 16.0 });
-        let spacing = ui.spacing().item_spacing.x;
-        let font = TextStyle::Button.resolve(ui.style());
-        let padding = 2.0 * ui.spacing().button_padding.x.max(if touch { 16.0 } else { 12.0 });
-        let min_width = if touch { 96.0 } else { 80.0 };
-        let widths = buttons.map(|label| {
-            let text = ctx.fonts_mut(|f| {
-                f.layout_no_wrap(label.to_owned(), font.clone(), Color32::WHITE)
-                    .size()
-                    .x
-            });
-            (text + padding).max(min_width)
-        });
-        if widths[0] + widths[1] + spacing <= width {
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                for i in [1, 0] {
-                    let kind = if i == 1 { Kind::Primary } else { Kind::Normal };
-                    if widgets::button(ui, buttons[i], kind, true, vec2(widths[i], button_height), "").clicked() {
-                        clicked = Some(i);
-                    }
-                }
-            });
-        } else {
-            ui.spacing_mut().item_spacing.y = 8.0;
-            for i in [1, 0] {
-                let kind = if i == 1 { Kind::Primary } else { Kind::Normal };
-                if widgets::button(ui, buttons[i], kind, true, vec2(width, button_height), "").clicked() {
-                    clicked = Some(i);
-                }
-            }
-        }
-    });
-    (clicked, clicked.is_none() && response.should_close())
-}

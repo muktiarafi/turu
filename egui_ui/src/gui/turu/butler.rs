@@ -4,7 +4,7 @@
 //! The roster is read from the sync files once a second. Summon and release only change this
 //! client's state; Follow waits for a previous follow to end, and Send to player calls the
 //! game, so both run off the UI thread.
-//! [`show_suspend_notice`] asks what to do when a script starts while following.
+//! Its "a script started while following" is one of `models::prompts` (drawn by `prompt.rs`).
 //!
 //! On a touch screen (Android) it's a full-screen sheet when the window would not fit, with
 //! finger-sized Follow/Summon buttons and roomier roster rows.
@@ -15,14 +15,14 @@ use crate::models::butler as model;
 use crate::models::form::{KindView, OptionValue};
 use crate::models::scheduler::Tint;
 use egui::{
-    Align, Color32, ComboBox, Context, CornerRadius, Frame, Key, Label, Layout, Margin, Modal, Popup,
-    PopupCloseBehavior, RectAlign, RichText, ScrollArea, Stroke, TextEdit, TextStyle, TextWrapMode, Ui, vec2,
+    Align, Color32, ComboBox, Context, CornerRadius, Frame, Key, Label, Layout, Margin, Popup, PopupCloseBehavior,
+    RectAlign, RichText, ScrollArea, Stroke, TextEdit, TextStyle, TextWrapMode, Ui, vec2,
 };
 use std::sync::Arc;
 use turu_bot::Bot;
+use turu_bot::butler;
 use turu_bot::butler::debug_log::{Level, LogLine};
 use turu_bot::butler::sync::SyncData;
-use turu_bot::butler::{self, SuspendNotice};
 
 /// The height of Butler's buttons: finger-sized on a touch screen.
 fn control_height() -> f32 {
@@ -498,43 +498,6 @@ impl ButlerWindow {
 
 fn level_color(level: Level) -> Color32 {
     tint_color(model::level_tint(level))
-}
-
-/// "A script started while following" (VibeSkua ButlerV5 `ShowSuspendNotice`), for the active
-/// tab, over the other windows: Yes keeps the follow suspended until the script stops (as does
-/// closing the box), No stops following.
-pub fn show_suspend_notice(ctx: &Context) {
-    let bot = crate::turu::bot();
-    // One question at a time: the script's own box first; a native shell shows it itself.
-    if bot.scripts.message_box().is_some() || crate::models::prompts::native_shown() {
-        return;
-    }
-    let Some(notice) = bot.butler.suspend_notice() else {
-        return;
-    };
-    let mut answer = None;
-    let response = Modal::new(egui::Id::new(("turu_butler_notice", notice.id))).show(ctx, |ui| {
-        ui.set_min_width(300.0);
-        ui.set_max_width(420.0);
-        ui.heading(SuspendNotice::CAPTION);
-        ui.label(notice.message());
-        ui.add_space(4.0);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if widgets::button(ui, "Yes", Kind::Primary, true, vec2(72.0, 28.0), "").clicked() {
-                answer = Some(true);
-            }
-            if widgets::button(ui, "No", Kind::Normal, true, vec2(72.0, 28.0), "").clicked() {
-                answer = Some(false);
-            }
-        });
-    });
-    if answer.is_none() && response.should_close() {
-        answer = Some(true);
-    }
-    if let Some(keep_suspended) = answer {
-        // Only flags: no game call, no wait.
-        butler::answer_suspend(&bot, notice.id, keep_suspended);
-    }
 }
 
 /// A small outlined label next to a name.

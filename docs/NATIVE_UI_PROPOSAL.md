@@ -64,7 +64,7 @@ The steps, with their state:
 | Checkpoint | Go on to native bot windows, or stop at L5a | Owner, after L5a |
 | L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | Built 2026-11-23: the split (`turu_egui`), `Platform` renamed `Host`, the `Client` handle |
 | L2 | View models in the client, by feature | Pilot and the Android windows' models done 2026-11-20 |
-| L3 | Questions, dialogs and alerts as events with an ID and an answer | After the checkpoint |
+| L3 | Questions, dialogs and alerts as events with an ID and an answer | Built 2026-11-23, but the link's own answers |
 | L4 | Generated types for Kotlin and Swift in CI; `turu_ffi` for macOS | Kotlin done 2026-11-20 (Android build); Swift with L6 |
 | L5b | Android: navigation and the daily features in Compose | Built 2026-11-20 (emulator); on `main` since 2026-11-22 |
 | L6, L7 | macOS: the game view behind a native window, then the app | After the checkpoint |
@@ -765,6 +765,43 @@ own dialog, for any tab, naming it.
 
 **Done when** egui polls nothing but models and the event stream, and a test with no UI answers a
 script's message box and options request.
+
+#### L3 as built (2026-11-23)
+
+Most of it was in place: `models::prompts` (since 2026-11-21, "Engine dialogs" under L4 and L5b)
+gives each engine dialog an ID and one `answer(id, button)`, Android's shell shows them, and the
+prompts' revision on `/events` is the stream a shell follows. What L3 added, in the scope the
+owner chose (2026-11-23):
+
+* **egui draws them from the model.** One dialog (`egui_ui/src/gui/turu/prompt.rs`) shows
+  `prompts::current` for the tab on screen and answers through `prompts::answer_prompt`, in the
+  model's order, as a native shell does; the five dialogs that each read their own source went
+  (`message_box.rs`, `graphics_tips.rs`, Butler's notice, the crash notice and "Send crash
+  reports?" in `logs.rs`, the Tab Limit's in `tab_limit.rs`). What an answer opens comes back
+  typed (`PromptAnswer`: Logs > Crashes on a report, Application Options at Tab Limit). Turu Mas
+  still asks "Send crash reports?" with Android's dialog (`Host::ask_crash_uploads`). One look
+  changed: the crash notice's first line is no longer amber (the model's text has no colour).
+* **The Script Options request is a question.** `client::Client::question(tab)` gives what a tab
+  waits on, a prompt first, else the script's request for its options (`options:<n>`);
+  `Client::answer(tab, id, button)` answers either, Save being the options' button 1. The
+  request is answered without a window: `script_options::answer_request`, and the model's Save
+  and Cancel take the waiting request (`adopt_request`) when no window followed it, so a native
+  page or a test can't leave the script waiting.
+* **The test** `client::tests::a_script_s_questions_are_answered_without_a_window` runs a script
+  that shows a message box and asks for its options, answers both through `Client` with no UI,
+  and checks the script went on with the answers.
+
+Checked: the tests, clippy, the Android app's and Turu Mas's crates for arm64, and the app on
+macOS with a made-up crash report: the notice drawn by the new dialog, and Show report opening
+Logs > Crashes on it. Not checked: the message box, Butler's notice, the Tab Limit and the tips
+in the desktop app (the same dialog draws them; the test answers a message box without it), and
+the Android and Turu Mas apps run.
+
+Not done, as the owner chose: the link's own answers (`Answer { id, value }` for the shell's file
+dialogs, `DocumentPicked`, `DocumentCreated`, `Installed`) stay as they are. They answer the
+shell's dialogs, not the engine's questions; folding them in changes the link and Android's
+Kotlin and JNI. egui still reads a few engine states for display (the bar's "waits" chip,
+`bot.scripts.waits_for`), which are status, not questions.
 
 ### L4: Generated types and `turu_ffi` (M, after the checkpoint)
 

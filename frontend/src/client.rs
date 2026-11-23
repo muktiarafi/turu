@@ -12,7 +12,8 @@
 //! actions (`<Name>Act`) and [`Client::view`] answers the view as the control API does
 //! (`{revision, view}`), so a front, a test or a later binding can drive a feature without HTTP.
 
-use crate::models::{Model, ModelActs};
+use crate::models::prompts::{self, PromptAnswer, PromptView};
+use crate::models::{Model, ModelActs, script_options};
 use crate::turu::{self, TabId, TabRequest};
 use serde_json::Value;
 use std::sync::Arc;
@@ -28,6 +29,30 @@ pub struct Client {
 /// The process's client.
 pub fn client() -> Client {
     Client { _one: () }
+}
+
+/// What a tab waits for the user to answer (docs/NATIVE_UI_PROPOSAL.md, L3), each with an ID an
+/// answer names, so an answer to one already gone does nothing ([`Client::question`],
+/// [`Client::answer`]).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Question {
+    /// A dialog (`models::prompts`): a script's message box, Butler's notice, the crash notice,
+    /// "Send crash reports?", the Tab Limit, a graphics tip. Answered with one of its buttons.
+    Prompt(PromptView),
+    /// The script waits for its options (`bot.config.configure()`): edited with
+    /// `ScriptOptionsAct::Open` and `Set` ([`Client::act`]), answered with Save (button 1) or
+    /// Cancel (0, or none).
+    ScriptOptions { id: String },
+}
+
+impl Question {
+    /// Its ID, for [`Client::answer`].
+    pub fn id(&self) -> &str {
+        match self {
+            Question::Prompt(prompt) => &prompt.id,
+            Question::ScriptOptions { id } => id,
+        }
+    }
 }
 
 /// A model's view as the control API answers it: what it shows now, and a revision that moves
@@ -146,6 +171,40 @@ impl Client {
     }
 }
 
+impl Client {
+    /// What `tab` waits for the user to answer, the most pressing first: a dialog (the script's
+    /// message box before the rest), else the script's request for its options. Reading it takes
+    /// nothing from the windows: an egui window still opens for it.
+    pub fn question(self, tab: TabId) -> Option<Question> {
+        let bot = self.tab_bot(tab)?;
+        if let Some(prompt) = prompts::current(&bot) {
+            return Some(Question::Prompt(prompt));
+        }
+        script_options::request_id(&bot).map(|id| Question::ScriptOptions { id })
+    }
+
+    /// Answers `tab`'s question `id` with `button` (its index; none when closed without one):
+    /// what the answer asks the windows to open. An answer to a question already gone does
+    /// nothing.
+    pub fn answer(
+        self,
+        tab: TabId,
+        id: &str,
+        button: Option<usize>,
+    ) -> Result<PromptAnswer, String> {
+        let bot = self.tab_bot(tab).ok_or("no such tab")?;
+        if id.starts_with("options:") {
+            script_options::answer_request(&bot, id, button == Some(1))?;
+            return Ok(PromptAnswer {
+                window: String::new(),
+                open: String::new(),
+                report: String::new(),
+            });
+        }
+        prompts::answer_prompt(&bot, id, button)
+    }
+}
+
 /// The models' routes are added once, whether or not a control API runs (`turu::start_api` adds
 /// them too).
 fn registered() {
@@ -168,6 +227,104 @@ fn answered(status: u16, body: Value) -> Result<Value, String> {
 mod tests {
     use super::*;
     use crate::models::scripts::ScriptsAct;
+
+    /// Answers the few game calls a script makes, as `bot/tests/runtime.rs`'s fake does.
+    struct FakeGame;
+
+    impl turu_bot::FlashHost for FakeGame {
+        fn call(
+            &self,
+            name: &str,
+            args: Vec<turu_bot::FlashArg>,
+        ) -> Result<String, turu_bot::HostError> {
+            if let Some(answer) =
+                turu_bot::testing::batched(name, &args, |n, a| self.call(n, a).unwrap_or_default())
+            {
+                return Ok(answer);
+            }
+            Ok(if name == "isLoggedIn" { "true" } else { "null" }.into())
+        }
+    }
+
+    fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
+        let start = std::time::Instant::now();
+        while !done() {
+            assert!(
+                start.elapsed() < std::time::Duration::from_secs(10),
+                "{what}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    /// L3's "done when": with no UI at all, a script's message box and its request for options
+    /// are answered through the client, and the script goes on with what was answered.
+    #[test]
+    fn a_script_s_questions_are_answered_without_a_window() {
+        use crate::models::form::OptionValue;
+        use crate::models::script_options::ScriptOptionsAct;
+        use turu_bot::script::options::MAIN;
+        let dir =
+            std::env::temp_dir().join(format!("turu-client-questions-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        turu_bot::paths::set_default_root(dir.join("data"));
+        let script = dir.join("asks.ts");
+        std::fs::write(
+            &script,
+            r#"import { bot, defineScriptOptions, option } from "turu";
+export const scriptOptions = defineScriptOptions("Questwalker", [option.bool("On", "On", "")], true);
+export default function main(): void {
+    const picked = bot.showMessageBox("Pick one", "Questwalker asks", "No", "Yes");
+    bot.log(`picked ${picked.value}`);
+    bot.config.configure();
+    bot.log(`on ${bot.config.get("On")}`);
+}
+"#,
+        )
+        .unwrap();
+        let (tab, bot) = turu::add_tab(Startup::default());
+        bot.set_host(Some(Arc::new(FakeGame)));
+        bot.scripts.set_interactive(true);
+        bot.scripts.load(&script);
+        turu_bot::script::start(&bot).unwrap();
+
+        // The message box: a prompt, answered Yes.
+        wait_for("no message box", || {
+            matches!(client().question(tab), Some(Question::Prompt(_)))
+        });
+        let Some(Question::Prompt(asked)) = client().question(tab) else {
+            unreachable!()
+        };
+        assert_eq!(
+            (asked.title.as_str(), asked.buttons.len()),
+            ("Questwalker asks", 2)
+        );
+        assert!(
+            client().answer(tab, "box:stale", Some(0)).is_ok(),
+            "a stale answer does nothing"
+        );
+        client().answer(tab, &asked.id, Some(1)).unwrap();
+
+        // The options: edited in the model, then Save.
+        wait_for("no options request", || {
+            matches!(client().question(tab), Some(Question::ScriptOptions { .. }))
+        });
+        let question = client().question(tab).unwrap();
+        client().act(tab, &ScriptOptionsAct::Open).unwrap();
+        let on = ScriptOptionsAct::Set {
+            category: MAIN.into(),
+            name: "On".into(),
+            value: OptionValue::Switch(true),
+        };
+        client().act(tab, &on).unwrap();
+        client().answer(tab, question.id(), Some(1)).unwrap();
+
+        wait_for("the script didn't go on", || !bot.scripts.is_running());
+        let log = bot.logs.script.text();
+        assert!(log.contains("picked 1") && log.contains("on true"), "{log}");
+        assert_eq!(client().question(tab), None);
+        turu::remove_tab(tab);
+    }
 
     #[test]
     fn every_copy_is_the_same_client() {

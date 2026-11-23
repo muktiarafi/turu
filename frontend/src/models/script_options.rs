@@ -82,6 +82,21 @@ impl State {
         }
     }
 
+    /// Takes the script's waiting request as the one the editor answers, when it hasn't yet (no
+    /// window followed it: a native page, a test, `client::Client::answer`), so Save and Cancel
+    /// let the script go on. Not while a queued entry's options are edited: those aren't the
+    /// script's.
+    pub fn adopt_request(&mut self, bot: &Bot) {
+        if self.queued {
+            return;
+        }
+        let pending = bot.scripts.configure_request();
+        if pending.is_some() && self.request != pending {
+            self.request = pending;
+            self.error = None;
+        }
+    }
+
     /// The loaded script's options as the draft, when none is being edited; a draft left from a
     /// script no longer loaded (another was loaded since) is dropped. A queued entry's stays.
     pub fn ensure_draft(&mut self, bot: &Bot) {
@@ -183,6 +198,34 @@ impl State {
             file: self.gear.as_ref(),
             reading: self.asked_gear && bot.gear.logged_in(),
         }
+    }
+}
+
+/// The script's waiting request for its options as a question's ID (`options:<n>`), if it waits.
+pub fn request_id(bot: &Bot) -> Option<String> {
+    bot.scripts.configure_request().map(|n| format!("options:{n}"))
+}
+
+/// Answers the script's request `id`: Save (the draft being edited, or the options as they are)
+/// or Cancel; either way the script goes on. An answer to a request already gone does nothing.
+pub fn answer_request(bot: &Arc<Bot>, id: &str, save: bool) -> Result<(), String> {
+    if request_id(bot).as_deref() != Some(id) {
+        return Ok(());
+    }
+    let state = STATE.of(bot);
+    let mut s = lock(&state);
+    if s.queued {
+        // A queued entry's options were open in the editor: the script's come first.
+        s.queued = false;
+        s.draft = None;
+    }
+    s.adopt_request(bot);
+    if save {
+        s.ensure_draft(bot);
+        s.save(bot)
+    } else {
+        s.close(bot);
+        Ok(())
     }
 }
 
@@ -766,8 +809,14 @@ pub fn act(bot: &Arc<Bot>, act: ScriptOptionsAct) -> Result<(), String> {
                 draft.reset();
             }
         }
-        ScriptOptionsAct::Save => s.save(bot)?,
-        ScriptOptionsAct::Cancel => s.close(bot),
+        ScriptOptionsAct::Save => {
+            s.adopt_request(bot);
+            s.save(bot)?;
+        }
+        ScriptOptionsAct::Cancel => {
+            s.adopt_request(bot);
+            s.close(bot);
+        }
         ScriptOptionsAct::Leave => s.leave(bot),
     }
     Ok(())

@@ -100,7 +100,7 @@ up; closing it without an answer asks again at the next start.
   with the link as a text button. Each slot keeps its own copy of the settings, so a slot reads
   `sendCrashReports` from `settings.json` (every 3 s while it would ask) and takes up an answer
   another tab gave, uploads included, instead of asking again.
-* **Turu Mas**: `show_crash_upload_question` (`logs.rs`) calls `Host::ask_crash_uploads`, and
+* **Turu Mas**: egui's prompt dialog (`prompt.rs`) calls `Host::ask_crash_uploads` for it, and
   `CrashQuestion.kt` (shared) shows an `AlertDialog`; it has AIR's focus while it's up: acceptable
   once, at first start.
 * **The desktop**: egui asks.

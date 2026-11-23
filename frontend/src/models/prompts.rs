@@ -413,17 +413,23 @@ pub struct PromptAnswer {
     pub report: String,
 }
 
-fn answered(window: &str, open: &str, report: String) -> Result<Json, String> {
-    serde_json::to_value(PromptAnswer {
+fn answered(window: &str, open: &str, report: String) -> Result<PromptAnswer, String> {
+    Ok(PromptAnswer {
         window: window.to_owned(),
         open: open.to_owned(),
         report,
     })
-    .map_err(|e| e.to_string())
 }
 
-/// Answers the prompt `id` with `button`: a [`PromptAnswer`].
+/// Answers the prompt `id` with `button`, as [`answer_prompt`] does: its answer as the control
+/// API gives it.
 pub fn answer(bot: &Arc<Bot>, id: &str, button: Option<usize>) -> Result<Json, String> {
+    serde_json::to_value(answer_prompt(bot, id, button)?).map_err(|e| e.to_string())
+}
+
+/// Answers the prompt `id` with `button` (its index; none when closed without one). Only the
+/// prompt still waiting is answered: an answer to one already gone does nothing.
+pub fn answer_prompt(bot: &Arc<Bot>, id: &str, button: Option<usize>) -> Result<PromptAnswer, String> {
     // Only the prompt still waiting: an answer to one already gone does nothing.
     let Some(now) = current(bot) else {
         return answered("", "", String::new());

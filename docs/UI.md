@@ -243,9 +243,13 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   Opened from Scripts > Edit Script Options or the Script Loader's button, and by itself when the
   script asks (on Start unless it sets `dontPreconfigure`, or `bot.config.configure()`): the script
   waits until Save or Cancel, and Stop closes it.
-* **Message boxes** (`message_box.rs`): what a script shows with `bot.showMessageBox`, as an egui
-  modal over the windows (caption, message, the buttons left to right, the last one primary).
+* **Message boxes and the engine's other questions** (`prompt.rs`, over `models::prompts`): what a
+  script shows with `bot.showMessageBox`, Butler's "a script started while following", the crash
+  notice, "Send crash reports?", the Tab Limit's notice and the graphics tips, one at a time in
+  that order, as an egui modal over the windows (title, text scrolling when long, a small note, a
+  link, the buttons left to right, the last one primary; stacked full width when they don't fit).
   The script waits for the click; Escape or a click outside answers "closed", and Stop closes it.
+  A native shell shows the same ones (Android's `PromptsHost`), and egui leaves them to it.
 * **Game options** (`game_options.rs`, 612x720): search box, chips All/Visuals/Combat/Drops/
   Relogin/Gameplay, the five sections with the fields of `BotOptions` (switches, number boxes,
   text boxes, Relogin Server and Hunt Priority combos, a Reload Map button), each with a one-line

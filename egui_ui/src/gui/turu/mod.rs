@@ -22,7 +22,6 @@ mod files;
 mod game_options;
 mod gear;
 mod grabber;
-mod graphics_tips;
 mod grid_overlay;
 mod hotkeys;
 mod hotkeys_window;
@@ -31,13 +30,13 @@ mod junk_items;
 mod loader;
 mod loadouts;
 mod logs;
-mod message_box;
 pub mod native_field;
 mod nav_bar;
 mod notifications;
 mod notify_drop;
 mod packet_filters;
 mod packet_logger;
+mod prompt;
 mod runtime;
 mod scheduler;
 mod script_loader;
@@ -533,9 +532,6 @@ impl TuruUi {
         tab.skills.show(ctx, &mut w.skills);
         tab.notifications.show(ctx, &mut w.notifications);
         tab.logs.show(ctx, &mut w.logs);
-        // A modal: over the windows whatever the order.
-        logs::show_crash_notice(ctx, &mut w.logs, &mut tab.logs);
-        logs::show_crash_upload_question(ctx);
         tab.console.show(ctx, &mut w.console);
         tab.packet_logger.show(ctx, &mut w.packet_logger);
         tab.spammer.show(ctx, &mut w.spammer);
@@ -587,16 +583,21 @@ impl TuruUi {
             }
             ctx.request_repaint();
         }
-        // Last, so the script's message box sits over the other windows.
-        message_box::show(ctx);
-        graphics_tips::show(ctx);
-        butler::show_suspend_notice(ctx);
-        if tab_limit::show(ctx) {
-            let tab = self.active();
-            tab.application_options.find("Tab Limit");
-            tab.windows.application_options = true;
-            let id = egui::Id::new(("turu_window", "Application Options"));
-            ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, id));
+        // Last, so what the engine asks sits over the other windows (`models::prompts`).
+        match prompt::show(ctx) {
+            Some(prompt::Opens::TabLimit) => {
+                let tab = self.active();
+                tab.application_options.find("Tab Limit");
+                tab.windows.application_options = true;
+                let id = egui::Id::new(("turu_window", "Application Options"));
+                ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, id));
+            }
+            Some(prompt::Opens::CrashReport(name)) => {
+                let tab = self.active();
+                tab.logs.show_report(&name);
+                tab.windows.logs = true;
+            }
+            None => {}
         }
     }
 
