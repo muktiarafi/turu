@@ -7,10 +7,55 @@
 //! other tabs (each in a process of its own: `turu::start_headless_mode_sync` reaches only this
 //! process's).
 
-use crate::shell::{TabGame, TabInfo, ToShell};
+use crate::shell::{Answered, TabGame, TabInfo, ToShell};
 use crate::turu;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+/// What to do with a request's answer.
+type Then = Box<dyn FnOnce(Answered) + Send>;
+
+/// The requests made of the shell that wait for its answer (a file dialog, a picker, the
+/// installer), by ID (docs/NATIVE_UI_PROPOSAL.md, L3).
+static ASKED: Mutex<Option<HashMap<u32, Then>>> = Mutex::new(None);
+static NEXT_ID: AtomicU32 = AtomicU32::new(1);
+
+/// Asks the shell for something it answers ([`ToShell::FileDialog`], `PickFile`, `SaveFile`,
+/// `Install`): `send` sends the request with the ID it's given, and `then` gets the answer
+/// ([`answered`]). The ID.
+pub fn ask(send: impl FnOnce(u32), then: impl FnOnce(Answered) + Send + 'static) -> u32 {
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    ASKED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert(id, Box::new(then));
+    send(id);
+    id
+}
+
+/// The shell's answer to request `id` ([`ToClient::Answer`](crate::shell::ToClient::Answer)):
+/// handed to what asked. An answer to no request waiting (one answered already, or of a client
+/// before a restart) does nothing; false then.
+pub fn answered(id: u32, answer: Answered) -> bool {
+    let then = ASKED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_mut()
+        .and_then(|asked| asked.remove(&id));
+    match then {
+        Some(then) => {
+            then(answer);
+            true
+        }
+        None => {
+            tracing::debug!("An answer to request {id}, which nothing waits for");
+            false
+        }
+    }
+}
 
 /// Sends a message to the shell (dropped while there's none).
 pub type Sender = Arc<dyn Fn(ToShell) + Send + Sync>;
@@ -202,4 +247,24 @@ pub fn set_held(why: Option<String>) {
 /// A new shell is listening: the next status report goes even if nothing changed.
 pub fn resend_status() {
     *RESEND.lock().unwrap_or_else(|e| e.into_inner()) = true;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_answer_reaches_its_request_once() {
+        let (got, seen) = std::sync::mpsc::channel();
+        let mut sent = None;
+        let id = ask(|id| sent = Some(id), move |answer| got.send(answer).unwrap());
+        assert_eq!(sent, Some(id));
+        let answer = Answered::Path {
+            path: Some("/scripts/Questwalker.ts".into()),
+        };
+        assert!(answered(id, answer.clone()));
+        assert_eq!(seen.recv().unwrap(), answer);
+        assert!(!answered(id, Answered::Path { path: None }), "answered once");
+        assert!(!answered(u32::MAX, Answered::Path { path: None }), "no such request");
+    }
 }

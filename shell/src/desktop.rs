@@ -66,7 +66,8 @@ use turu_bot::monitor::hub::PeerSource;
 use turu_frontend::blit::Blit;
 use turu_frontend::gpu_waiter::GpuWaiter;
 use turu_frontend::shell::{
-    self, Button, Cursor, GridShow, GridTile, Mods, Pace, PointerKind, SHARED_POOL, TabInfo, ToClient, ToShell,
+    self, Answered, Button, Cursor, GridShow, GridTile, Mods, Pace, PointerKind, SHARED_POOL, TabInfo, ToClient,
+    ToShell,
 };
 use turu_frontend::turu;
 
@@ -649,7 +650,13 @@ impl<S: SharedSurface> Shell<S> {
             Event::Answered(id, pid, request, value) => {
                 self.dialog_open = false;
                 if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id && tab.pid() == Some(pid)) {
-                    send(tab, &ToClient::Answer { id: request, value });
+                    send(
+                        tab,
+                        &ToClient::Answer {
+                            id: request,
+                            answer: Answered::Path { path: value },
+                        },
+                    );
                 }
             }
             Event::Message(id, message) => self.message(id, message),
@@ -1224,7 +1231,7 @@ impl<S: SharedSurface> Shell<S> {
                     tab,
                     &ToClient::Answer {
                         id: dialog.request,
-                        value: None,
+                        answer: Answered::Path { path: None },
                     },
                 );
             }

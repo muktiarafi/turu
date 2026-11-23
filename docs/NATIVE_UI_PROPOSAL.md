@@ -64,7 +64,7 @@ The steps, with their state:
 | Checkpoint | Go on to native bot windows, or stop at L5a | Owner, after L5a |
 | L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | Built 2026-11-23: the split (`turu_egui`), `Platform` renamed `Host`, the `Client` handle |
 | L2 | View models in the client, by feature | Pilot and the Android windows' models done 2026-11-20 |
-| L3 | Questions, dialogs and alerts as events with an ID and an answer | Built 2026-11-23, but the link's own answers |
+| L3 | Questions, dialogs and alerts as events with an ID and an answer | Built 2026-11-23, the link's answers too |
 | L4 | Generated types for Kotlin and Swift in CI; `turu_ffi` for macOS | Kotlin done 2026-11-23 (CI checks, the views decoded in a test); Swift with L6 |
 | L5b | Android: navigation and the daily features in Compose | Built 2026-11-20 (emulator); on `main` since 2026-11-22 |
 | L6, L7 | macOS: the game view behind a native window, then the app | After the checkpoint |
@@ -797,10 +797,25 @@ Logs > Crashes on it. Not checked: the message box, Butler's notice, the Tab Lim
 in the desktop app (the same dialog draws them; the test answers a message box without it), and
 the Android and Turu Mas apps run.
 
-Not done, as the owner chose: the link's own answers (`Answer { id, value }` for the shell's file
-dialogs, `DocumentPicked`, `DocumentCreated`, `Installed`) stay as they are. They answer the
-shell's dialogs, not the engine's questions; folding them in changes the link and Android's
-Kotlin and JNI. egui still reads a few engine states for display (the bar's "waits" chip,
+**The link's own answers, folded in** (the same day, the owner's request after first leaving
+them out): every request a client makes of its shell carries an ID (`ToShell::FileDialog`,
+`PickFile`, `SaveFile`, `Install`), and one message answers them all, `ToClient::Answer { id,
+answer }`, with the typed `shell::Answered` (`Path`, `Document`, `Installed`); `DocumentPicked`,
+`DocumentCreated` and `Installed` went. The client keeps what waits for an answer by ID
+(`client_link::ask` and `answered`, replacing the desktop client's own map), so an answer that
+arrives late, to a request already answered or of a client before a restart, reaches nothing.
+On Android `SlotShell.kt` keeps the picker's request ID with the slot that asked and sends
+`SlotMessage.answer(id, Answered...)`; `native_shell`'s `ActivityMessage` and `SlotMessage`
+follow. Turu Mas has no link (its pickers answer in process) and didn't change. Found on the way:
+the Android build's `turuTypes` task didn't list `native_shell.rs` and `shell.rs` among its
+inputs, so a change there left the Kotlin types stale until a clean build; it lists them now.
+Checked: the tests (a request answered once, a stale ID doing nothing; the link's and the
+shell's JSON), clippy, the Android build and its JVM tests, and on the emulator (`-gpu host`) the
+Script Loader's Load Script from a slot: the system picker opened, Back answered it (by its ID),
+and Load Script opened the picker again (a lost answer would have left it refused). Not checked:
+a document picked or saved for real, an update installed, a desktop file dialog in the app.
+
+egui still reads a few engine states for display (the bar's "waits" chip,
 `bot.scripts.waits_for`), which are status, not questions.
 
 ### L4: Generated types and `turu_ffi` (M, after the checkpoint)

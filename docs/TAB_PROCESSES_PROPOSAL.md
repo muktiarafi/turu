@@ -429,9 +429,9 @@ and after a restart both slots had stopped and the app ran its engine itself.
   the text box. Checked on the emulator: the game's Username field and Application Options'
   search box, typed in through the activity's field, closed with Back.
 * **What only the activity does**, through the shell: a link (`OpenUrl`), the share sheet (`Share`),
-  the "open" and "save" pickers (`PickFile`, `SaveFile`, answered with `DocumentPicked` /
-  `DocumentCreated` to the slot that asked, which copies or writes the file itself), and an
-  update's install (`Install`, answered with `Installed`; from any slot, so the monitor's can
+  the "open" and "save" pickers (`PickFile`, `SaveFile`, answered by their request's ID with
+  `Answer` to the slot that asked, which copies or writes the file itself), and an
+  update's install (`Install`, answered the same way; from any slot, so the monitor's can
   install while hidden). The clipboard a slot uses itself (`SlotService.copyText` / `clipText`:
   Android lets any of the app's processes while the app has the focus). Checked on the emulator:
   the web monitor's Open started the browser, Logs' Share opened the share sheet with the log, and

@@ -18,10 +18,9 @@ use ruffle_render_wgpu::backend::{WgpuRenderBackend, create_wgpu_instance, reque
 use ruffle_render_wgpu::descriptors::Descriptors;
 use ruffle_render_wgpu::utils::{format_list, get_backend_names};
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -30,7 +29,7 @@ use turu_frontend::engine::{self, EngineEvent, STAGE};
 use turu_frontend::movie_texture::{Blit, MovieTexture};
 use turu_frontend::host::{Answer, FileDialog, Host};
 use turu_frontend::players::{Players, Slot};
-use turu_frontend::shell::{self, ClientEnd, FrameSender, ToClient, ToShell};
+use turu_frontend::shell::{self, Answered, ClientEnd, FrameSender, ToClient, ToShell};
 use url::Url;
 
 /// The engine thread's events, for what Options changes in the game.
@@ -56,12 +55,7 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
     let (reader, writer) =
         shell::connect(address, &token).with_context(|| format!("Couldn't reach the shell at {address}"))?;
     let out = FrameSender::start(writer);
-    let answers: Answers = Arc::default();
-    let platform = ClientHost {
-        out: out.clone(),
-        answers: answers.clone(),
-        next_id: AtomicU32::new(1),
-    };
+    let platform = ClientHost { out: out.clone() };
     if !turu_frontend::host::set(Arc::new(platform)) {
         tracing::warn!("Another platform was installed first: the client's requests won't reach the shell");
     }
@@ -235,7 +229,7 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url, address: &str) -> Res
         let sender = sender.clone();
         let present = present.clone();
         move || {
-            let mut forward = Forward { sender, dump, answers };
+            let mut forward = Forward { sender, dump };
             match shell::serve(reader, &mut forward) {
                 Ok(()) => tracing::info!("The shell closed the connection; quitting"),
                 Err(e) => tracing::warn!("Lost the shell ({e}); quitting"),
@@ -494,7 +488,6 @@ impl turu_egui::client_screen::Clipboard for SystemClipboard {
 struct Forward {
     sender: Sender<EngineEvent>,
     dump: Arc<Mutex<Option<String>>>,
-    answers: Answers,
 }
 
 impl ClientEnd for Forward {
@@ -521,12 +514,9 @@ impl ClientEnd for Forward {
             ToClient::FullScreen { on } => FULL_SCREEN.store(on, Ordering::Relaxed),
             ToClient::Updates { updates } => (*updates).apply(),
             ToClient::ArmyClients { clients } => turu_frontend::client_link::set_army_clients(clients),
-            // A file dialog the shell showed.
-            ToClient::Answer { id, value } => {
-                let answer = self.answers.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
-                if let Some(answer) = answer {
-                    answer(value.map(Into::into));
-                }
+            // A file dialog the shell showed, answered by its request's ID.
+            ToClient::Answer { id, answer } => {
+                turu_frontend::client_link::answered(id, answer);
             }
             message => {
                 let _ = self.sender.send(EngineEvent::Run(Box::new(move |player| {
@@ -639,14 +629,10 @@ fn backend_names(backends: wgpu::Backends) -> String {
     format_list(&get_backend_names(backends), "and").into_owned()
 }
 
-/// File dialogs waiting for the shell's answer, by id.
-type Answers = Arc<Mutex<HashMap<u32, Answer>>>;
-
-/// What the client asks of the shell: file dialogs over its window (answered by id) and links.
+/// What the client asks of the shell: file dialogs over its window (answered by their request's
+/// ID, `client_link::ask`) and links.
 struct ClientHost {
     out: FrameSender,
-    answers: Answers,
-    next_id: AtomicU32,
 }
 
 impl ClientHost {
@@ -654,18 +640,22 @@ impl ClientHost {
         if self.out.is_closed() {
             return false;
         }
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        self.answers
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(id, answer);
-        self.out.send(ToShell::FileDialog {
-            id,
-            save,
-            title: dialog.title,
-            directory: dialog.directory.map(|d| d.to_string_lossy().into_owned()),
-            file_name: dialog.file_name,
-            filters: dialog.filters,
+        let ask = |id| {
+            self.out.send(ToShell::FileDialog {
+                id,
+                save,
+                title: dialog.title,
+                directory: dialog.directory.map(|d| d.to_string_lossy().into_owned()),
+                file_name: dialog.file_name,
+                filters: dialog.filters,
+            });
+        };
+        turu_frontend::client_link::ask(ask, move |answered| match answered {
+            Answered::Path { path } => answer(path.map(Into::into)),
+            other => {
+                tracing::warn!("A file dialog answered with {other:?}");
+                answer(None);
+            }
         });
         true
     }

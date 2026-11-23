@@ -225,7 +225,14 @@ abstract class TuruTypes : DefaultTask() {
 
 val turuTypes = tasks.register<TuruTypes>("turuTypes") {
     workspace.set(rootProject.layout.projectDirectory.dir(".."))
-    sources.from(rootProject.fileTree("../frontend/src/models"), rootProject.file("../frontend/src/bin/turu-typegen.rs"))
+    // Every Rust file the types come from: the models, the shell's typed JNI (`native_shell.rs`)
+    // and the link's types it uses (`shell.rs`), and the generator.
+    sources.from(
+        rootProject.fileTree("../frontend/src/models"),
+        rootProject.file("../frontend/src/native_shell.rs"),
+        rootProject.file("../frontend/src/shell.rs"),
+        rootProject.file("../frontend/src/bin/turu-typegen.rs"),
+    )
     outDir.set(layout.buildDirectory.dir("generated/turu-models"))
     samplesDir.set(layout.buildDirectory.dir("generated/turu-samples"))
 }

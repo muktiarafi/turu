@@ -318,17 +318,10 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeFromShell<'local>(
                     crate::ui::set_insets(keyboard, cutout_left, cutout_right);
                     crate::run_on_engine(|_| crate::with_screen(|screen| screen.request_repaint()));
                 }
-                // The answers to what the shell's activity did for this slot.
-                Ok(ToClient::DocumentPicked { path }) => {
-                    turu_frontend::documents::picked(path.map(std::path::PathBuf::from));
-                }
-                Ok(ToClient::DocumentCreated { uri, path }) => turu_frontend::documents::created(
-                    uri,
-                    path.map(std::path::PathBuf::from),
-                    crate::saf::write_document,
-                ),
-                Ok(ToClient::Installed { status, message }) => {
-                    turu::package_install_finished(status, message);
+                // The answers to what the shell's activity did for this slot (a picker, the
+                // installer), by the request's ID.
+                Ok(ToClient::Answer { id, answer }) => {
+                    turu_frontend::client_link::answered(id, answer);
                 }
                 // Keys the shell's activity got, read with its device's key map.
                 Ok(ToClient::AndroidKey {

@@ -115,9 +115,11 @@ pub enum ToClient {
     /// Android: the shell's rail was hidden or shown (its More > Hide Side Bar, its `›`
     /// handle): the client gives the game the room and keeps the choice (`side_bar_hidden`).
     RailHidden { hidden: bool },
-    /// The answer to a request the client made: a [`ToShell::FileDialog`]'s `id` and the path
-    /// chosen (`None`: cancelled, or another dialog was open).
-    Answer { id: u32, value: Option<String> },
+    /// The answer to a request the client made of the shell, by the request's `id`
+    /// (docs/NATIVE_UI_PROPOSAL.md, L3): a [`ToShell::FileDialog`]'s, a [`ToShell::PickFile`]'s, a
+    /// [`ToShell::SaveFile`]'s or a [`ToShell::Install`]'s. An answer to no request waiting does
+    /// nothing (`client_link::answered`).
+    Answer { id: u32, answer: Answered },
     /// Debugging: write the next frame drawn to `path` as a PNG.
     Dump { path: String },
     /// Android: one of the tab's egui windows the shell's native screens open ("script_repo",
@@ -144,20 +146,6 @@ pub enum ToClient {
         keyboard: u32,
         cutout_left: u32,
         cutout_right: u32,
-    },
-    /// Android: the "open" picker's document, copied to `path` (`None`: cancelled, or the copy
-    /// failed): the answer to `PickFile`.
-    DocumentPicked { path: Option<String> },
-    /// Android: the "save" picker made the document `uri`; the slot writes `path`, then copies it
-    /// in (`None`: cancelled). The answer to `SaveFile`.
-    DocumentCreated {
-        uri: Option<String>,
-        path: Option<String>,
-    },
-    /// Android: how the installer ended `Install` (0 installed, 1 cancelled, 2 failed) and why.
-    Installed {
-        status: i32,
-        message: Option<String>,
     },
     /// Android: a key the shell's activity got (a hardware keyboard's, or the soft keyboard's
     /// outside the field above it), for the slot on screen. Read with the device's key map there,
@@ -298,7 +286,7 @@ pub enum ToShell {
     /// surfaces; the others get [`ToShell::Frame`]s.
     Surface { id: u64, width: u32, height: u32 },
     /// Desktop: an "open" (or with `save`, "save") file dialog over the shell's window, as
-    /// `Host::pick_file` describes it; answered with [`ToClient::Answer`] and this `id`.
+    /// `Host::pick_file` describes it; answered with [`Answered::Path`] and this `id`.
     FileDialog {
         id: u32,
         #[serde(default)]
@@ -476,17 +464,23 @@ pub enum ToShell {
     /// Android: no text box of this kind has the focus now.
     FieldHide { field: FieldId },
     /// Android: the system's "open" picker for these MIME types, the document copied into
-    /// `folder` (`turu_frontend::documents`); answered with `DocumentPicked`.
-    PickFile { mime_types: String, folder: String },
-    /// Android: the system's "save" picker; answered with `DocumentCreated`.
+    /// `folder` (`turu_frontend::documents`); answered with [`Answered::Path`] and this `id`.
+    PickFile {
+        id: u32,
+        mime_types: String,
+        folder: String,
+    },
+    /// Android: the system's "save" picker; answered with [`Answered::Document`] and this `id`.
     SaveFile {
+        id: u32,
         mime_type: String,
         file_name: String,
     },
     /// Android: the share sheet.
     Share { subject: String, text: String },
-    /// Android: an update's APK to the installer; answered with `Installed`.
-    Install { path: String },
+    /// Android: an update's APK to the installer; answered with [`Answered::Installed`] and this
+    /// `id`.
+    Install { id: u32, path: String },
     /// Android: a display mode refreshing at least `hz` times a second (0: the system's choice),
     /// for frame interpolation; the shell's activity asks for it (only the slot on screen's).
     PreferRefreshRate { hz: u32 },
@@ -502,7 +496,32 @@ pub enum ToShell {
     Unknown,
 }
 
-/// A screen Android's shell has natively.
+/// What the shell answers a client's request with ([`ToClient::Answer`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "typegen",
+    derive(facet::Facet),
+    facet(tag = "kind", rename_all = "snake_case")
+)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[repr(C)]
+pub enum Answered {
+    /// A file dialog's or the "open" picker's file (`None`: cancelled, another dialog was open,
+    /// or the picked document couldn't be copied).
+    Path { path: Option<String> },
+    /// The "save" picker made the document `uri`; the client writes `path`, then copies it in
+    /// (both `None`: cancelled).
+    Document {
+        uri: Option<String>,
+        path: Option<String>,
+    },
+    /// How the installer ended (0 installed, 1 cancelled, 2 failed) and why.
+    Installed {
+        status: i32,
+        message: Option<String>,
+    },
+}
+
 /// Where a tab's game is, for the shell's tab list (`ToShell::Status`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(
@@ -1339,10 +1358,12 @@ mod tests {
             },
             ToShell::FieldHide { field: FieldId::Ui },
             ToShell::PickFile {
+                id: 4,
                 mime_types: "application/json".into(),
                 folder: "/data/picked".into(),
             },
             ToShell::Install {
+                id: 5,
                 path: "/data/updates/turu.apk".into(),
             },
             ToShell::SoftKeyboard { show: true },
@@ -1531,13 +1552,23 @@ mod tests {
                     cutout_left: 0,
                     cutout_right: 120,
                 },
-                ToClient::DocumentCreated {
-                    uri: Some("content://a/b".into()),
-                    path: None,
+                ToClient::Answer {
+                    id: 4,
+                    answer: Answered::Document {
+                        uri: Some("content://a/b".into()),
+                        path: None,
+                    },
                 },
-                ToClient::Installed {
-                    status: 2,
-                    message: Some("no space".into()),
+                ToClient::Answer {
+                    id: 5,
+                    answer: Answered::Installed {
+                        status: 2,
+                        message: Some("no space".into()),
+                    },
+                },
+                ToClient::Answer {
+                    id: 6,
+                    answer: Answered::Path { path: None },
                 },
                 ToClient::AndroidKey {
                     code: 29,

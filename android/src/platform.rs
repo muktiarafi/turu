@@ -270,11 +270,19 @@ impl Host for AndroidHost {
 
     /// `TuruActivity.installPackage(path)`: Android's installer (`PackageUpdate.kt`).
     fn install_package(&self, path: &Path) -> Result<(), String> {
-        // A process tab: the shell's activity installs it, and says how it went (`Installed`).
+        // A process tab: the shell's activity installs it, and says how it went by the request's
+        // ID.
         if crate::app().is_none() && crate::slots::slot().is_some() {
-            crate::slots::to_shell(ToShell::Install {
-                path: path.to_string_lossy().into_owned(),
-            });
+            let path = path.to_string_lossy().into_owned();
+            turu_frontend::client_link::ask(
+                |id| crate::slots::to_shell(ToShell::Install { id, path }),
+                |answer| match answer {
+                    turu_frontend::shell::Answered::Installed { status, message } => {
+                        turu_frontend::turu::package_install_finished(status, message);
+                    }
+                    other => tracing::warn!("The install answered with {other:?}"),
+                },
+            );
             return Ok(());
         }
         let app = crate::app().ok_or("open Turu to install the update")?;

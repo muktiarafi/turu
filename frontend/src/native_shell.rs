@@ -15,7 +15,7 @@
 //! rename inside them as serde does; Kotlin's properties are camelCase all the same): the link's
 //! own messages are snake_case, and so are these.
 
-use crate::shell::{FieldId, NativeScreen, ToShell};
+use crate::shell::{Answered, FieldId, NativeScreen, ToShell};
 use crate::slots::NativeTabs;
 use serde::{Deserialize, Serialize};
 
@@ -92,18 +92,22 @@ pub enum ActivityMessage {
         subject: String,
         text: String,
     },
-    /// The "open" picker for these MIME types, the document copied into `folder`.
+    /// The "open" picker for these MIME types, the document copied into `folder`; answered with
+    /// [`SlotMessage::Answer`] and this `id`.
     PickFile {
+        id: u32,
         mime_types: String,
         folder: String,
     },
-    /// The "save" picker.
+    /// The "save" picker, answered as `PickFile` is.
     SaveFile {
+        id: u32,
         mime_type: String,
         file_name: String,
     },
-    /// An update's APK to the installer.
+    /// An update's APK to the installer, answered as `PickFile` is.
     Install {
+        id: u32,
         path: String,
     },
     /// A display mode refreshing at least `hz` times a second (0: the system's choice).
@@ -155,15 +159,25 @@ impl ActivityMessage {
             ToShell::FieldHide { field } => Self::FieldHide { field },
             ToShell::OpenUrl { url } => Self::OpenUrl { url },
             ToShell::Share { subject, text } => Self::Share { subject, text },
-            ToShell::PickFile { mime_types, folder } => Self::PickFile { mime_types, folder },
+            ToShell::PickFile {
+                id,
+                mime_types,
+                folder,
+            } => Self::PickFile {
+                id,
+                mime_types,
+                folder,
+            },
             ToShell::SaveFile {
+                id,
                 mime_type,
                 file_name,
             } => Self::SaveFile {
+                id,
                 mime_type,
                 file_name,
             },
-            ToShell::Install { path } => Self::Install { path },
+            ToShell::Install { id, path } => Self::Install { id, path },
             ToShell::PreferRefreshRate { hz } => Self::PreferRefreshRate { hz },
             ToShell::OpenScreen { screen } => Self::OpenScreen { screen },
             _ => return None,
@@ -214,19 +228,10 @@ pub enum SlotMessage {
     RefreshRate {
         millihertz: u32,
     },
-    /// The "open" picker's document (`None`: cancelled, or the copy failed).
-    DocumentPicked {
-        path: Option<String>,
-    },
-    /// The "save" picker's document `uri`, and where the slot writes it first.
-    DocumentCreated {
-        uri: Option<String>,
-        path: Option<String>,
-    },
-    /// How the installer ended (0 installed, 1 cancelled, 2 failed) and why.
-    Installed {
-        status: i32,
-        message: Option<String>,
+    /// The answer to the slot's request `id` (a picker, the installer).
+    Answer {
+        id: u32,
+        answer: Answered,
     },
 }
 
@@ -478,27 +483,45 @@ mod tests {
                 },
             ),
             (
-                SlotMessage::DocumentPicked { path: None },
-                ToClient::DocumentPicked { path: None },
-            ),
-            (
-                SlotMessage::DocumentCreated {
-                    uri: Some("content://a".into()),
-                    path: Some("/b".into()),
+                SlotMessage::Answer {
+                    id: 1,
+                    answer: Answered::Path { path: None },
                 },
-                ToClient::DocumentCreated {
-                    uri: Some("content://a".into()),
-                    path: Some("/b".into()),
+                ToClient::Answer {
+                    id: 1,
+                    answer: Answered::Path { path: None },
                 },
             ),
             (
-                SlotMessage::Installed {
-                    status: 2,
-                    message: Some("no room".into()),
+                SlotMessage::Answer {
+                    id: 2,
+                    answer: Answered::Document {
+                        uri: Some("content://a".into()),
+                        path: Some("/b".into()),
+                    },
                 },
-                ToClient::Installed {
-                    status: 2,
-                    message: Some("no room".into()),
+                ToClient::Answer {
+                    id: 2,
+                    answer: Answered::Document {
+                        uri: Some("content://a".into()),
+                        path: Some("/b".into()),
+                    },
+                },
+            ),
+            (
+                SlotMessage::Answer {
+                    id: 3,
+                    answer: Answered::Installed {
+                        status: 2,
+                        message: Some("no room".into()),
+                    },
+                },
+                ToClient::Answer {
+                    id: 3,
+                    answer: Answered::Installed {
+                        status: 2,
+                        message: Some("no room".into()),
+                    },
                 },
             ),
         ];
@@ -545,6 +568,7 @@ mod tests {
             serde_json::to_value(ActivityMessage::from_shell(show.clone()).unwrap()).unwrap();
         assert_eq!(serde_json::from_value::<ToShell>(copy).unwrap(), show);
         let picked = ToShell::PickFile {
+            id: 7,
             mime_types: "application/json".into(),
             folder: "/f".into(),
         };

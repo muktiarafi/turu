@@ -647,7 +647,10 @@ mod tests {
         );
         assert!(shell.message(1, keyboard).is_empty());
         // A hidden slot's update goes to the installer all the same.
-        let install = ToShell::Install { path: "/u.apk".into() };
+        let install = ToShell::Install {
+            id: 1,
+            path: "/u.apk".into(),
+        };
         assert_eq!(shell.message(1, install.clone()), [Action::Activity(1, install)]);
     }
 

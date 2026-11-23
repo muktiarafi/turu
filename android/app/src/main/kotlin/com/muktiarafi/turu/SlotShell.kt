@@ -25,6 +25,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import com.muktiarafi.turu.models.ActivityMessage
+import com.muktiarafi.turu.models.Answered
 import com.muktiarafi.turu.models.FieldId
 import com.muktiarafi.turu.models.ShellAction
 import com.muktiarafi.turu.models.SlotMessage
@@ -304,8 +305,9 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
         handOver()
     }
 
-    /** The slot waiting for a file picker's answer, or 0. */
+    /** The slot waiting for a file picker's answer (0: none), and its request's ID. */
     private var picking = 0
+    private var pickingId = 0u
 
     /** What only the activity does, for `slot`: its text field, a link, sharing, a picker, an install. */
     private fun forActivity(slot: Int, message: ActivityMessage) {
@@ -315,36 +317,42 @@ class SlotShell(private val activity: TuruActivity, private val view: SurfaceVie
             is ActivityMessage.share -> activity.shareText(message.subject, message.text)
             is ActivityMessage.pick_file -> {
                 picking = slot
+                pickingId = message.id
                 activity.openDocument(message.mimeTypes, message.folder)
             }
             is ActivityMessage.save_file -> {
                 picking = slot
+                pickingId = message.id
                 activity.createDocument(message.mimeType, message.fileName)
             }
-            is ActivityMessage.install -> install(slot, message.path)
+            is ActivityMessage.install -> install(slot, message.id, message.path)
             is ActivityMessage.prefer_refresh_rate -> activity.preferRefreshRate(message.hz.toFloat())
             // A window the shell has natively, opened in the slot's egui menus.
             is ActivityMessage.open_screen -> activity.screens.openScreen(message.screen.serialName)
         }
     }
 
-    /** The slot that asked for the picker, now answered. */
-    private fun takePicking(): Int = picking.also { picking = 0 }
+    /** The picker's answer, to the slot that asked, by its request's ID. */
+    private fun answerPicking(answer: Answered) {
+        val (slot, id) = picking to pickingId
+        picking = 0
+        if (slot != 0) send(slot, SlotMessage.answer(id, answer))
+    }
 
     /** The "open" picker's answer: to the slot that asked. */
     fun documentPicked(path: String?) {
-        main.post { send(takePicking(), SlotMessage.document_picked(path)) }
+        main.post { answerPicking(Answered.path(path)) }
     }
 
     /** The "save" picker's answer: to the slot that asked, which writes the file and copies it in. */
     fun documentCreated(uri: String?, path: String?) {
-        main.post { send(takePicking(), SlotMessage.document_created(uri, path)) }
+        main.post { answerPicking(Answered.document(uri, path)) }
     }
 
-    /** An update's APK to Android's installer, off the main thread; the outcome goes back to `slot`. */
-    private fun install(slot: Int, path: String) {
+    /** An update's APK to Android's installer, off the main thread; the outcome goes back to `slot`, by its request's `id`. */
+    private fun install(slot: Int, id: UInt, path: String) {
         val installed = { status: Int, message: String? ->
-            main.post { send(slot, SlotMessage.installed(status, message)) }
+            main.post { send(slot, SlotMessage.answer(id, Answered.installed(status, message))) }
         }
         thread(name = "Turu Install") {
             val error = PackageUpdate.install(activity, path) { status, message -> installed(status, message) }
