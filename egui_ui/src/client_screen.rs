@@ -24,14 +24,12 @@ use crate::engine::Step;
 use crate::gui::turu::TuruUi;
 use crate::movie_texture::{Blit, MovieTexture};
 use crate::pacing::Pacing;
-use crate::shell::{
-    Button, Cursor, GameKey, GridShow, ImeInput, Mods, Pace, PointerKind, SHARED_POOL, ToClient,
-};
+use crate::shell::{Button, Cursor, GameKey, GridShow, ImeInput, Mods, Pace, PointerKind, SHARED_POOL, ToClient};
 use crate::turu;
 use ruffle_core::ViewportDimensions;
 use ruffle_core::events::{
-    GamepadButton, ImeCursorArea, ImeEvent, ImeNotification, ImePurpose, KeyDescriptor,
-    KeyLocation, LogicalKey, MouseButton, MouseWheelDelta, NamedKey, PhysicalKey, TextControlCode,
+    GamepadButton, ImeCursorArea, ImeEvent, ImeNotification, ImePurpose, KeyDescriptor, KeyLocation, LogicalKey,
+    MouseButton, MouseWheelDelta, NamedKey, PhysicalKey, TextControlCode,
 };
 use ruffle_core::{Player, PlayerEvent};
 use ruffle_render_wgpu::descriptors::Descriptors;
@@ -63,11 +61,7 @@ const REFRESHES_LOST: Duration = Duration::from_millis(100);
 /// A finished picture, for the shell.
 pub enum Picture {
     /// Its BGRA rows, read back.
-    Pixels {
-        width: u32,
-        height: u32,
-        pixels: Vec<u8>,
-    },
+    Pixels { width: u32, height: u32, pixels: Vec<u8> },
     /// In shared surface `id`, finished on the GPU.
     Shared { id: u64, width: u32, height: u32 },
 }
@@ -402,14 +396,8 @@ impl ClientScreen {
             height: f64::from(view.d) * area.height,
         };
         match notification {
-            ImeNotification::ImeReady {
-                purpose,
-                cursor_area,
-            } => {
-                self.game_ime = Some((
-                    matches!(purpose, ImePurpose::Password),
-                    to_view(cursor_area),
-                ))
+            ImeNotification::ImeReady { purpose, cursor_area } => {
+                self.game_ime = Some((matches!(purpose, ImePurpose::Password), to_view(cursor_area)))
             }
             ImeNotification::ImePurposeUpdated(purpose) => {
                 if let Some((password, _)) = &mut self.game_ime {
@@ -436,9 +424,7 @@ impl ClientScreen {
             (false, false, None)
         } else if let Some((area, password)) = self.ui_ime {
             (true, password, Some(area))
-        } else if let Some((password, area)) =
-            self.game_ime.as_ref().filter(|_| self.game_ime_allowed)
-        {
+        } else if let Some((password, area)) = self.game_ime.as_ref().filter(|_| self.game_ime_allowed) {
             // The field's area is in the game's pixels: fewer in Performance mode, and offset by
             // where the game is in the picture.
             let (left, top) = self.offsets();
@@ -493,8 +479,7 @@ impl ClientScreen {
             ImeInput::Commit { text } => {
                 self.composing = false;
                 if to_ui {
-                    self.events
-                        .push(egui::Event::Ime(egui::ImeEvent::Commit(text)));
+                    self.events.push(egui::Event::Ime(egui::ImeEvent::Commit(text)));
                 } else {
                     player.handle_event(PlayerEvent::Ime(ImeEvent::Commit(text)));
                 }
@@ -517,10 +502,7 @@ impl ClientScreen {
             .and_then(|ext| ext.to_str())
             .is_some_and(|ext| ext.eq_ignore_ascii_case("ts") || ext.eq_ignore_ascii_case("js"));
         if !script {
-            bot.log(format!(
-                "Dropped {}: only scripts (.ts, .js) are taken",
-                path.display()
-            ));
+            bot.log(format!("Dropped {}: only scripts (.ts, .js) are taken", path.display()));
         } else if bot.scripts.status().is_active() {
             bot.log(format!("Dropped {}: stop the script first", path.display()));
         } else {
@@ -638,20 +620,12 @@ impl ClientScreen {
                 grid,
             } => {
                 let size = (width.clamp(1, 8192), height.clamp(1, 8192));
-                let scale = if scale.is_finite() && scale > 0.0 {
-                    scale
-                } else {
-                    1.0
-                };
+                let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
                 self.shown = Some((size, scale));
                 turu::set_tab_shown(true);
                 // Its cursor goes to the shell again, as the last tab shown may have left another.
                 self.cursor = None;
-                if self
-                    .target
-                    .as_ref()
-                    .is_none_or(|target| target.size != size)
-                {
+                if self.target.as_ref().is_none_or(|target| target.size != size) {
                     self.target = Some(self.make_target(size));
                 }
                 self.picture_due = true;
@@ -687,13 +661,7 @@ impl ClientScreen {
                 turu::bot().state.lock().hidden_tab = true;
             }
             ToClient::Pointer { kind, button, x, y } => self.pointer(player, kind, button, x, y),
-            ToClient::Wheel {
-                dx,
-                dy,
-                x,
-                y,
-                pixels,
-            } => {
+            ToClient::Wheel { dx, dy, x, y, pixels } => {
                 let pos = self.point(x, y);
                 self.events.push(egui::Event::PointerMoved(pos));
                 self.events.push(egui::Event::MouseWheel {
@@ -705,9 +673,7 @@ impl ClientScreen {
                 if !self.on_ui(x, y) {
                     // A trackpad's in pixels, as the window gives them (Ruffle makes 100 a line).
                     let delta = if pixels {
-                        MouseWheelDelta::Pixels(-f64::from(
-                            dy * crate::shell::WHEEL_PIXELS_PER_LINE,
-                        ))
+                        MouseWheelDelta::Pixels(-f64::from(dy * crate::shell::WHEEL_PIXELS_PER_LINE))
                     } else {
                         MouseWheelDelta::Lines(-f64::from(dy))
                     };
@@ -722,9 +688,7 @@ impl ClientScreen {
             } => self.key(player, &key, game.as_ref(), pressed, mods),
             ToClient::NoSurfaces { reason } => {
                 if self.shared.is_some() {
-                    tracing::warn!(
-                        "The shell can't use shared surfaces ({reason}): sending pixels"
-                    );
+                    tracing::warn!("The shell can't use shared surfaces ({reason}): sending pixels");
                 }
                 self.shared = None;
                 self.pool.clear();
@@ -864,9 +828,7 @@ impl ClientScreen {
             let now = Instant::now();
             let game_frame = matches!(step, Step::Ticked { .. }) && player.needs_render();
             // The UI alone is drawn 30 times a second at most, however often egui asks.
-            let ui_wanted = self
-                .ui_due
-                .is_some_and(|due| due.max(self.last_draw + UI_FRAME) <= now);
+            let ui_wanted = self.ui_due.is_some_and(|due| due.max(self.last_draw + UI_FRAME) <= now);
             let in_step = self
                 .last_refreshed
                 .is_some_and(|at| now.duration_since(at) < REFRESHES_LOST);
@@ -897,9 +859,7 @@ impl ClientScreen {
                 }
                 Pace::Uncapped => {
                     if self.can_draw() {
-                        let new_picture = self
-                            .pacing
-                            .new_uncapped_picture_due(now, self.uncapped_interval);
+                        let new_picture = self.pacing.new_uncapped_picture_due(now, self.uncapped_interval);
                         if new_picture || self.picture_due || ui_wanted {
                             let picture = new_picture || self.picture_due;
                             self.picture_due = false;
@@ -929,9 +889,7 @@ impl ClientScreen {
         // (Every ms also while interpolation is wanted: the pacer times the pictures' way.)
         let poll = match self.pace {
             Pace::Refresh | Pace::Uncapped => READBACK_POLL_PACED,
-            _ if self.shared.is_some() && ruffle_core::frame_interpolation::enabled() => {
-                READBACK_POLL_PACED
-            }
+            _ if self.shared.is_some() && ruffle_core::frame_interpolation::enabled() => READBACK_POLL_PACED,
             Pace::Frames | Pace::Unknown => READBACK_POLL,
         };
         let readback = (!self.readbacks.is_empty()).then(|| Instant::now() + poll);
@@ -942,10 +900,7 @@ impl ClientScreen {
             .ui_due
             .filter(|_| seen)
             .map(|due| due.max(self.last_draw + UI_FRAME));
-        [readback, ui, next.filter(|_| seen)]
-            .into_iter()
-            .flatten()
-            .min()
+        [readback, ui, next.filter(|_| seen)].into_iter().flatten().min()
     }
 
     /// After a tick: how the shell should present this tab's pictures (see the module's comment),
@@ -1017,8 +972,7 @@ impl ClientScreen {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
-        let padded_row = (size.0 * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
-            * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let padded_row = (size.0 * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Turu client readback"),
             size: u64::from(padded_row) * u64::from(size.1),
@@ -1066,11 +1020,7 @@ impl ClientScreen {
                         Err(e) => tracing::warn!("Couldn't read the picture back: {e}"),
                     }
                     buffer.unmap();
-                    (self.sink)(Picture::Pixels {
-                        width,
-                        height,
-                        pixels,
-                    });
+                    (self.sink)(Picture::Pixels { width, height, pixels });
                 }
                 Readback::Shared {
                     id,
@@ -1082,8 +1032,7 @@ impl ClientScreen {
                     // interpolate), while interpolation is wanted, once per game frame too, or a
                     // tab its floor took down to that would never come back.
                     if ruffle_core::frame_interpolation::enabled() {
-                        self.pacing
-                            .record_pipeline(drawn.elapsed().as_secs_f64() * 1000.0);
+                        self.pacing.record_pipeline(drawn.elapsed().as_secs_f64() * 1000.0);
                     }
                     (self.sink)(Picture::Shared { id, width, height });
                 }
@@ -1167,12 +1116,7 @@ impl ClientScreen {
 
     /// The game's size in the picture, in pixels.
     fn movie_size(&self, size: (u32, u32)) -> (u32, u32) {
-        if let Some(tile) = self
-            .grid
-            .as_ref()
-            .filter(|grid| grid.active)
-            .and_then(GridShow::tile)
-        {
+        if let Some(tile) = self.grid.as_ref().filter(|grid| grid.active).and_then(GridShow::tile) {
             return (tile.width.max(1), tile.height.max(1));
         }
         let (left, top) = self.offsets();
@@ -1250,10 +1194,7 @@ impl ClientScreen {
                     None => !self.on_ui(x, y),
                 };
                 if to_game {
-                    player.handle_event(PlayerEvent::MouseMove {
-                        x: game_x,
-                        y: game_y,
-                    });
+                    player.handle_event(PlayerEvent::MouseMove { x: game_x, y: game_y });
                 }
             }
             PointerKind::Down => {
@@ -1267,8 +1208,7 @@ impl ClientScreen {
                 }
                 // egui sees every press: one on the game closes an open menu, as on the desktop
                 // (Flash's too, which takes every press while it's open).
-                let on_ui =
-                    self.menu.is_some() || self.on_ui(x, y) || self.egui.egui_wants_pointer_input();
+                let on_ui = self.menu.is_some() || self.on_ui(x, y) || self.egui.egui_wants_pointer_input();
                 self.pressed = Some((button, on_ui));
                 self.events.push(egui::Event::PointerMoved(pos));
                 self.events.push(egui::Event::PointerButton {
@@ -1286,10 +1226,7 @@ impl ClientScreen {
                     });
                     // A right press the game didn't take opens Flash's menu (when it has items),
                     // which then takes the release, as the window's does.
-                    if !handled
-                        && matches!(button, Button::Right)
-                        && self.open_menu(player, pos, (game_x, game_y))
-                    {
+                    if !handled && matches!(button, Button::Right) && self.open_menu(player, pos, (game_x, game_y)) {
                         self.pressed = Some((button, true));
                     }
                 }
@@ -1323,14 +1260,7 @@ impl ClientScreen {
     /// HotKeys', which see the press too). Typed text comes as [`ToClient::Text`]. `game` is the
     /// key for the game as the window makes it, when the shell sent it (a test's `key` line
     /// doesn't: the key is then found from egui's name, as on a US keyboard).
-    fn key(
-        &mut self,
-        player: &mut Player,
-        name: &str,
-        game: Option<&GameKey>,
-        pressed: bool,
-        mods: Mods,
-    ) {
+    fn key(&mut self, player: &mut Player, name: &str, game: Option<&GameKey>, pressed: bool, mods: Mods) {
         self.modifiers = egui::Modifiers {
             alt: mods.alt,
             ctrl: mods.ctrl,
@@ -1424,10 +1354,7 @@ impl ClientScreen {
     fn stop_input(&mut self, player: &mut Player) {
         let held = std::mem::take(&mut self.held_keys);
         if !held.is_empty() {
-            tracing::info!(
-                "Stopped taking input: let go of {} key(s) in the game",
-                held.len()
-            );
+            tracing::info!("Stopped taking input: let go of {} key(s) in the game", held.len());
         }
         for key in held {
             player.handle_event(PlayerEvent::KeyUp { key });
@@ -1468,12 +1395,7 @@ impl ClientScreen {
             self.ui_due = None;
             return;
         };
-        if surface.is_none()
-            && self
-                .target
-                .as_ref()
-                .is_none_or(|target| target.size != size)
-        {
+        if surface.is_none() && self.target.as_ref().is_none_or(|target| target.size != size) {
             self.target = Some(self.make_target(size));
         }
         self.last_draw = Instant::now();
@@ -1590,9 +1512,7 @@ impl ClientScreen {
             .and_then(|viewport| Instant::now().checked_add(viewport.repaint_delay));
         for command in output.platform_output.commands {
             match command {
-                egui::OutputCommand::OpenUrl(open) => {
-                    crate::host::host().open_url(&open.url)
-                }
+                egui::OutputCommand::OpenUrl(open) => crate::host::host().open_url(&open.url),
                 egui::OutputCommand::CopyText(text) => {
                     if let Some(clipboard) = &mut self.clipboard {
                         clipboard.set(text);
@@ -1618,9 +1538,9 @@ impl ClientScreen {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Turu client picture"),
         });
-        let mut buffers =
-            self.egui_renderer
-                .update_buffers(device, queue, &mut encoder, &primitives, &screen);
+        let mut buffers = self
+            .egui_renderer
+            .update_buffers(device, queue, &mut encoder, &primitives, &screen);
         let target = match &surface {
             Some(_) => None,
             None => Some(self.target.as_ref().expect("made above")),
@@ -1638,13 +1558,11 @@ impl ClientScreen {
                         resolve_target: None,
                         ops: wgpu::Operations {
                             // The active tab in Grid View: the other tiles show through.
-                            load: wgpu::LoadOp::Clear(
-                                if self.grid.as_ref().is_some_and(|grid| grid.active) {
-                                    wgpu::Color::TRANSPARENT
-                                } else {
-                                    wgpu::Color::BLACK
-                                },
-                            ),
+                            load: wgpu::LoadOp::Clear(if self.grid.as_ref().is_some_and(|grid| grid.active) {
+                                wgpu::Color::TRANSPARENT
+                            } else {
+                                wgpu::Color::BLACK
+                            }),
                             store: wgpu::StoreOp::Store,
                         },
                         depth_slice: None,
@@ -1654,14 +1572,7 @@ impl ClientScreen {
                 })
                 .forget_lifetime();
             if let Some(movie) = &movie {
-                pass.set_viewport(
-                    left.round(),
-                    top,
-                    movie_size.0 as f32,
-                    movie_size.1 as f32,
-                    0.0,
-                    1.0,
-                );
+                pass.set_viewport(left.round(), top, movie_size.0 as f32, movie_size.1 as f32, 0.0, 1.0);
                 self.blit.draw(&self.pipeline, movie, &mut pass);
                 pass.set_viewport(0.0, 0.0, size.0 as f32, size.1 as f32, 0.0, 1.0);
             }
@@ -1709,9 +1620,7 @@ impl ClientScreen {
                     },
                     Box::new(move || {
                         queue.submit(buffers);
-                        queue.on_submitted_work_done(move || {
-                            finished.store(true, Ordering::Release)
-                        });
+                        queue.on_submitted_work_done(move || finished.store(true, Ordering::Release));
                     }),
                 )
             }
@@ -1728,13 +1637,11 @@ impl ClientScreen {
                     },
                     Box::new(move || {
                         queue.submit(buffers);
-                        buffer
-                            .slice(..)
-                            .map_async(wgpu::MapMode::Read, move |result| {
-                                if result.is_ok() {
-                                    done.store(true, Ordering::Release);
-                                }
-                            });
+                        buffer.slice(..).map_async(wgpu::MapMode::Read, move |result| {
+                            if result.is_ok() {
+                                done.store(true, Ordering::Release);
+                            }
+                        });
                     }),
                 )
             }
@@ -1763,10 +1670,9 @@ impl ClientScreen {
         {
             return Some(bind_group.clone());
         }
-        let bind_group =
-            render_thread::with_wgpu_backend::<MovieTexture, _>(renderer, |renderer| {
-                renderer.target().bind_group.clone()
-            })?;
+        let bind_group = render_thread::with_wgpu_backend::<MovieTexture, _>(renderer, |renderer| {
+            renderer.target().bind_group.clone()
+        })?;
         // (Reading it counts as a change of the target: the state after it is the one to keep.)
         self.movie = Some((
             render_thread::target_state::<MovieTexture>(renderer),
@@ -1888,10 +1794,9 @@ fn logical_key(name: &str) -> Option<(LogicalKey, KeyLocation)> {
         other => {
             let mut chars = other.chars();
             return match (chars.next(), chars.next()) {
-                (Some(c), None) if c.is_ascii_alphanumeric() => Some((
-                    LogicalKey::Character(c.to_ascii_lowercase()),
-                    KeyLocation::Standard,
-                )),
+                (Some(c), None) if c.is_ascii_alphanumeric() => {
+                    Some((LogicalKey::Character(c.to_ascii_lowercase()), KeyLocation::Standard))
+                }
                 _ => None,
             };
         }
@@ -1912,9 +1817,7 @@ fn physical_key_for(name: &str) -> Option<PhysicalKey> {
         (Some(c), None) if c.is_ascii_alphabetic() => {
             crate::shell::keys::physical_key(&format!("Key{}", c.to_ascii_uppercase()))
         }
-        (Some(c), None) if c.is_ascii_digit() => {
-            crate::shell::keys::physical_key(&format!("Digit{c}"))
-        }
+        (Some(c), None) if c.is_ascii_digit() => crate::shell::keys::physical_key(&format!("Digit{c}")),
         // The named keys egui and Ruffle name alike: Enter, Space, ArrowLeft, F1, ...
         _ => crate::shell::keys::physical_key(name),
     }

@@ -9,6 +9,6 @@
 pub mod client_screen;
 pub mod gui;
 
+pub use turu_frontend::{crash_reports, graphics_tips, grid, host, models, shell, turu};
 #[cfg(feature = "ruffle")]
 pub use turu_frontend::{engine, movie_texture, pacing};
-pub use turu_frontend::{crash_reports, graphics_tips, grid, host, models, shell, turu};

@@ -400,8 +400,7 @@ impl ArmyQueueWindow {
     fn start(&mut self) {
         let accounts_file = crate::turu::bot().paths.accounts_file();
         let mode = Accounts::load(&accounts_file).mode;
-        let in_tabs = (mode == turu_bot::accounts::LaunchMode::Tab
-            || !crate::host::host().launches_processes())
+        let in_tabs = (mode == turu_bot::accounts::LaunchMode::Tab || !crate::host::host().launches_processes())
             && crate::turu::shell_tabs().is_some();
         let launcher: Arc<dyn QueueLauncher> = if in_tabs {
             let timeout = Duration::from_secs(self.config.timeout_minutes.max(1) * 60);

@@ -63,7 +63,7 @@ jobs:
           components: rustfmt
 
       # Only Turu's own code: Ruffle's files in app/ keep their own layout (docs/STATUS.md,
-      # "Formatting"). The UI windows, mod.rs included, use max_width = 120.
+      # "Formatting").
       - name: Check the bot engine's formatting
         run: cargo fmt -p turu_bot --check
 
@@ -88,11 +88,10 @@ jobs:
       - name: Check the Android library's formatting
         run: cargo fmt -p turu_android --check
 
-      - name: Check the UI windows' formatting
-        run: |
-          for file in egui_ui/src/gui/turu/*.rs; do
-            rustfmt --edition 2024 --config max_width=120 --check "$file"
-          done
+      # turu_egui has its own rustfmt.toml (max_width = 120): the bot windows and the client's
+      # screen, every file of the crate (a loop over gui/turu/ missed the rest).
+      - name: Check the UI's formatting
+        run: cargo fmt -p turu_egui --check
 
   # A submodule bump must point at a commit already on that submodule's branch (.gitmodules):
   # otherwise a clone of this commit can't fetch it. Commits only, no files (`tree:0`).
