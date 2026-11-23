@@ -1,10 +1,10 @@
-//! A player loop without a window: the desktop's `--headless` and Android's engine thread. One
-//! thread owns the tabs' players ([`Players`]) and runs this loop: it ticks the active tab's
-//! player when a frame is due and the others when theirs are (at the hidden tab's rate, as the
-//! desktop's window does), and in between polls the players' futures (downloads, sockets),
-//! answers the bots' Flash calls (each with its tab's player) and the frontend's tab requests.
-//! The frontend builds each player (with [`Executor`] and, when nobody can answer a dialog,
-//! [`NoDialogs`]) and installs [`flash_host`] on the tab's bot. `--headless` has one tab.
+//! A player loop without a window: a desktop tab's client, the desktop's `--headless` and an
+//! Android slot's engine thread. One thread owns the process's player ([`Players`]: one since
+//! M6, each tab a process of its own) and runs this loop: it ticks the player when a frame is due
+//! (at the hidden tab's rate while the tab isn't seen), and in between polls the player's futures
+//! (downloads, sockets), answers the bot's Flash calls and the frontend's tab requests. The
+//! frontend builds the player (with [`Executor`] and, when nobody can answer a dialog,
+//! [`NoDialogs`]) and installs [`flash_host`] on the tab's bot.
 
 use crate::players::Players;
 use crate::turu::{self, TabId, TabRequest, TuruFlashCall};

@@ -5,6 +5,9 @@ found on 2026-11-08/09, what was fixed, what is still open, and how to pick it u
 was `turu_next` on Twig (`turu-args.txt`), a fresh character taken from level 1 to 35 over about
 14 hours across several restarts, on macOS (Apple silicon, AC power).
 
+Status: as of 2026-11-09, before Mugetsu 2.0.0 and process tabs (2026-11-17). Its numbers were
+measured on the old player; check an open issue against docs/STATUS.md before acting on it.
+
 Start with **Open issues** and **Next steps**; **How to run and watch** has the tooling and its
 pitfalls.
 

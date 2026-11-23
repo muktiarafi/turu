@@ -332,24 +332,92 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   runs in a process of its own behind the window, the shell (docs/TAB_PROCESSES_PROPOSAL.md): on
   a computer `turu` is the shell over `--client` processes, on Android the activity is the shell
   over the slots. There is no Process Tabs switch and no `--in-process` any more (it's ignored);
-  `--headless` is one tab in its own process. Before M6, each tab was a game
-client of its own, a Ruffle player and its bot, in one window and one process (VibeSkua's
-  tabbed host embeds one process's window per tab, which macOS and Wayland don't allow). All
-  the players run on the event loop thread and are ticked every loop; only the active one is
-  drawn and heard (the others are muted). Hidden tabs that are in game run at 2 FPS, as
-  VibeSkua's tabbed host throttles them (`WM_SKUA_THROTTLE`), and get their rate back when
-  shown (`state.hidden_tab`, applied with Headless Mode in `api/options.rs`; tabs at the login
-  screen keep full speed, so logins aren't slowed). Unlike VibeSkua they keep their quality: an
-  undrawn tab gains nothing from LOW, and going back to HIGH re-tessellated every shape on each
-  switch (only Headless Mode sets LOW). Each player kept its own copy (until M6, which dropped it
-  with ruffle-aqw's two commits) of Ruffle's thread-local state (`ruffle_core::PlayerThreadState`: pending shape tessellations, replay's change count,
-  frame interpolation's frame) and its renderer's command segments not submitted yet
-  (`ruffle_render_wgpu::segments`), swapped in by `PlayerController` while a hidden tab's code
-  runs (ticks, Flash calls, futures), so hidden tabs neither spoil the shown tab's replays and
-  interpolation nor leave tessellations only their renderer can finish, and no tab submits
-  another's segments (which crashed with seven tabs: "StagingBelt staging buffer is still
-  mapped"). A tab keeps how far it got since its last cut, not the pass count at that cut
-  (counted for every tab), else a hidden tab cut between nearly every pass.
+  `--headless` is one tab in its own process (docs/ARCHITECTURE.md, "Processes"). VibeSkua's
+  tabbed host embeds one process's window per tab, which macOS and Wayland don't allow; Turu's
+  clients draw into surfaces the shell shows instead. Only the tab on screen is drawn and heard
+  (a client starts muted and hidden: `app/src/client.rs`). Hidden tabs that are in game run at
+  2 FPS, as VibeSkua's tabbed host throttles them (`WM_SKUA_THROTTLE`), and get their rate back
+  when shown (`state.hidden_tab`, applied with Headless Mode in `api/options.rs`; tabs at the
+  login screen keep full speed, so logins aren't slowed). Unlike VibeSkua they keep their
+  quality: an undrawn tab gains nothing from LOW, and going back to HIGH re-tessellated every
+  shape on each switch (only Headless Mode sets LOW). Before M6 the tabs were players on one
+  thread of one process, each with Ruffle's thread-local state swapped in while its code ran;
+  that went with ruffle-aqw's two commits behind it (docs/TAB_PROCESSES_PROPOSAL.md, "M6 as
+  built").
+- **Tabs' saved game data** (fixed 2026-11-18): Flash's shared objects (AQW's `AQLite_Data`,
+  with its key bindings and options; `AQWUserPref`; `ignoreList`), which the window writes when
+  its player drops at close, were never written by a tab's client: the shell killed it at once,
+  and its own quit path ends with `exit_now`, which skips the drop. Data the game didn't write
+  itself was lost each time a tab or the shell closed. Now the client writes it first when its
+  connection closes, and the shell closes the connections and waits up to 3 s (`CLOSE_GRACE`)
+  before killing a client that hasn't ended (closing one tab waits on a thread; closing the shell
+  waits for all at once, about 20 ms in a run). Turu also writes each shared object whole (a file
+  of its own, then renamed: `preferences/storage.rs` `WholeWrites`; in place if Windows refuses
+  the rename), as clients share the folder and now write it together at close; Ruffle's emptied
+  the file and wrote it. A client whose shell crashed still ends at once (`--exit-with-parent`)
+  without writing.
+  Looked into and left: the game's messages and a failed load of the root movie only go to a
+  client's log (Ruffle never calls `UiBackend::message`; the root movie is `turu.swf`, and AQW's
+  own load failure is reported by it to the bot), no file dialogs or `fscommand` in a client
+  (AQW's client never browses for files: `FileReference` is only named in its SmartFoxServer
+  library; and it has no `fscommand`).
+- **Tabs' input** (2026-11-18, the gaps M6 left in a tab's client; the shell passes the window's
+  on to the tab on screen):
+  * **Input methods** (IME): the client asks for one (`ToShell::Ime`: allowed, a password's, where
+    its candidates go) while one of Turu's text boxes has the focus (as egui-winit allows it in a
+    window), or the game's focused text field does with Ruffle's IME preference on (`[ime]
+    enabled = true` in Ruffle's `preferences.toml`, off by default, as in the window); the shell
+    applies the tab on screen's while the window has the focus, and passes the composition on
+    (`ToClient::Ime`): to the text box as egui-winit does, else to the game as the window's
+    `app.rs` does. Keys go nowhere while a composition is under way (Enter mustn't send the game's
+    chat). The game field's area is converted from the stage's pixels to the picture's (the
+    window takes them as its viewport's, which puts the candidates off when the game is scaled).
+  * **Keys** (fixed 2026-11-18): the client rebuilt the game's keys from egui's name for them,
+    which lost the physical key (every key `PhysicalKey::Unknown`). Ruffle takes the game's
+    `keyCode` from it on macOS and Linux (0: WASD didn't walk, Enter didn't log in or send chat)
+    and tells held keys apart by it everywhere (on Windows, W then D held and let go left D down:
+    the character walked on). Keys egui has no name for (Shift, Ctrl, punctuation, the numpad)
+    didn't reach the game at all. The shell now sends the game's key whole, as the window's
+    `app.rs` makes it (`util::winit_input_to_ruffle_key_descriptor`), with what it does in a text
+    field (`winit_to_ruffle_text_control`: Ctrl+Home/End, Ctrl or Cmd+Backspace and arrows as in
+    the window), by Ruffle's names (`ToClient::Key`'s `game`, `shell::GameKey`). Without it (a
+    test's `key` line) the client finds the key from egui's name, as on a US keyboard.
+  * **Typed text with Ctrl** goes to the game when Alt is down too (AltGr on Windows: `@` on a
+    German keyboard; the shell had dropped all text with Ctrl, as egui-winit does), not with Ctrl
+    alone or Cmd (Turu: the window types the letter a Ctrl shortcut gives on Linux). Turu's text
+    boxes take none with Ctrl or Cmd, as egui-winit.
+  * **A tab that stops taking input** (hidden, or another tab's tile in Grid View) lets go in the
+    game of the keys and mouse button it had down and loses the focus (Flash's `deactivate`):
+    their release would go to the next tab, and a tab left with W held walked on hidden. A key
+    the game has down is let go there even if the focus went to Turu's UI meanwhile.
+  * **The game's links** (upgrade, buying AC, account pages) open in the browser through the
+    shell, unless Options deny websites; they were only logged (`engine::NoDialogs`, now with
+    `open_links`). Turu: the window asks first with Options' "Ask"; a client has nobody to ask in.
+  * **A trackpad's scrolling** reaches the game in pixels, as in the window (it went as lines of
+    40 pixels, 2.5 times as fast as the window's 100). The game's full screen (`stage.
+    displayState`) and `Mouse.hide` reach the shell's window too (from any tab's game, a hidden
+    one's too; Esc leaving full screen isn't told to the game, which AQW doesn't mind).
+  * **Gamepads**: the shell reads them on a thread of its own (gilrs; the event loop sleeps) and
+    passes each button on (`ToClient::Gamepad`); they act only through `--gamepad-button`'s
+    mappings to keys, as in the window (the clients get the shell's flags).
+  * **Dropped files**: a script (`.ts`, `.js`) dropped on the window is loaded in the tab on
+    screen, as Load Script loads it (not started; not while a script runs); anything else is
+    refused in the log. The window opens a dropped file as a new movie, which would replace AQW.
+  * **Flash's right-click menu**: a right press the game doesn't take opens Flash's items
+    (`Player::prepare_context_menu`) in Turu's UI, holding the release back until it closes, as
+    the window's menu does. AQW turns Flash's own items off and adds none at its login screen
+    (the list was empty), so it shows only if the game adds items; in game it wasn't seen. A
+    press outside closes it from its second frame on (egui lays a new area out unseen first, and
+    the opening press counted as one elsewhere), and Esc; a checked item shows selected.
+  Checked on the Mac with `TURU_SHELL_TEST`'s new lines (`ime`, `drop`, `gamepad`, `rclick`): a
+  committed text in the game's Username field and in Options' search box; the window's IME
+  allowed for the box, and for the game's field only with the preference, with the field's area
+  on the field; a dropped script loaded, a picture refused; a right click at the login screen
+  opened nothing, and with two items faked for one run the menu showed and a press elsewhere and
+  Esc closed it; Backspace during a composition was held back and reached the box after it. Not run: a real input method and its candidate window, plain typing with the
+  IME allowed (macOS didn't let this session send keys: on most systems winit doesn't send an
+  input method's keys, which egui-winit counts on too), a real gamepad and mapping, a real drag,
+  Flash's menu with items, Windows and Linux.
 - **Metal command buffers:** on Metal, wgpu makes a command buffer of every render pass when a
   frame's encoders are finished, and they count against the queue's 4096 until submitted.
   Crowded frames with skill animations on (2000+ passes) ran out in one submit, which wgpu
@@ -835,7 +903,7 @@ memory budget (NVIDIA, AMD).
 
 - **Tabs are processes since M6** (2026-11-17): a crash or a lost GPU device ends one tab, which
   the shell starts again logged in. Since 2026-11-18 a tab's client has the window's input
-  methods, gamepads, dropped files and Flash's right-click menu too (see "Tabs' input" below).
+  methods, gamepads, dropped files and Flash's right-click menu too ("What works", "Tabs' input").
   Turu's own UI fonts have no Chinese, Japanese or Korean glyphs (composed text shows as boxes in
   its text boxes, in the window too); AQW takes few special characters and none of those, so it
   isn't worth fonts of its own. Not run on Windows or Linux, nor on phones (M4).
@@ -848,10 +916,10 @@ memory budget (NVIDIA, AMD).
   two tabs or more): every tab at once, each in a tile in VibeSkua's layout (rows of ⌈√n⌉),
   its player sized to the tile. The active tab keeps the keyboard, sound and its full frame rate,
   and its tile is outlined; the others run at 8 FPS (`grid::TILE_FPS`; VibeSkua's tiles run
-  unthrottled, each a process of its own) and draw each frame they run. Clicking another tile
+  unthrottled) and draw each frame they run. Each tile is its tab's client's picture, drawn by
+  the shell (each tab a process of its own since M6). Clicking another tile
   makes it the active tab (that click goes no further). Each tile shows the tab's name, a dot
-  while it's busy and "!" while it waits for you. All on the one thread: `TURU_PERF_LOG`'s
-  `main thread` line shows what it costs. Not built: VibeSkua's hidden title and nav bars in
+  while it's busy and "!" while it waits for you. Not built: VibeSkua's hidden title and nav bars in
   the tiles (Turu's bar stays, for the active tab) and a hover state for tiles.
 
 - **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
@@ -863,10 +931,10 @@ memory budget (NVIDIA, AMD).
   while a script runs, back on its own after a kill). Checked on an emulator; on phones, a Redmi
   10 and a Pixel 8 have run it (docs/ANDROID.md). File dialogs are Android's system picker
   (`android/src/saf.rs`); OpenGL ES is the default since 2026-11-18 (see "GL renderer" below); the game's own text fields are typed in a native
-  field above the keyboard (docs/ANDROID_NATIVE_UI.md). Tabs (phase 5): several clients in one
-  engine thread, the Army menu and Butler, a Tab Limit (default 4, at most 9 in slots since
-  2026-11-22; Turu Mas at most 4), tabs reopened after a kill;
-  built, not run on a device yet.
+  field above the keyboard (docs/ANDROID_NATIVE_UI.md). Tabs: each a slot, a service in a
+  process of its own, under the activity as shell (process tabs, M3 and M6), the Army menu and
+  Butler, a Tab Limit (default 4, at most 9 in slots since 2026-11-22; Turu Mas at most 4, in one
+  process), tabs reopened after a kill; several tabs not run on a phone yet.
   Since 2026-11-20 (branch `native-ui`, docs/NATIVE_UI_PROPOSAL.md) the rail, the tabs and
   Accounts and the daily windows are native Android pages beside the game: Script Loader, Search
   Scripts, Scheduler, Logs, Auto, Jump, Options (Game, Application, CoreBots), Army Control and
@@ -892,46 +960,15 @@ memory budget (NVIDIA, AMD).
   shows the game. Measured on FarmerJoe DoAll at Icestorm Arena (2026-11-08, debug build, 5
   minutes each): the process used 30% of a core at CoreBots' 30 FPS, 17% at 2 FPS, 13% with
   both; the player's ticks went from ~280 to ~80 ms/s, with as many kills.
-  Of what's left, ~25% of a 30 FPS frame was AS3 `gotoAndStop` to the frame a clip is already
-  on: Ruffle's `MovieClip::no_op_goto` still runs a goto's phases over the whole stage
-  (`run_inner_goto_frame`). Measured in game (2026-11-10, GoldFarm at battlegrounde, debug
-  build): ~165 gotos a second, half of them to the current frame, each walking ~1000 clips for
-  construction but only ~90 for frame scripts. The frame scripts a nested frame runs make gotos
-  of their own, each a nested frame again that constructs the whole stage before any of those
-  scripts has finished, so clips with a script still to run (which ruffle-aqw's `settle` can't
-  mark) were constructed about 11 times per goto. ruffle-aqw now also marks a clip
-  "constructed" at the end of its `construct_frame` (`MovieClip::can_mark_constructed`), which
-  later construction walks skip until something changes; a goto to the current frame leaves a
-  settled clip settled, and a `Loader` settles with its children. Same run, 5 minutes each way
-  (`RUFFLE_OLD_GOTO_SETTLE=1` puts the old behaviour back): construction visits 10.4 -> 0.9
-  million a minute, the player's ticks ~135 -> ~93 ms/s, as many gotos and kills. Ruffle's
-  regression tests pass as before (4 focus and key-input tests fail with or without it).
-  The perf log's `gotos:` line has the counts (`ruffle_core::take_goto_stats`). Left: buttons
-  never settle (their hidden state sprites have no parent to unsettle them through) and keep
-  ~25 clips per goto walked; not measured in a release build, with a window, or on a phone.
-  A frame's own three walks (entering the frame, construction, frame scripts) went over every
-  clip too, though most of a crowded room stands still. ruffle-aqw now marks a clip "dormant"
-  when it settles while stopped, with nothing queued and only such children: the mark outlives
-  the frame, and all three walks skip the clip until something wakes it (`unsettle`, which
-  `play` now calls too) or 32 frames have passed (a safety net). Measured with a window
-  (2026-11-10, release build, 30 FPS, the mark on and off in turns of 20 s within one session,
-  `RUFFLE_DORMANT_AB=600`), a frame's game logic: Battleon 2.2 -> 1.3 ms, Yulgar 3.1 -> 2.1 ms,
-  farming Legion Tokens at /fotia 4.9 -> 1.95 ms. A 20-minute farm with it on ran without a
-  disconnection or script error. Ruffle's regression tests pass as before. `RUFFLE_NO_DORMANT=1`
-  turns it off. Also: the search for AVM1 clips to remove (a walk of the display list each
-  frame) only runs after one was queued, and the frame epoch the marks read is a shared atomic,
-  not a thread-local. Buttons (`SimpleButton`) carry the marks too now: before, one anywhere
-  below a clip kept the clip and its ancestors from settling. A button's states that aren't
-  shown have no parent, so a change in one can't walk up to the button: it takes every mark of
-  every object away instead (never seen while farming). Measured the same way (2026-11-11,
-  0MaxBags, turns of 2 minutes, `RUFFLE_BUTTON_AB=3600`): the clips that gotos' nested frames
-  walk went from 1.10 million a minute to 0.36 million, a frame from 1.9 to 1.75 ms, game ticks
-  from 68 to 65 ms/s: the walks that were left were cheap ones. `RUFFLE_NO_BUTTON_MARKS=1` turns
-  it off. Not tried: a session of hours over many maps and cutscenes, or a phone.
-  Since Mugetsu 2.0.0 (2026-11-17) the "constructed", "dormant" and button marks, the no-op
-  goto and `Loader` changes and the `gotos:` line are gone: Mugetsu's lean walks
-  (`lean-scripts`, `lean-frames`) do the same work, and their numbers against the ones above
-  are still to be measured.
+  Of what's left, a 30 FPS frame went mostly to the display list's walks (gotos to the frame a
+  clip is already on, and each frame's three walks over clips that stand still). Turu's own
+  marks for such clips ("constructed", "dormant", buttons; 2026-11-10 and 11) were dropped with
+  Mugetsu 2.0.0 (2026-11-17), whose lean walks (`lean-scripts`, `lean-frames`) do the same work.
+  Still to measure them against Turu's marks, which had brought a frame's game logic (release
+  build, window, 30 FPS) from 2.2 to 1.3 ms at Battleon, 3.1 to 2.1 ms at Yulgar and 4.9 to
+  1.95 ms farming at /fotia, and, headless (debug build, GoldFarm at battlegrounde), the
+  player's ticks from ~135 to ~93 ms/s. How those were measured and what each mark did: this
+  file's history (`git log -S RUFFLE_DORMANT_AB -- docs/STATUS.md`).
 - **Handlers wait during one engine wait:** a handler doesn't run while a single Rust-side wait
   is blocking (`bot.wait.forMapLoad`, `forCellChange`, `forActionCooldown`, `forFullyRested`,
   ...); it runs at the next bot call after that. VibeSkua's timer thread runs them all the time.
@@ -1037,81 +1074,6 @@ memory budget (NVIDIA, AMD).
   (`docs/UI.md` has the full list).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use Mugetsu's
   speed profile (PGO), and the macOS app is signed ad hoc, not notarized.
-
-- **Tabs' saved game data** (fixed 2026-11-18): Flash's shared objects (AQW's `AQLite_Data`,
-  with its key bindings and options; `AQWUserPref`; `ignoreList`), which the window writes when
-  its player drops at close, were never written by a tab's client: the shell killed it at once,
-  and its own quit path ends with `exit_now`, which skips the drop. Data the game didn't write
-  itself was lost each time a tab or the shell closed. Now the client writes it first when its
-  connection closes, and the shell closes the connections and waits up to 3 s (`CLOSE_GRACE`)
-  before killing a client that hasn't ended (closing one tab waits on a thread; closing the shell
-  waits for all at once, about 20 ms in a run). Turu also writes each shared object whole (a file
-  of its own, then renamed: `preferences/storage.rs` `WholeWrites`; in place if Windows refuses
-  the rename), as clients share the folder and now write it together at close; Ruffle's emptied
-  the file and wrote it. A client whose shell crashed still ends at once (`--exit-with-parent`)
-  without writing.
-  Looked into and left: the game's messages and a failed load of the root movie only go to a
-  client's log (Ruffle never calls `UiBackend::message`; the root movie is `turu.swf`, and AQW's
-  own load failure is reported by it to the bot), no file dialogs or `fscommand` in a client
-  (AQW's client never browses for files: `FileReference` is only named in its SmartFoxServer
-  library; and it has no `fscommand`).
-- **Tabs' input** (2026-11-18, the gaps M6 left in a tab's client; the shell passes the window's
-  on to the tab on screen):
-  * **Input methods** (IME): the client asks for one (`ToShell::Ime`: allowed, a password's, where
-    its candidates go) while one of Turu's text boxes has the focus (as egui-winit allows it in a
-    window), or the game's focused text field does with Ruffle's IME preference on (`[ime]
-    enabled = true` in Ruffle's `preferences.toml`, off by default, as in the window); the shell
-    applies the tab on screen's while the window has the focus, and passes the composition on
-    (`ToClient::Ime`): to the text box as egui-winit does, else to the game as the window's
-    `app.rs` does. Keys go nowhere while a composition is under way (Enter mustn't send the game's
-    chat). The game field's area is converted from the stage's pixels to the picture's (the
-    window takes them as its viewport's, which puts the candidates off when the game is scaled).
-  * **Keys** (fixed 2026-11-18): the client rebuilt the game's keys from egui's name for them,
-    which lost the physical key (every key `PhysicalKey::Unknown`). Ruffle takes the game's
-    `keyCode` from it on macOS and Linux (0: WASD didn't walk, Enter didn't log in or send chat)
-    and tells held keys apart by it everywhere (on Windows, W then D held and let go left D down:
-    the character walked on). Keys egui has no name for (Shift, Ctrl, punctuation, the numpad)
-    didn't reach the game at all. The shell now sends the game's key whole, as the window's
-    `app.rs` makes it (`util::winit_input_to_ruffle_key_descriptor`), with what it does in a text
-    field (`winit_to_ruffle_text_control`: Ctrl+Home/End, Ctrl or Cmd+Backspace and arrows as in
-    the window), by Ruffle's names (`ToClient::Key`'s `game`, `shell::GameKey`). Without it (a
-    test's `key` line) the client finds the key from egui's name, as on a US keyboard.
-  * **Typed text with Ctrl** goes to the game when Alt is down too (AltGr on Windows: `@` on a
-    German keyboard; the shell had dropped all text with Ctrl, as egui-winit does), not with Ctrl
-    alone or Cmd (Turu: the window types the letter a Ctrl shortcut gives on Linux). Turu's text
-    boxes take none with Ctrl or Cmd, as egui-winit.
-  * **A tab that stops taking input** (hidden, or another tab's tile in Grid View) lets go in the
-    game of the keys and mouse button it had down and loses the focus (Flash's `deactivate`):
-    their release would go to the next tab, and a tab left with W held walked on hidden. A key
-    the game has down is let go there even if the focus went to Turu's UI meanwhile.
-  * **The game's links** (upgrade, buying AC, account pages) open in the browser through the
-    shell, unless Options deny websites; they were only logged (`engine::NoDialogs`, now with
-    `open_links`). Turu: the window asks first with Options' "Ask"; a client has nobody to ask in.
-  * **A trackpad's scrolling** reaches the game in pixels, as in the window (it went as lines of
-    40 pixels, 2.5 times as fast as the window's 100). The game's full screen (`stage.
-    displayState`) and `Mouse.hide` reach the shell's window too (from any tab's game, a hidden
-    one's too; Esc leaving full screen isn't told to the game, which AQW doesn't mind).
-  * **Gamepads**: the shell reads them on a thread of its own (gilrs; the event loop sleeps) and
-    passes each button on (`ToClient::Gamepad`); they act only through `--gamepad-button`'s
-    mappings to keys, as in the window (the clients get the shell's flags).
-  * **Dropped files**: a script (`.ts`, `.js`) dropped on the window is loaded in the tab on
-    screen, as Load Script loads it (not started; not while a script runs); anything else is
-    refused in the log. The window opens a dropped file as a new movie, which would replace AQW.
-  * **Flash's right-click menu**: a right press the game doesn't take opens Flash's items
-    (`Player::prepare_context_menu`) in Turu's UI, holding the release back until it closes, as
-    the window's menu does. AQW turns Flash's own items off and adds none at its login screen
-    (the list was empty), so it shows only if the game adds items; in game it wasn't seen. A
-    press outside closes it from its second frame on (egui lays a new area out unseen first, and
-    the opening press counted as one elsewhere), and Esc; a checked item shows selected.
-  Checked on the Mac with `TURU_SHELL_TEST`'s new lines (`ime`, `drop`, `gamepad`, `rclick`): a
-  committed text in the game's Username field and in Options' search box; the window's IME
-  allowed for the box, and for the game's field only with the preference, with the field's area
-  on the field; a dropped script loaded, a picture refused; a right click at the login screen
-  opened nothing, and with two items faked for one run the menu showed and a press elsewhere and
-  Esc closed it; Backspace during a composition was held back and reached the box after it. Not run: a real input method and its candidate window, plain typing with the
-  IME allowed (macOS didn't let this session send keys: on most systems winit doesn't send an
-  input method's keys, which egui-winit counts on too), a real gamepad and mapping, a real drag,
-  Flash's menu with items, Windows and Linux.
 
 ## Differences from VibeSkua
 

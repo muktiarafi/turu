@@ -5,6 +5,9 @@ by `AirPlatform::has_army` when this started; shown since, see "Built") can work
 runs one app, one root SWF, one stage (no `NativeWindow`), so the clients would have to share it.
 This spike loads two clients on that stage. Started 2026-11-12, on the arm64 emulator.
 
+Status: done. Its answer was built the same day: Turu Mas has tabs, Army and Butler ("Built"
+below; docs/TURU_MAS.md, "Tabs").
+
 ## The problem: everything finds the game at stage child 0
 
 AQW's client and nearly every SWF it loads find the game as `MovieClip(stage.getChildAt(0))`.

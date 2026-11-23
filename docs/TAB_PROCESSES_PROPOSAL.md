@@ -1,8 +1,9 @@
 # Proposal: a process for each tab (desktop and Android)
 
-Status: being built (2026-11-17). M0 is built, M1's spike ran on the emulator, M2 is built, M3
+Status: built but for M4 (2026-11-17). M0 is built, M1's spike ran on the emulator, M2 is built, M3
 (Android) and M5 (desktop) are built, M6 is built (one way of doing tabs: as-built section under
-it); M4 (phones) is not started. Before M6, without the switch or `--shell`, every tab was
+it); M4 (phones) is not started. M6's gaps in a tab's client were closed on 2026-11-18
+(docs/STATUS.md, "Tabs' input"). Before M6, without the switch or `--shell`, every tab was
 a player on one thread of one process, on the desktop and on Android. This proposal keeps the tabs as the user sees them, but runs each tab's game and bot in a process of its
 own, so that Android killing one for memory, a crash or a lost GPU device ends one account instead
 of all of them. Turu Mas is out of scope (see "Turu Mas").

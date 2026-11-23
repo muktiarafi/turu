@@ -5,6 +5,10 @@ left, what was decided and why, and the traps hit on the way. Read `CLAUDE.md` f
 background is in `docs/STATUS.md` ("Mugetsu 2.0.0", "Tabs", "Known gaps") and
 `docs/TAB_PROCESSES_PROPOSAL.md` ("M6 as built").
 
+Status (2026-11-23): open items 4 to 6 are done (struck through below); 1 (a Windows build), 2
+(in game with an account), 3 (frame interpolation in clients, partly done) and 7 (cleanups) are
+still open.
+
 Two pieces of work landed together on `main`:
 
 1. **Mugetsu 2.0.0** (from 1.6.0): ruffle-aqw rebuilt on Mugetsu's new Ruffle base, Turu's

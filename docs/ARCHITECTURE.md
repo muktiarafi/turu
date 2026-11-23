@@ -83,14 +83,15 @@ frontend/                crate `turu_frontend`: what any Turu frontend shares (n
   src/turu.rs            Flash integration: tabs, spawn_action; the app hands in how to reach its
                          loop (`set_tab_requests`, `TuruFlashHost::new`)
   src/turu/ruffle_host.rs  `TuruFlashHost` and the ExternalInterface provider (`TuruExternalInterface`)
-  src/players.rs         several tabs' players on one thread (the window and the windowless loop)
+  src/players.rs         the process's one player (a tab's client, `--headless`, an Android slot,
+                         the window for a movie given on the command line)
   src/platform.rs        `Platform`: file dialogs, browser, file manager for the bot windows; the
                          app installs its own (`app/src/desktop_platform.rs`, rfd)
   src/capture.rs         wraps Ruffle's navigator so the game socket goes through `bot.capture`
   src/map_items.rs, map_pads.rs   the map SWF's AS3 bytecode readers (Grabber, Jump's pads)
   src/grid.rs            Grid View's tiles
-  src/engine.rs          the windowless player loop (`--headless`, Android): executor, no-dialog
-                         navigator, tick loop
+  src/engine.rs          the windowless player loop (a tab's client, `--headless`, Android's slots):
+                         executor, no-dialog navigator, tick loop
   src/pacing.rs          frame interpolation's pacing (desktop window, process tabs' clients,
                          Android's screen)
   src/shell.rs, client_link.rs, client_screen.rs   process tabs (docs/TAB_PROCESSES_PROPOSAL.md):
@@ -115,38 +116,71 @@ scripts/                 submodule: muktiarafi/turu-scripts, the TypeScript scri
 docs/                    these docs
 ```
 
-## Process and threads
+## Processes
 
-One window can hold several tabs, each a game client of its own: a `Player` and its `Bot`
-(`frontend/src/turu.rs`). Every tab's player lives on the event loop thread below; Flash calls
-carry their tab, and the window draws the active tab's player.
+Each tab is a process of its own (docs/TAB_PROCESSES_PROPOSAL.md, M6), on the desktop and on
+Android. A process with a game holds one `Player` and its `Bot` (`frontend/src/players.rs`).
 
 ```
-winit event loop thread (main)          script thread ("Script Thread")      background threads
-───────────────────────────────         ───────────────────────────────      ────────────────────
-Ruffle Player (Arc<Mutex<Player>>)       QuickJS runtime                       ScriptInterface timer (20 ms)
-egui UI (reads Bot state)                user script + Core libraries          drops loop, quest loop,
-TuruExternalInterface (inbound) ──┐      bot.* host calls ─┐                   skills timer, boost timer
-                                  │                         │
-                                  ▼                         ▼
-                           Bot::on_flash_call       Flash::call(name, args)
-                           (never blocks,           = send RuffleEvent::TuruFlashCall
-                            never locks Player)       and block on a reply channel
+            shell (the window; no game)
+  winit window, tab list, input, the pictures shown
+     │ ▲                         │ ▲
+     │ │ shell messages          │ │        (frontend/src/shell.rs: length-prefixed JSON,
+     ▼ │ + pictures              ▼ │         on loopback TCP or Binder)
+  client: tab 1                client: tab 2   ...
+  one Player + Bot, Turu's UI, drawn into GPU surfaces the shell shows
 ```
 
-* **Without a window** (`--headless`, `app/src/headless.rs`) there is no winit event loop:
-  the main thread builds the player with the null renderer and UI and runs its own loop, and
-  `Flash::call` sends to that loop's channel instead of the `EventLoopProxy`.
-* **Ruffle's `Player` is `!Send` in practice** (its futures are `spawn_local` on the event
-  loop). Every call into Flash is therefore marshalled to the event loop thread:
-  `Flash::call` goes through `TuruFlashHost` (`frontend/src/turu/ruffle_host.rs`), which sends
-  `RuffleEvent::TuruFlashCall(call)` (the tab, the callback's name and arguments, a reply
-  channel) through the winit `EventLoopProxy`; `app.rs` hands it to `turu::answer_flash_call`,
-  which runs `Player::call_internal_interface` on that tab's player and sends the `ExternalValue`
-  back, and `TuruFlashHost` turns it into a `String`. This mirrors VibeSkua, where every OCX
-  call is dispatched to the UI thread.
-* Calls must **never** be made from the event loop thread itself (it would deadlock waiting
-  for its own reply). The UI only reads cached state or spawns work on other threads.
+* **Desktop.** Every start of Turu's window is the shell (`app/src/shell.rs`,
+  `shell::runs_as_shell`). It runs no game: it starts each tab as `turu --client=<address>`
+  (`app/src/client.rs`), shows the picture of the tab on screen, and sends that tab the window's
+  mouse, keys, size, IME and gamepads. A client runs the windowless loop below, with a GPU set up
+  without a window. `frontend/src/client_screen.rs` draws the game and Turu's egui UI into
+  surfaces the shell opens (IOSurfaces on macOS; Vulkan or D3D12 memory elsewhere), or into pixels
+  when it can't. A client that dies is started again; one GPU loss ends one tab. The tab strip is
+  drawn by each client from the shell's list, and its clicks go back to the shell
+  (`frontend/src/client_link.rs`). The window for a movie given on the command line (plain
+  Ruffle) keeps one player of its own, without tabs.
+* **Android.** The activity is the shell (`frontend/src/slots.rs`'s `SlotShell`, carried out by
+  `SlotShell.kt`). Each tab is a slot: a foreground service in a process of its own (`:c1` ...
+  `:c9`) running one engine, which draws into the surface the activity hands it. Shell and slots
+  speak the same messages over Binder.
+* **`--headless`** (`app/src/headless.rs`) is one process, one tab, with no shell, window or
+  GPU: the null renderer and UI, the loop on the main thread.
+* **Turu Mas** is the exception: AIR runs the game, and one process keeps several bots through
+  `turu_frontend`'s tab list (`turu::TABS`, `air/ane/rust/src/clients.rs`).
+
+The tabs share the data folder (and Flash's SharedObjects), as VibeSkua's processes do.
+
+## Threads in a client
+
+```
+engine thread (frontend/src/engine.rs)   script thread ("Script Thread")      background threads
+──────────────────────────────────────   ───────────────────────────────      ────────────────────
+Ruffle Player (Arc<Mutex<Player>>)        QuickJS runtime                       ScriptInterface timer (20 ms)
+egui UI (reads Bot state)                 user script + Core libraries          drops loop, quest loop,
+TuruExternalInterface (inbound) ──┐       bot.* host calls ─┐                   skills timer, boost timer
+                                  │                          │                   the shell link's reader
+                                  ▼                          ▼
+                           Bot::on_flash_call        Flash::call(name, args)
+                           (never blocks,            = send EngineEvent::TuruFlashCall
+                            never locks Player)        and block on a reply channel
+```
+
+* **Ruffle's `Player` is `!Send` in practice** (its futures are `spawn_local` on the thread
+  that runs it). Every call into Flash is therefore marshalled to that thread: `Flash::call`
+  goes through `TuruFlashHost` (`frontend/src/turu/ruffle_host.rs`), which sends the call (the
+  tab, the callback's name and arguments, a reply channel) to the engine loop
+  (`EngineEvent::TuruFlashCall`, `engine::flash_host`); the loop hands it to
+  `turu::answer_flash_call`, which runs `Player::call_internal_interface` on the player and
+  sends the `ExternalValue` back, and `TuruFlashHost` turns it into a `String`. This mirrors
+  VibeSkua, where every OCX call is dispatched to the UI thread.
+* The shell's messages are read on a thread of their own and run on the engine thread
+  (`EngineEvent::Run`); pictures go out on another, newest first, so the engine never waits on
+  the shell.
+* Calls must **never** be made from the engine thread itself, which also draws Turu's UI (it
+  would deadlock waiting for its own reply). The UI only reads cached state or spawns work on
+  other threads (`turu::spawn_action`).
 * Inbound calls from AS3 (`ExternalInterface.call(...)`) arrive in
   `TuruExternalInterface::call_method` while the player is locked. It forwards them to
   `Bot::on_flash_call`, which only updates state / pushes to channels and returns

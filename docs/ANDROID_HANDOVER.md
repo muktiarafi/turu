@@ -5,6 +5,12 @@ For whoever continues the Android port (a person or an agent). It says where thi
 `docs/ANDROID_PROPOSAL.md` (with an "As built" section per phase); building and running are in
 `docs/ANDROID.md`. Read `CLAUDE.md` first: its rules hold here too.
 
+Status: written 2026-11-03, before process tabs and the native windows. Since then each tab is a
+slot in a process of its own under the activity as shell (docs/TAB_PROCESSES_PROPOSAL.md, M3 and
+M6), and the rail, the tabs and the daily windows are Compose pages (docs/NATIVE_UI_PROPOSAL.md).
+Where this doc and docs/STATUS.md or docs/ANDROID.md disagree, those win; "Things that bit us"
+and the setup still hold.
+
 ## Where it stands
 
 Phases 0 to 4 of the proposal are built and committed, and were checked on an emulator:
@@ -74,17 +80,11 @@ system moving the dialog above the keyboard).
 
 ## Branches and workflow
 
-* `android` is the feature branch, cut from `main` at `db698ca36`. Each phase gets its own
-  branch from `android` (`android-phase-N`, or a name like `android-touch-fix`) and is merged
-  back with `git merge --ff-only`, never a merge commit. Rebase the phase branch first if
-  `android` moved on.
-* `main` has none of this. Desktop `--headless` needs the ruffle-aqw fix that is on `android`
-  (below); `main` wants that submodule bump at some point.
-* Nothing of Turu's is pushed. ruffle-aqw's `aqw` branch is pushed (it holds `0b7de76a3`, which
-  `android` points the submodule at).
+* `android` (cut from `main` at `db698ca36`, phases fast-forwarded into it) has been merged
+  into `main`. Android fixes go on `main`; a phase-sized piece of new work gets a branch of its
+  own from `main`, merged by rebase as any pull request (`CONTRIBUTING.md`).
 * `CLAUDE.md`: don't commit unless asked. The owner says when to commit and merge.
-* Untracked files in the working tree that aren't part of this work: `packets.txt`,
-  `docs/PORTING_GAPS.md`. Leave them out of commits.
+* `packets.txt` in the working tree isn't part of this work. Leave it out of commits.
 
 ## Code map
 
