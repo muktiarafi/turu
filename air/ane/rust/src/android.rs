@@ -378,7 +378,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeUiFieldEdited<'local
         .with_env(|env| -> jni::errors::Result<()> {
             let text = text.try_to_string(env)?;
             crate::overlay::field_action(crate::overlay::FieldAction::Edited(
-                turu_frontend::gui::turu::native_field::Contents {
+                turu_egui::gui::turu::native_field::Contents {
                     text,
                     start: start.max(0) as usize,
                     end: end.max(0) as usize,
@@ -410,7 +410,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_air_Bridge_nativeCrashUploadsAnswer<'
     answer: jint,
 ) {
     let answer = (answer >= 0).then_some(answer == 1);
-    std::thread::spawn(move || turu_frontend::gui::turu::answer_crash_upload_question(answer));
+    std::thread::spawn(move || turu_egui::gui::turu::answer_crash_upload_question(answer));
 }
 
 /// `Bridge.nativePackageInstalled(status, message)`, on the UI thread: how Android's installer

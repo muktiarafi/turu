@@ -41,7 +41,7 @@ then runs. `ScriptManager::configure` (also used by `bot.config.configure`, whic
 `setOptions()` calls until `skipOptions` is ticked) returns at once, without a word, when the
 script has no options, the run is silent, or `interactive` is false. `interactive` is set from
 `!headless()` (`frontend/src/turu.rs:129`) and by the egui UI once it is up
-(`frontend/src/gui/turu/mod.rs:194`). With a window, a request in a tab you aren't looking at
+(`egui_ui/src/gui/turu/mod.rs:194`). With a window, a request in a tab you aren't looking at
 waits until you open it (the tab's "!", and Army Control says so).
 
 When the window isn't shown, the script reads what `ScriptOptions::load` found: the values in
@@ -174,7 +174,7 @@ behaviour change.
 
 | | Files | API / CLI | Size |
 |---|---|---|---|
-| A | `bot/src/script/mod.rs` (one "not shown" note per run in `configure`/`preconfigure`, with whether `ScriptOptions::path()` exists), `bot/src/script/options.rs` (remember whether the file was found in `load`), `bot/src/monitor/` (event or `ScriptStarted` field), `bot/src/control_api.rs` (`options` in the start reply), `bot/src/army.rs` + `frontend/src/gui/turu/army.rs` (show "defaults" per client), `frontend/src/turu.rs` (startup warning), tests in `bot/tests/`, `docs/HEADLESS.md`, `docs/STATUS.md` | `/script/start` reply gains `options`; no new flags | ~100 lines + tests, half a day |
+| A | `bot/src/script/mod.rs` (one "not shown" note per run in `configure`/`preconfigure`, with whether `ScriptOptions::path()` exists), `bot/src/script/options.rs` (remember whether the file was found in `load`), `bot/src/monitor/` (event or `ScriptStarted` field), `bot/src/control_api.rs` (`options` in the start reply), `bot/src/army.rs` + `egui_ui/src/gui/turu/army.rs` (show "defaults" per client), `frontend/src/turu.rs` (startup warning), tests in `bot/tests/`, `docs/HEADLESS.md`, `docs/STATUS.md` | `/script/start` reply gains `options`; no new flags | ~100 lines + tests, half a day |
 | B | `bot/src/script/mod.rs` (refuse in `start_with`), `bot/src/control_api.rs` (`defaults=1`), `bot/src/startup.rs`, docs | `/script/start?defaults=1`; maybe `--script-defaults` | ~60 lines + tests, but needs CoreBots' `skipOptions` read before the run |
 | C1 | `bot/src/script/options.rs` (`Serialize` for `Declaration`, `OptionDecl`, `Kind`; a JSON view of the values), `bot/src/script/mod.rs` (reuse `options()`/`save_options`), `bot/src/scheduler.rs` (an entry's options), `bot/src/control_api.rs` (routes + doc table), `bot/src/monitor/server.rs` (allow-list) and the monitor page (form), tests, `docs/HEADLESS.md` (routes; drop or shorten the copy-files table) | `GET/POST /script/options`, `GET/POST /scheduler/options?id=` | ~250 lines Rust + ~250 lines page JS, 1–2 days |
 | C2 | C1, plus `bot/src/script/mod.rs` (a `remote` answerer next to `interactive`, timeout), `/status` and the snapshot (`waitsFor`), Army Control's per-client status, the monitor card | `POST /script/options?submit=` / `?cancel=` | +~200 lines, 1–2 days, and a decision on timeouts |

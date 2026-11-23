@@ -320,7 +320,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_TuruActivity_nativeCrashUploadsAnswer
     answer: jint,
 ) {
     let answer = (answer >= 0).then_some(answer == 1);
-    std::thread::spawn(move || turu_frontend::gui::turu::answer_crash_upload_question(answer));
+    std::thread::spawn(move || turu_egui::gui::turu::answer_crash_upload_question(answer));
 }
 
 /// Puts `text` on Android's clipboard (egui's Copy).

@@ -88,7 +88,7 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
   `--in-process` accepted and ignored; the window keeps one player, no tabs or Grid View.
   Clients got: `app/src/memory.rs` (memory watch, limit, Free memory; every 5 s), Options >
   Application's Performance Mode / Memory Limit / Free Memory Now (`Platform` methods,
-  `frontend/src/client_screen.rs` scales the viewport and the mouse), `headless::build_player`
+  `egui_ui/src/client_screen.rs` scales the viewport and the mouse), `headless::build_player`
   with the window's setup, GPU loss → exit 86 → the shell restarts it (`client.rs` `gpu_check`),
   `ToShell::Cursor`, the perf log, the engine thread's close.
 - M6, Android: the activity is always the shell; no engine in the app's process; `TuruService`

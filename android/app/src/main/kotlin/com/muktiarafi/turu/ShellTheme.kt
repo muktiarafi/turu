@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
 
 /**
  * The shell's native screens' look (docs/UI.md, "Native shells", Android): Material 3 with a fixed
- * dark scheme pinned to egui's tokens (`frontend/src/gui/turu/theme.rs`), since Compose and egui
+ * dark scheme pinned to egui's tokens (`egui_ui/src/gui/turu/theme.rs`), since Compose and egui
  * share the rail until L5b. No wallpaper colours. Roboto in the M3 type scale; the Script Loader's
  * state line uses its emphasized twin (`titleSmallEmphasized`).
  *

@@ -1,6 +1,6 @@
 //! What's on screen, as the desktop's `gui/controller.rs` does it: the game draws into a texture
 //! of its own ([`MovieTexture`]), and each frame that texture is drawn below Turu's nav bar with
-//! the bot windows (`turu_frontend::gui::turu`, egui) over it. Everything here lives on the
+//! the bot windows (`turu_egui::gui::turu`, egui) over it. Everything here lives on the
 //! engine thread, which runs the player ([`SCREEN`]).
 //!
 //! The GPU is set up without a window ([`gpu`]), so the game can run before one exists (started
@@ -28,7 +28,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use turu_frontend::engine::Step;
-use turu_frontend::gui::turu::TuruUi;
+use turu_egui::gui::turu::TuruUi;
 pub use turu_frontend::movie_texture::{Blit, MovieTexture};
 use turu_frontend::pacing::Pacing;
 use turu_frontend::touch::GameTouches;
@@ -398,12 +398,12 @@ impl Screen {
 
     /// What of Turu is above the game (the tab strip, with tabs), in pixels.
     fn top(&self) -> f32 {
-        turu_frontend::gui::top_height() as f32 * self.pixels_per_point
+        turu_egui::gui::top_height() as f32 * self.pixels_per_point
     }
 
     /// Turu's nav rail left of the game, in pixels: the game keeps the screen's height.
     fn left(&self) -> f32 {
-        turu_frontend::gui::left_width() as f32 * self.pixels_per_point
+        turu_egui::gui::left_width() as f32 * self.pixels_per_point
     }
 
     /// The game's part of the window, in pixels.
@@ -715,7 +715,7 @@ impl Screen {
         }
         // The rail and the tab strip keep clear of a cutout (a punch-hole camera, held sideways).
         let (cutout_left, cutout_right) = crate::ui::cutout();
-        turu_frontend::gui::set_cutout(
+        turu_egui::gui::set_cutout(
             cutout_left as f32 / self.pixels_per_point,
             cutout_right as f32 / self.pixels_per_point,
         );
@@ -801,7 +801,7 @@ impl Screen {
         // The native field's Send, as Enter in Turu's text box (`ui_field.rs`).
         raw_input
             .events
-            .extend(turu_frontend::gui::turu::native_field::input_events(
+            .extend(turu_egui::gui::turu::native_field::input_events(
                 &self.egui,
             ));
         let top = self.top() / ppp;
@@ -815,10 +815,10 @@ impl Screen {
         let output = self.egui.run_ui(raw_input, |root| {
             ui.show_bar(root);
             if let Some(fps) = fps {
-                turu_frontend::gui::turu::fps_badge_at(root.ctx(), left, top, fps);
+                turu_egui::gui::turu::fps_badge_at(root.ctx(), left, top, fps);
             }
             if turu::headless_mode() {
-                turu_frontend::gui::turu::show_headless_screen(root.ctx(), top);
+                turu_egui::gui::turu::show_headless_screen(root.ctx(), top);
             }
             ui.show_windows(root.ctx());
         });
@@ -950,7 +950,7 @@ fn system_fonts() -> egui::FontDefinitions {
             .or_default()
             .push(file.to_owned());
     }
-    turu_frontend::gui::turu::theme::add_symbol_font(&mut fonts);
+    turu_egui::gui::turu::theme::add_symbol_font(&mut fonts);
     fonts
 }
 

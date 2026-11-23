@@ -1,6 +1,7 @@
 [package]
 # What Turu's frontends share: the player <-> bot bridge (tabs, `FlashHost`, ExternalInterface),
-# the game socket capture, the map SWF readers, and the egui bot windows. The desktop app (`app/`)
+# the game socket capture, the map SWF readers, and the view models the windows show (the egui
+# windows themselves are `turu_egui`, `egui_ui/`; no egui here). The desktop app (`app/`)
 # adds the window, Mugetsu's settings and the dialogs; no winit or rfd here.
 name = "turu_frontend"
 authors.workspace = true
@@ -23,16 +24,12 @@ async-task = { version = "4.7.1", optional = true }
 # Several tabs' players on one thread (`players.rs`) swap the renderer's unsubmitted command
 # segments, as the core's thread-local state.
 ruffle_render_wgpu = { path = "../ruffle/render/wgpu", optional = true }
-egui-wgpu = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }
 # What draws on the GPU without the player (`blit.rs`, `gpu_waiter.rs`; the `gpu` feature): the
 # desktop shell's window (`turu_shell`) as well as the clients.
 wgpu = { workspace = true, optional = true }
 # Grabber > GetMap Item IDs and the map pads read the map SWF's AS3 bytecode.
 swf = { path = "../ruffle/swf", default-features = false, features = ["flate2"] }
-egui = { workspace = true }
-# The web monitor's phone link as a QR code (Options > Application > Monitor).
-qrcode = { version = "0.14.1", default-features = false }
 async-channel = { workspace = true }
 anyhow = { workspace = true }
 # The crash reports' times (Diagnostics > Logs > Crashes).
@@ -66,13 +63,10 @@ ruffle = [
     "dep:ruffle_frontend_utils",
     "dep:async-task",
     "dep:ruffle_render_wgpu",
-    "dep:egui-wgpu",
     "dep:bytemuck",
 ]
 # Drawing on the GPU without the player: the blit and the GPU waiter (the desktop shell).
 gpu = ["dep:wgpu", "dep:bytemuck"]
-# Turu Mas's look (air/app): a gold accent instead of Turu's violet.
-air = []
 
 [[bin]]
 name = "turu-typegen"

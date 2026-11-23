@@ -3,7 +3,7 @@
   "generatedAt": "2026-11-06T11:54:37+00:00",
   "title": "Design System: Turu Monitor",
   "extensions": {
-    "scope": "Nila covers the Turu Monitor web surface only (bot/assets/monitor/index.html). The egui desktop/Android UI (frontend/src/gui/turu/theme.rs) keeps its Mugetsu palette and must not use these tokens.",
+    "scope": "Nila covers the Turu Monitor web surface only (bot/assets/monitor/index.html). The egui desktop/Android UI (egui_ui/src/gui/turu/theme.rs) keeps its Mugetsu palette and must not use these tokens.",
     "colorMeta": {
       "nila-ground": {
         "role": "neutral",

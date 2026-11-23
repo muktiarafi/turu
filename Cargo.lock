@@ -7569,6 +7569,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-tracy",
  "turu_bot",
+ "turu_egui",
  "turu_frontend",
  "turu_shell",
  "unic-langid",
@@ -7623,6 +7624,7 @@ dependencies = [
  "tokio",
  "tracing",
  "turu_bot",
+ "turu_egui",
  "turu_frontend",
  "turu_shell",
  "url",
@@ -7662,6 +7664,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "turu_egui"
+version = "0.4.0"
+dependencies = [
+ "egui",
+ "egui-wgpu",
+ "qrcode",
+ "ruffle_core",
+ "ruffle_render_wgpu",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "turu_bot",
+ "turu_frontend",
+ "url",
+]
+
+[[package]]
 name = "turu_frontend"
 version = "0.4.0"
 dependencies = [
@@ -7670,11 +7689,8 @@ dependencies = [
  "async-task",
  "bytemuck",
  "chrono",
- "egui",
- "egui-wgpu",
  "facet",
  "facet_generate",
- "qrcode",
  "reqwest",
  "ruffle_core",
  "ruffle_frontend_utils",

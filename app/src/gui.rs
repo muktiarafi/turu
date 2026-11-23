@@ -7,7 +7,7 @@ mod mugetsu_menu;
 mod movie;
 mod picker;
 mod theme;
-use turu_frontend::gui::turu; // Turu: VibeSkua-style nav bar and bot windows.
+use turu_egui::gui::turu; // Turu: VibeSkua-style nav bar and bot windows.
 mod widgets;
 
 pub use controller::GuiController;
@@ -40,12 +40,12 @@ use winit::event_loop::EventLoopProxy;
 /// Size of the top menu bar in pixels.
 /// This is the offset at which the movie will be shown,
 /// and added to the window size if trying to match a movie.
-pub const MENU_HEIGHT: u32 = turu_frontend::gui::NAV_BAR_HEIGHT; // Turu: VibeSkua's 34 px top nav bar.
+pub const MENU_HEIGHT: u32 = turu_egui::gui::NAV_BAR_HEIGHT; // Turu: VibeSkua's 34 px top nav bar.
 
 /// Turu: the height above the movie: the nav bar, and the tab strip when it shows.
 pub fn top_height() -> u32 {
     if crate::mugetsu::plays_aqw() {
-        turu_frontend::gui::top_height()
+        turu_egui::gui::top_height()
     } else {
         MENU_HEIGHT
     }

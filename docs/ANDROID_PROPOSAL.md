@@ -66,7 +66,7 @@ Ways to use it:
 | `skua.swf` + the Flash bridge | Embedded, written to the data dir, `ExternalInterface`. | Unchanged. |
 | Ruffle + Mugetsu core/render patches | wgpu (Metal/Vulkan/DX12). | Core patches are backend-agnostic. Render patches (arena, atlas, batched filters) are wgpu-level; the `wgpu-hal` patches touch only `dx12/` and `vulkan/` (plus `lib.rs`, `dynamic/`), so they apply to Vulkan on Android and are inert on GLES. |
 | Player building, executor, `FlashHost` | `app/src/player.rs` (window), `app/src/headless.rs` (no window). | `headless.rs`'s pieces (`HeadlessExecutor`, the `mpsc` loop, `DesktopFlashHost::headless`) are the model: the Android loop is that loop plus "render when a surface is attached". |
-| Turu UI (`frontend/src/gui/turu/`) | egui; since phase 0 no winit, `rfd` or `webbrowser` (file dialogs and links go through `Platform`). | egui runs on Android through `egui-wgpu` with input fed by hand. The windows need a touch layout (below). |
+| Turu UI (`egui_ui/src/gui/turu/`) | egui; since phase 0 no winit, `rfd` or `webbrowser` (file dialogs and links go through `Platform`). | egui runs on Android through `egui-wgpu` with input fed by hand. The windows need a touch layout (below). |
 | Control API, web monitor | hyper on its own thread. | Works. Useful both ways: steer the phone's bot from a desktop, or show the phone's bots on a desktop monitor (`--report-to`). |
 
 ## Feature matrix
@@ -281,7 +281,7 @@ Android's limits are the biggest behavioural difference from a desktop:
 * **Seams:** `turu::set_tab_requests` and `TuruFlashHost::new` (was `DesktopFlashHost` with
   `new(EventLoopProxy)` and `headless(Sender)`); `turu::window_title(title)` and
   `turu::start_perf_log(main_thread)` take what came from `mugetsu` and `thread_perf`. The bar
-  heights and Mugetsu's palette the windows use are in `turu_frontend::gui`; the app's
+  heights and Mugetsu's palette the windows use are in `turu_egui::gui`; the app's
   `context_menu.rs` takes the palette from there.
 * **`Platform`** as above; `app/src/desktop_platform.rs` implements it with rfd, `webbrowser`
   and Mugetsu's `open_folder`. The windows no longer take a `FilePicker` parameter.
@@ -472,7 +472,7 @@ job (`docs/HEADLESS.md`). The limit is a setting (default 2, at most 4), checked
    given `engine::flash_host`'s host for that tab); Select swaps which player draws to the
    surface and which one AAudio plays (the others muted, as `set_tab_volumes`); Close detaches
    the bot and drops the player. Open over the limit is refused with a log line. The tab strip
-   (`frontend/src/gui/turu/tab_strip.rs`, in `TuruUi` already) then shows up by itself with two
+   (`egui_ui/src/gui/turu/tab_strip.rs`, in `TuruUi` already) then shows up by itself with two
    tabs; it needs a touch size (taller tabs, "×" only on the active one).
 4. **Accounts launch into tabs.** On Android, Army > Accounts offers only "In a tab" and
    "Log in by hand"; `army::Army::launch` (process spawning) is behind
@@ -498,10 +498,10 @@ job (`docs/HEADLESS.md`). The limit is a setting (default 2, at most 4), checked
 | Step | Files | Estimate |
 |---|---|---|
 | 1-3. Shared player bookkeeping, tabbed loop, tab requests | `frontend/src/engine.rs`, new `frontend/src/players.rs`, `app/src/player.rs`, `android/src/{lib,screen,audio}.rs` | 1-2 weeks |
-| 4. Accounts into tabs | `bot/src/army.rs`, `frontend/src/gui/turu/accounts.rs` | 1-2 days |
+| 4. Accounts into tabs | `bot/src/army.rs`, `egui_ui/src/gui/turu/accounts.rs` | 1-2 days |
 | 5. Keystore `SecretStore` | `bot/src/accounts.rs`, `android/` (JNI, Java) | 3-4 days |
 | 6. Service, notification, restart | `android/src/notify.rs`, `TuruService`, `android/src/lib.rs` | 2-3 days |
-| 7. Butler and Army Control layouts | `frontend/src/gui/turu/{butler,army,tab_strip}.rs` | 2-3 days |
+| 7. Butler and Army Control layouts | `egui_ui/src/gui/turu/{butler,army,tab_strip}.rs` | 2-3 days |
 | 8. Phone testing | | ongoing |
 
 About 3-4 weeks in all. Steps 1-2 are the risky part (the thread-state swap is what keeps two

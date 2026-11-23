@@ -1,6 +1,6 @@
 //! Turu: the client mode (`--client=<address>`, docs/TAB_PROCESSES_PROPOSAL.md, M2). One tab's
 //! game and bot without a window, as `--headless` runs them, but drawn: the player renders on a
-//! GPU set up without a window, and `turu_frontend::client_screen` draws it with Turu's UI into
+//! GPU set up without a window, and `turu_egui::client_screen` draws it with Turu's UI into
 //! pictures for the shell (`shell.rs`), which shows them and sends back input. The process quits
 //! when the shell closes the connection.
 //!
@@ -25,7 +25,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use turu_frontend::client_screen::{ClientScreen, Picture};
+use turu_egui::client_screen::{ClientScreen, Picture};
 use turu_frontend::engine::{self, EngineEvent, STAGE};
 use turu_frontend::movie_texture::{Blit, MovieTexture};
 use turu_frontend::platform::{Answer, FileDialog, Platform};
@@ -480,7 +480,7 @@ fn perf_tick(player: &mut ruffle_core::Player) {
 /// The system clipboard for Turu's text boxes (egui-winit's, without a window).
 struct SystemClipboard(egui_winit::clipboard::Clipboard);
 
-impl turu_frontend::client_screen::Clipboard for SystemClipboard {
+impl turu_egui::client_screen::Clipboard for SystemClipboard {
     fn get(&mut self) -> Option<String> {
         self.0.get()
     }

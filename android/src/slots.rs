@@ -16,7 +16,7 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use turu_bot::accounts::SecretStore;
-use turu_frontend::gui::turu::native_field::Contents;
+use turu_egui::gui::turu::native_field::Contents;
 use turu_frontend::shell::{FieldId, ToClient, ToShell};
 use turu_frontend::slots::SlotRecord;
 use turu_frontend::turu;
@@ -353,7 +353,7 @@ pub extern "C" fn Java_com_muktiarafi_turu_SlotService_nativeFromShell<'local>(
                 }
                 // The shell's rail hidden or shown: the game gets the room.
                 Ok(ToClient::RailHidden { hidden }) => {
-                    turu_frontend::gui::turu::set_side_bar_hidden(hidden);
+                    turu_egui::gui::turu::set_side_bar_hidden(hidden);
                     crate::run_on_engine(|_| crate::with_screen(|screen| screen.request_repaint()));
                 }
                 // One of this tab's egui windows, which the shell's native screens open.

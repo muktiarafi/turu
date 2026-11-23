@@ -1,0 +1,39 @@
+[package]
+# Turu: the egui UI (docs/NATIVE_UI_PROPOSAL.md, L1's client part): the bot windows in VibeSkua's
+# layout (`gui::turu`) and a client's screen that draws them with the game (`client_screen.rs`).
+# They read and act through `turu_frontend` (the tabs, the view models, the link), which has no
+# egui of its own. Every frontend that shows Turu's windows in egui uses it: the desktop app, its
+# clients, Android's slots and Turu Mas.
+name = "turu_egui"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+turu_bot = { path = "../bot", default-features = false }
+turu_frontend = { path = "../frontend", default-features = false }
+egui = { workspace = true }
+# The web monitor's phone link as a QR code (Options > Application > Monitor).
+qrcode = { version = "0.14.1", default-features = false }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+# A client's screen (`client_screen.rs`, the `ruffle` feature): the game's player and the UI drawn
+# with it on the GPU.
+ruffle_core = { path = "../ruffle/core", optional = true }
+ruffle_render_wgpu = { path = "../ruffle/render/wgpu", optional = true }
+egui-wgpu = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+default = ["ruffle"]
+# The game in Ruffle, as `turu_frontend`'s feature, and a client's screen over it.
+ruffle = ["turu_frontend/ruffle", "dep:ruffle_core", "dep:ruffle_render_wgpu", "dep:egui-wgpu"]
+# Turu Mas's look (air/app): a gold accent instead of Turu's violet.
+air = []

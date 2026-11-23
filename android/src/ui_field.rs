@@ -3,12 +3,12 @@
 //! selection handles, text toolbar, suggestions, autocorrect and autofill. egui alone gets only
 //! keys from the keyboard.
 //!
-//! The text boxes say what they hold each frame (`turu_frontend::gui::turu::native_field`); the
+//! The text boxes say what they hold each frame (`turu_egui::gui::turu::native_field`); the
 //! screen keeps Kotlin's field in step after each frame ([`UiField::sync`]). Kotlin's edits come
 //! back here as the whole text and selection and reach the box in the next frame; its Send is
 //! Enter in the box, and Back takes the focus off it.
 
-use turu_frontend::gui::turu::native_field::{self, Change, Contents, Kind, NativeField};
+use turu_egui::gui::turu::native_field::{self, Change, Contents, Kind, NativeField};
 use turu_frontend::shell::{FieldId, ToShell};
 
 /// Kotlin's field for Turu's text boxes, as last shown or edited.

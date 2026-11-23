@@ -2007,6 +2007,19 @@ pub fn spawn_action_for(
     }
 }
 
+/// What the tab's script (or Butler) waits for the user to answer, for the tab strips and the
+/// shell's tab list: "Script Options", "a message box", "Butler's question".
+pub fn waits_for(bot: &turu_bot::Bot) -> Option<&'static str> {
+    bot.scripts
+        .waits_for()
+        .or_else(|| bot.butler.suspend_notice().map(|_| "Butler's question"))
+}
+
+/// Whether the bot runs a script, a Console snippet or Auto Attack/Hunt.
+pub fn busy(bot: &turu_bot::Bot) -> bool {
+    bot.scripts.status().is_active() || bot.scripts.is_snippet_running() || bot.auto.is_running()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -216,7 +216,7 @@ impl ContextMenu {
 pub(crate) const WIDTH: f32 = 268.0;
 pub(crate) const PANEL: Color32 = Color32::from_rgba_premultiplied(17, 19, 26, 242);
 // Turu: shared with the bot windows' theme.
-pub(crate) use turu_frontend::gui::mugetsu::{ACCENT, EDGE, MUTED, ROW_HOVER, TEXT, TRACK};
+pub(crate) use turu_egui::gui::mugetsu::{ACCENT, EDGE, MUTED, ROW_HOVER, TEXT, TRACK};
 
 /// The graphics API choices on this system, and the values they stand for.
 pub(crate) fn graphics_options() -> (&'static [&'static str], &'static [Option<Graphics>]) {

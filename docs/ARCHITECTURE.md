@@ -79,7 +79,7 @@ bot/                     crate `turu_bot`: the bot engine (no dependency on the 
                          login tracking, rest packets, option enforcement, the relogin watchdog
     script/              ScriptManager: load/start/stop/pause, TS transpile, QuickJS runtime, bindings,
                          script options (`options.rs`: the `scriptOptions` declaration and its values)
-frontend/                crate `turu_frontend`: what any Turu frontend shares (no winit, rfd or window)
+frontend/                crate `turu_frontend`: what any Turu frontend shares (no egui, winit, rfd or window)
   src/turu.rs            Flash integration: tabs, spawn_action; the app hands in how to reach its
                          loop (`set_tab_requests`, `TuruFlashHost::new`)
   src/turu/ruffle_host.rs  `TuruFlashHost` and the ExternalInterface provider (`TuruExternalInterface`)
@@ -94,10 +94,14 @@ frontend/                crate `turu_frontend`: what any Turu frontend shares (n
                          executor, no-dialog navigator, tick loop
   src/pacing.rs          frame interpolation's pacing (desktop window, process tabs' clients,
                          Android's screen)
-  src/shell.rs, client_link.rs, client_screen.rs   process tabs (docs/TAB_PROCESSES_PROPOSAL.md):
-                         what a shell and a client say, a tab's side of the link, a client's screen
+  src/shell.rs, client_link.rs   process tabs (docs/TAB_PROCESSES_PROPOSAL.md):
+                         what a shell and a client say, a tab's side of the link
+  src/layout.rs          where Turu's UI sits around the game (bar or rail, tab strip, cutout)
   src/slots.rs           process tabs on Android (the shell's side is `turu_shell::slots`): each tab a slot, a service in a process of its own
+egui_ui/                 crate `turu_egui`: the egui UI over `turu_frontend` (its modules re-exported
+                         at the root, so the windows say `crate::turu`)
   src/gui/turu/          egui UI: top nav bar, Script Loader, Options, Skills, Logs, ... (VibeSkua layout)
+  src/client_screen.rs   a client's screen: the game and the egui UI drawn into the shell's surfaces
 android/                 crate `turu_android` (cdylib, empty off Android) and the Gradle app that
                          loads it: `docs/ANDROID.md`
   shared/                the Kotlin both Android apps share (crash records and uploads, the text
@@ -140,7 +144,7 @@ Android. A process with a game holds one `Player` and its `Bot` (`frontend/src/p
   its winit front `app/src/shell.rs`; `shell::runs_as_shell`). It runs no game: it starts each tab as `turu --client=<address>`
   (`app/src/client.rs`), shows the picture of the tab on screen, and sends that tab the window's
   mouse, keys, size, IME and gamepads. A client runs the windowless loop below, with a GPU set up
-  without a window. `frontend/src/client_screen.rs` draws the game and Turu's egui UI into
+  without a window. `egui_ui/src/client_screen.rs` draws the game and Turu's egui UI into
   surfaces the shell opens (IOSurfaces on macOS; Vulkan or D3D12 memory elsewhere), or into pixels
   when it can't. A client that dies is started again; one GPU loss ends one tab. The tab strip is
   drawn by each client from the shell's list, and its clicks go back to the shell
@@ -254,7 +258,7 @@ The window keeps VibeSkua's layout: a 34 px top nav bar (Scripts, Options, Tools
 Combat, Bank, Diagnostics, Plugins; Auto / Jump / + on the right) above the game (on a touch
 screen, a rail down the left instead), and tool windows (Script Loader, Game Options, Skills, Logs, Packet Logger, ...) as egui windows over
 the game. Colours, corner radii and fonts come from Mugetsu's menu style
-(`frontend/src/gui/turu/theme.rs`). Details: `docs/UI.md`.
+(`egui_ui/src/gui/turu/theme.rs`). Details: `docs/UI.md`.
 
 ## Data directory
 

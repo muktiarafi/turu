@@ -9,8 +9,6 @@ pub mod capture;
 #[cfg(feature = "gpu")]
 pub mod blit;
 pub mod client_link;
-#[cfg(feature = "ruffle")]
-pub mod client_screen;
 pub mod crash_reports;
 pub mod documents;
 #[cfg(feature = "ruffle")]
@@ -20,7 +18,7 @@ pub mod game_files;
 pub mod gpu_waiter;
 pub mod graphics_tips;
 pub mod grid;
-pub mod gui;
+pub mod layout;
 pub mod map_items;
 pub mod map_pads;
 pub mod memory_kills;

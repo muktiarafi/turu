@@ -284,7 +284,7 @@ abstract class NativeField(
     }
 
     companion object {
-        // Turu's egui colours (`frontend/src/gui/turu/theme.rs`); the accent is each app's.
+        // Turu's egui colours (`egui_ui/src/gui/turu/theme.rs`); the accent is each app's.
         private val CARD = Color.rgb(24, 27, 37)
         private val TEXT = Color.rgb(232, 234, 242)
         private val MUTED = Color.rgb(140, 146, 166)

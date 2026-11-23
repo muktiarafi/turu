@@ -28,7 +28,7 @@ use objc2_io_surface::{
 };
 use objc2_metal::{MTLDevice, MTLPixelFormat, MTLStorageMode, MTLTexture, MTLTextureDescriptor, MTLTextureUsage};
 use std::ffi::CString;
-use turu_frontend::client_screen::SharedSurfaces;
+use turu_egui::client_screen::SharedSurfaces;
 use wgpu::hal::api::Metal;
 
 /// 'BGRA': the pictures' format (`wgpu::TextureFormat::Bgra8Unorm`).

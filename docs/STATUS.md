@@ -584,13 +584,13 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   reads them (`docs/SCRIPTING.md`, "Options"). Start opens the window and waits for it
   unless the script sets `dontPreconfigure`; CoreBots' `setOptions()` opens it until
   `Core.skipOptions` ("Skip this window next time") is ticked, as in VibeSkua.
-- **Search Scripts** (`bot/src/repo.rs`, `frontend/src/gui/turu/script_repo.rs`): VibeSkua's
+- **Search Scripts** (`bot/src/repo.rs`, `egui_ui/src/gui/turu/script_repo.rs`): VibeSkua's
   Script Repo for the scripts in `muktiarafi/turu-scripts` (the `scripts/` submodule): search,
   categories, pins, Start/Load/Queue (downloading the script and what it imports), Update all,
   Download all and Reset Scripts, and the launch-time check and auto update (Options >
   Application). Edited scripts are kept by updates and backed up by a reset.
   `docs/ARCHITECTURE.md` ("Script repository") has the design.
-- **Scheduler** (Scripts > Scheduler, `bot/src/scheduler.rs`, `frontend/src/gui/turu/scheduler.rs`,
+- **Scheduler** (Scripts > Scheduler, `bot/src/scheduler.rs`, `egui_ui/src/gui/turu/scheduler.rs`,
   VibeSkua `ScriptSchedulerViewModel`): a playlist per tab, run top to bottom without the Script
   Options window, each entry with its own options (`options/Queue_<name>_<id>.cfg`); any end of a
   script moves on, Stop queue stops; a disconnection waits for the login and resumes the entry;
@@ -613,7 +613,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   (`auqw/Scripts`' `AdvancedSkills.json`) merged into the user's, new classes and modes only
   (`turu_bot::skills::startup_skill_sets`, also with `--headless`; tested with a fake download).
   The junk-item switches are stored only (VibeSkua never reads them either).
-- **Junk Items:** Tools & Helpers > Junk Items (`frontend/src/gui/turu/junk_items.rs`) lists the
+- **Junk Items:** Tools & Helpers > Junk Items (`egui_ui/src/gui/turu/junk_items.rs`) lists the
   inventory and bank items (filters, quantities, equipped / favourite / near-cap chips, quantity
   goals), marks the selected ones as junk and sells the junk in the inventory;
   scripts call `bot.sellJunk()`. The list is `JunkItems.json` in the data folder, in VibeSkua's
@@ -1310,7 +1310,7 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
   macromedia.asc.embedding.ScriptCompiler"), while the app's cached build is reused.
 - **Formatting:** the bot crate uses `cargo fmt`, and so does the shell library (`cargo fmt -p
   turu_shell`: its own `rustfmt.toml` sets `max_width = 120`, as `app/src/shell.rs` is). Not the app (Ruffle's files keep their own
-  layout: `cargo fmt -p turu` rewraps 50 of them). The files in `frontend/src/gui/turu/` are
+  layout: `cargo fmt -p turu` rewraps 50 of them). The files in `egui_ui/src/gui/turu/` are
   formatted with `max_width = 120`, so format them with rustfmt rather than `cargo fmt`
   (`rustfmt --edition 2024 --config max_width=120 <file>`; on `mod.rs` it formats every
   window, which are all formatted). In `ruffle/`, `cargo fmt --all` formats Ruffle's workspace

@@ -49,7 +49,7 @@ Army) instead of a separate relay app.
 - Feature set and terminology follow VibeSkua (see `docs/VIBESKUA_SPEC.md`, `docs/UI.md`);
   behaviour follows VibeSkua's C# by default, and differs only for a stated reason
   (`docs/STATUS.md`, "Differences from VibeSkua").
-- UI lives in `frontend/src/gui/turu/` (egui), shared by desktop and Android; no winit/rfd in
+- UI lives in `egui_ui/src/gui/turu/` (egui), shared by desktop and Android; no winit/rfd in
   `frontend/`. UI code only reads cached bot state and never calls into Flash directly.
 - The game view stays primary: bot UI must never crowd it out; tool windows float over the game
   and fit small windows and phone screens.

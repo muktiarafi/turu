@@ -1,5 +1,5 @@
 //! Turu's windows over the game in AIR (docs/AIR_PROPOSAL.md, "The UI over AIR"): the nav rail and
-//! the bot windows (`turu_frontend::gui::turu::TuruUi`, egui), drawn with wgpu into a transparent
+//! the bot windows (`turu_egui::gui::turu::TuruUi`, egui), drawn with wgpu into a transparent
 //! view over AIR's (Kotlin's `TuruOverlay`), as the Ruffle build draws them over its game
 //! (`android/src/screen.rs`) minus the game's picture: AIR draws the game itself, its view moved
 //! right of the rail ([`game_insets`]).
@@ -11,7 +11,7 @@
 //! As the Ruffle build's screen: the rail grows by the display cutout on its side; a window whose
 //! text box isn't one of Turu's (egui's own) moves up above the soft keyboard when that box has
 //! the focus (`android/src/pan.rs`). Turu's own text boxes are typed in through a native field above the keyboard, Kotlin's `NativeField`
-//! (`turu_frontend::gui::turu::native_field`, as the Ruffle build's `ui_field.rs`); so are the
+//! (`turu_egui::gui::turu::native_field`, as the Ruffle build's `ui_field.rs`); so are the
 //! game's own (AIR's), which the host SWF keeps in step with the focused one.
 
 use crate::host::BRIDGE;
@@ -22,8 +22,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 use turu_frontend::crash_reports::{SHARE_BYTES, shareable};
-use turu_frontend::gui::turu::TuruUi;
-use turu_frontend::gui::turu::native_field::{self, Change, Contents, Kind, NativeField};
+use turu_egui::gui::turu::TuruUi;
+use turu_egui::gui::turu::native_field::{self, Change, Contents, Kind, NativeField};
 use wgpu::rwh::{AndroidDisplayHandle, HasWindowHandle, RawDisplayHandle};
 
 /// The longest the UI goes undrawn: its logs and status change without input.
@@ -347,7 +347,7 @@ fn run() {
         // The native field's Send, as Enter in Turu's text box.
         raw_input.events.extend(native_field::input_events(&egui));
         // The rail and the tab strip keep clear of a cutout (a punch-hole camera, held sideways).
-        turu_frontend::gui::set_cutout(cutout.0 / ppp, cutout.1 / ppp);
+        turu_egui::gui::set_cutout(cutout.0 / ppp, cutout.1 / ppp);
         let keyboard = keyboard / ppp;
         // Headless Mode's screen over the game, as the Ruffle builds draw it (an opaque page: AIR's
         // view below doesn't show through), under the windows.
@@ -355,8 +355,8 @@ fn run() {
         let output = egui.run_ui(raw_input, |root| {
             ui.show_bar(root);
             if covered {
-                let top = turu_frontend::gui::top_height() as f32;
-                turu_frontend::gui::turu::show_headless_screen(root.ctx(), top);
+                let top = turu_egui::gui::top_height() as f32;
+                turu_egui::gui::turu::show_headless_screen(root.ctx(), top);
             }
             ui.show_windows(root.ctx());
         });
@@ -370,8 +370,8 @@ fn run() {
 
         // The game's place: right of the rail, below the bar.
         let insets = (
-            (turu_frontend::gui::left_width() as f32 * ppp).round(),
-            (turu_frontend::gui::top_height() as f32 * ppp).round(),
+            (turu_egui::gui::left_width() as f32 * ppp).round(),
+            (turu_egui::gui::top_height() as f32 * ppp).round(),
         );
         *INSETS.lock().unwrap_or_else(|e| e.into_inner()) = insets;
         let insets = (insets.0 as u32, insets.1 as u32);
@@ -847,6 +847,6 @@ fn system_fonts() -> egui::FontDefinitions {
             .or_default()
             .push(file.to_owned());
     }
-    turu_frontend::gui::turu::theme::add_symbol_font(&mut fonts);
+    turu_egui::gui::turu::theme::add_symbol_font(&mut fonts);
     fonts
 }

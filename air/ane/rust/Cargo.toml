@@ -21,7 +21,9 @@ crate-type = ["cdylib"]
 
 [target.'cfg(target_os = "android")'.dependencies]
 turu_bot = { path = "../../../bot", default-features = false }
-turu_frontend = { path = "../../../frontend", default-features = false, features = ["air"] }
+turu_frontend = { path = "../../../frontend", default-features = false }
+# The bot windows in egui, with Turu Mas's gold accent.
+turu_egui = { path = "../../../egui_ui", default-features = false, features = ["air"] }
 turu_air_patch = { path = "../../../air_patch" }
 jni = { version = "0.22.4", default-features = false }
 android_logger = "0.15.1"

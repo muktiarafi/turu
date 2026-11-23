@@ -16,7 +16,7 @@ of all of them. Turu Mas is out of scope (see "Turu Mas").
   `--headless` and Android already share (`engine::run_loop_paced` with one tab), plus the
   screen code Android already has (`android/src/screen.rs`: the game's texture, Turu's egui UI over
   it). The client draws the **whole** tab, Turu's UI included, so the bot windows stay in-process
-  with their bot and nothing in `frontend/src/gui/turu/` has to talk to a bot in another process.
+  with their bot and nothing in `egui_ui/src/gui/turu/` has to talk to a bot in another process.
 * The client on screen draws straight to the shell's surface: on Android, the activity's
   `Surface`, handed over Binder; on the desktop, a GPU texture shared across processes. Hidden
   clients draw nothing.

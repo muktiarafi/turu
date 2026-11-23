@@ -51,7 +51,7 @@ before merging:
 ```bash
 # Format: bot/ with cargo fmt; the UI windows with rustfmt (mod.rs formats them all; never cargo fmt -p turu)
 cargo fmt -p turu_bot
-rustfmt --edition 2024 --config max_width=120 frontend/src/gui/turu/mod.rs
+rustfmt --edition 2024 --config max_width=120 egui_ui/src/gui/turu/mod.rs
 
 # Clippy
 cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -D warnings -A clippy::redundant_clone

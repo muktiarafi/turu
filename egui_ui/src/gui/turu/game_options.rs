@@ -16,18 +16,16 @@ use std::collections::HashSet;
 use std::time::{Duration, Instant};
 use turu_bot::options::BotOptions;
 
-impl Field {
-    /// The room the control takes at the row's right (the label and description get the rest).
-    fn width(&self) -> f32 {
-        match self {
-            Field::Bool(_) => 48.0,
-            Field::Int(..) => 96.0,
-            // The number and its presets' ▾.
-            Field::Fps => 96.0 + 6.0 + widgets::target(24.0, 40.0),
-            Field::ReloadMap => 80.0,
-            Field::Server | Field::Priority => 150.0,
-            Field::Text(..) => 200.0,
-        }
+/// The room a field's control takes at the row's right (the label and description get the rest).
+fn field_width(field: &Field) -> f32 {
+    match field {
+        Field::Bool(_) => 48.0,
+        Field::Int(..) => 96.0,
+        // The number and its presets' ▾.
+        Field::Fps => 96.0 + 6.0 + widgets::target(24.0, 40.0),
+        Field::ReloadMap => 80.0,
+        Field::Server | Field::Priority => 150.0,
+        Field::Text(..) => 200.0,
     }
 }
 
@@ -571,7 +569,7 @@ fn row(
             ui,
             |ui| title(ui, entry, mark),
             entry.description,
-            entry.field.width(),
+            field_width(&entry.field),
             |ui| changed = control(ui, entry, snapshot, bot, ask_off),
         );
     };

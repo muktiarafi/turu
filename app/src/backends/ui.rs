@@ -518,17 +518,17 @@ impl ClientUiBackend {
 impl UiBackend for ClientUiBackend {
     // Turu: hidden over the game by the shell, as the window hides it (`client_screen`).
     fn mouse_visible(&self) -> bool {
-        turu_frontend::client_screen::game_mouse_visible()
+        turu_egui::client_screen::game_mouse_visible()
     }
 
     fn set_mouse_visible(&mut self, visible: bool) {
-        turu_frontend::client_screen::set_game_mouse_visible(visible);
+        turu_egui::client_screen::set_game_mouse_visible(visible);
     }
 
     // Turu: shown by the shell (`client_screen::set_game_cursor`, `ToShell::Cursor`).
     fn set_mouse_cursor(&mut self, cursor: MouseCursor) {
         use turu_frontend::shell::Cursor;
-        turu_frontend::client_screen::set_game_cursor(match cursor {
+        turu_egui::client_screen::set_game_cursor(match cursor {
             MouseCursor::Arrow => Cursor::Default,
             MouseCursor::Hand => Cursor::Hand,
             MouseCursor::IBeam => Cursor::Text,

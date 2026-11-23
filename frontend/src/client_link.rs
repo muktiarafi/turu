@@ -39,8 +39,8 @@ pub fn install(send: Sender, open: impl Fn() -> bool + Send + 'static) {
             // The shell lays the tiles out in what Turu's UI leaves of the window.
             turu::TabRequest::Grid(on) => tabs(ToShell::Grid {
                 on,
-                left: crate::gui::left_width() as f32,
-                top: crate::gui::top_height() as f32,
+                left: crate::layout::left_width() as f32,
+                top: crate::layout::top_height() as f32,
             }),
             _ => {}
         }
@@ -158,9 +158,9 @@ fn report_status(send: Sender, open: impl Fn() -> bool + Send + 'static) {
                     .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().into_owned()));
                 let now = (
                     turu::tab_label(&bot),
-                    crate::gui::turu::busy(&bot),
-                    crate::gui::turu::waits_for(&bot).map(str::to_owned),
-                    crate::gui::rail_hidden(),
+                    crate::turu::busy(&bot),
+                    crate::turu::waits_for(&bot).map(str::to_owned),
+                    crate::layout::rail_hidden(),
                     (game, map, script),
                     bot.opts().streamer_mode,
                     HELD.lock().unwrap_or_else(|e| e.into_inner()).clone(),

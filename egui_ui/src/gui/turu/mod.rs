@@ -653,22 +653,11 @@ pub fn show_headless_screen(ctx: &Context, top: f32) {
         });
 }
 
-/// What the tab's script (or Butler) waits for the user to answer, for the tab strips and the
-/// shell's tab list: "Script Options", "a message box", "Butler's question".
-pub fn waits_for(bot: &turu_bot::Bot) -> Option<&'static str> {
-    bot.scripts
-        .waits_for()
-        .or_else(|| bot.butler.suspend_notice().map(|_| "Butler's question"))
-}
+pub use crate::turu::{busy, waits_for};
 
 /// Hides or shows the rail and keeps the choice (the shell's native rail asks, Android).
 pub fn set_side_bar_hidden(hidden: bool) {
     nav_bar::set_rail_hidden(hidden);
-}
-
-/// Whether the bot runs a script, a Console snippet or Auto Attack/Hunt.
-pub fn busy(bot: &turu_bot::Bot) -> bool {
-    bot.scripts.status().is_active() || bot.scripts.is_snippet_running() || auto::running(bot)
 }
 
 /// Auto Attack/Hunt fights the butler's own movement and skills: a tab that follows stops it
@@ -902,7 +891,7 @@ mod tests {
     /// Every symbol the windows draw is in egui's own fonts or Turu's symbol font, whatever fonts
     /// the system has; a missing one draws egui's ◻ box. (`Fonts::has_glyph` can't tell: it says
     /// no for every symbol of the font ◻ comes from, NotoEmoji's ▶ and ♥ among them.) Add new
-    /// symbols here, and to `frontend/assets/DejaVuSans-Symbols.ttf` when this fails.
+    /// symbols here, and to `egui_ui/assets/DejaVuSans-Symbols.ttf` when this fails.
     #[test]
     fn symbols_render() {
         let ctx = egui::Context::default();

@@ -21,7 +21,7 @@
 
 #[cfg(windows)]
 use std::collections::VecDeque;
-use turu_frontend::client_screen::SharedSurfaces;
+use turu_egui::client_screen::SharedSurfaces;
 use wgpu::hal::api::Vulkan;
 use wgpu::hal::vulkan::TextureMemory;
 use wgpu::hal::vulkan::{self as hal_vulkan};

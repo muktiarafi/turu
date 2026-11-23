@@ -146,7 +146,7 @@ pub fn style() -> Style {
 
 /// DejaVu Sans cut down to the symbols Turu's windows draw that egui's own fonts lack (arrows,
 /// ⋮ ⋯ ▾ ✕), so they don't depend on the system fonts (stock Windows' Segoe UI has no ✕).
-/// Licence: `frontend/assets/DejaVuSans-LICENSE.txt`.
+/// Licence: `egui_ui/assets/DejaVuSans-LICENSE.txt`.
 const SYMBOLS: &[u8] = include_bytes!("../../../assets/DejaVuSans-Symbols.ttf");
 
 /// Adds Turu's symbol font as the last fallback of both families. Frontends call this on the

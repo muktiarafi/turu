@@ -1,6 +1,6 @@
 # Native Android pieces in Turu's UI
 
-Turu's windows on Android are egui, the same code as the desktop's (`frontend/src/gui/turu/`),
+Turu's windows on Android are egui, the same code as the desktop's (`egui_ui/src/gui/turu/`),
 drawn over the game. Some of what they do works better as Android's own components: typing,
 first-start questions, file dialogs, installing an update, alerts. This says which pieces were moved to native Android, in both
 Android apps (Turu, on Ruffle, and Turu Mas, on AIR), how each works, what stays in egui and why,
@@ -328,7 +328,7 @@ Nothing from the survey these came from is left.
   for a test, move it aside, push a token of your own, and move it back after.
 * **`system_server` logs `ServiceNotFoundException: persistent_data_block`** when an install
   session is committed on the emulator: the emulator lacks that service; harmless.
-* **rustfmt on `frontend/src/gui/turu/mod.rs`** with `max_width = 120` rewrites unrelated lines;
+* **rustfmt on `egui_ui/src/gui/turu/mod.rs`** with `max_width = 120` rewrites unrelated lines;
   format the files you changed one at a time, as `CLAUDE.md` says.
 * **Back closed only the keyboard; the strip stayed** (Turu Mas, on a phone with gesture
   navigation): a back swipe reaches the keyboard, which hides itself and never passes Back on to

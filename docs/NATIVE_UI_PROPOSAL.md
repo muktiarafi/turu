@@ -62,7 +62,7 @@ The steps, with their state:
 | L5a | Android: design pass, then the tab strip and Accounts in Compose | Built 2026-11-20 (emulator); checkpoint next |
 | L1 (shell) | The desktop shell's logic out of winit, into `turu_shell` | Built 2026-11-23 (macOS), `SlotShell` with it |
 | Checkpoint | Go on to native bot windows, or stop at L5a | Owner, after L5a |
-| L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | After the checkpoint |
+| L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | Split built 2026-11-23 (`turu_egui`); `Host` and `Client` later |
 | L2 | View models in the client, by feature | Pilot and the Android windows' models done 2026-11-20 |
 | L3 | Questions, dialogs and alerts as events with an ID and an answer | After the checkpoint |
 | L4 | Generated types for Kotlin and Swift in CI; `turu_ffi` for macOS | Kotlin done 2026-11-20 (Android build); Swift with L6 |
@@ -163,7 +163,7 @@ What it costs here, that the 2026-11-15 plan didn't budget:
 
 ### What isn't
 
-* **The windows are egui and their logic lives in them.** `frontend/src/gui/turu/` is 47 files,
+* **The windows are egui and their logic lives in them.** `egui_ui/src/gui/turu/` is 47 files,
   31,700 lines. A window keeps its own state, reads the engine each frame and decides what a click
   does, calling `turu::bot()`, `tab_bot` or `spawn_action` directly.
 * **`turu_frontend` depends on egui at its root** (`Cargo.toml`; `gui.rs`, `client_screen.rs`,
@@ -398,7 +398,7 @@ client/     turu_client    most of turu_frontend: the tab(s), Flash host, engine
                            Platform), the link's messages (frontend/src/shell.rs, its key table
                            behind `ruffle`) and client end, Army, the monitor hub, updates, view
                            models and their routes. No egui, winit or rfd. Feature `ruffle`.
-egui_ui/    turu_egui      frontend/src/gui/turu and client_screen.rs's UI: the egui windows, on
+egui_ui/    turu_egui      egui_ui/src/gui/turu and client_screen.rs's UI: the egui windows, on
                            turu_client's models
 shell/      turu_shell     on turu_client built without `ruffle`: Android's SlotShell, the desktop
                            shell's logic without winit (its GPU setup from app/src/shell.rs and
@@ -608,7 +608,9 @@ to the background when no native screen is open).
 * **The client (after the checkpoint)**: split `frontend/` into `client/` and `egui_ui/`:
   `client_screen.rs`'s egui drawing to the egui side; `client_link.rs` to the client once it asks
   a model, not `gui`, for the bar's size and whether the tab is busy. Rename `Platform` to `Host`.
-  Add `Client` as a handle over the globals.
+  Add `Client` as a handle over the globals. *The split is built (2026-11-23, "L1's client part
+  as built"), keeping the name `turu_frontend` for the client library (the owner's choice); the
+  rename and the handle are later steps.*
 
 **Done when**, for the shell part: `turu_shell` builds without a player and without winit, CI
 checks it, and the shell starts with two tabs, Grid View and a client killed and back. For the
@@ -660,6 +662,33 @@ the emulator, as nothing it does changed.
 
 Not done: the game view for a native macOS window (L6) hands `turu_shell` a layer, which
 `Gpu::new` takes as any `wgpu::Surface`.
+
+#### L1's client part as built (2026-11-23)
+
+The owner chose (2026-11-23) to keep `frontend/` as `turu_frontend`, now the client library, rather
+than rename it `turu_client`, and to do only the split now. `egui_ui/`, crate `turu_egui`, holds
+the egui UI: the bot windows (`gui/turu/`, 47 files), `gui.rs`'s colours, and a client's screen
+(`client_screen.rs`, its `ruffle` feature), with the symbol font (`assets/`) and Turu Mas's `air`
+accent. It re-exports `turu_frontend`'s modules at its root, so the windows still say
+`crate::turu`, `crate::models`; the only change inside them is a game options helper that was an
+`impl` on a model's type (`field_width`).
+
+What the client asked of the UI moved to the client: where the UI sits around the game
+(`layout.rs`: the bar or rail, the tab strip, the cutout, the rail hidden; `turu_egui::gui`
+re-exports it) and whether a tab is busy or waits for an answer (`turu::busy`, `waits_for`), so
+`client_link.rs` stays in `turu_frontend`. `turu_frontend` has no egui, winit or rfd now, with or
+without `ruffle`, and CI checks its dependencies and builds it alone both ways. The app, Android's
+app and Turu Mas take `turu_egui` beside it (`turu_frontend::gui` and `client_screen` became
+`turu_egui::...`).
+
+Checked: `turu_frontend` and `turu_egui` build alone with and without `ruffle` (Turu Mas's way:
+`air`), the typegen binary builds, the app builds, and the Android app's and Turu Mas's crates build
+for arm64; clippy passes for every crate, both ways; the tests pass (the app's 56; `turu_egui`'s
+58 and `turu_frontend`'s 159, the 217 the crate had); and the app on macOS with
+`TURU_SHELL_TEST` drew as before: two tabs, the bar and tab strip, a client killed and back, Grid
+View. Not checked: an APK or Turu Mas run after the split (their code changed only its paths).
+
+Not done: `Platform` renamed `Host`, and `Client` as a handle over `turu.rs`'s globals.
 
 ### L2: View models (XL, after the checkpoint)
 

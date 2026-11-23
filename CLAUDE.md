@@ -31,11 +31,12 @@ Turu builds on **ruffle-aqw** (`ruffle/`, submodule `muktiarafi/ruffle-aqw`, bra
 | `host/` | crate `turu_host`: Turu's own host SWF, `turu.swf`, the default (`docs/HOST_SWF_PROPOSAL.md`): its AS3 (`as3/`, package `turu.host`, written from `docs/VIBESKUA_SPEC.md`, not from VibeSkua's source) and its build with Ruffle's `asc.jar`. Rebuild and commit `bot/assets/turu.swf` after changing `as3/`; CI checks they match. |
 | `app/` | crate `turu`: the app. Started from ruffle-aqw's `desktop/` (Ruffle's frontend + Mugetsu's changes, marked `AQW build:`); Turu's code is the rest. |
 | `shell/` | crate `turu_shell`: the shells' logic without a window (docs/NATIVE_UI_PROPOSAL.md, L1). Android's: `slots::SlotShell`, the tab list over the slots (`android/src/slot_shell.rs` carries out its actions; Android takes the crate with `default-features = false`). The desktop's (the default `desktop` feature): the tabs' clients started and restarted, the tab list, Grid View, the clients' pictures on the shell's GPU and their pacing, the dialog queue, updates, Army launches, the monitor's peers. `app/src/shell.rs` is its winit front (the window, its GPU choice, input, rfd); the front carries out the `Action`s the shell returns. Takes `turu_frontend` without `ruffle`; tested with a fake client (`tests/shell.rs`). |
-| `frontend/` | crate `turu_frontend`: what frontends share, with no winit/rfd (shared with both Android apps: `docs/ANDROID.md`, `docs/TURU_MAS.md`). The app re-exports its modules (`crate::turu`, ...). |
+| `frontend/` | crate `turu_frontend`: what frontends share, with no egui, winit or rfd (shared with both Android apps: `docs/ANDROID.md`, `docs/TURU_MAS.md`): the tabs, the Flash host, the view models, the link, layout (`layout.rs`). The app re-exports its modules (`crate::turu`, ...). |
+| `egui_ui/` | crate `turu_egui`: the egui UI over `turu_frontend` (docs/NATIVE_UI_PROPOSAL.md, L1): the bot windows (`gui/turu/`) and a client's screen (`client_screen.rs`, the `ruffle` feature); `air` gives Turu Mas's accent. It re-exports `turu_frontend`'s modules at its root, so the windows say `crate::turu`, `crate::models`. |
 | `android/` | crate `turu_android` + the Gradle app (`docs/ANDROID.md`): `TuruActivity` (AndroidX's GameActivity) and `TuruService` (foreground service: starts the engine, also alone after a kill; notification; wake lock), the engine thread on `turu_frontend::engine` drawing the game and `TuruUi` with wgpu (`screen.rs`), setup from `turu-args.txt`. Submodule `android/vendor/rustls-platform-verifier` (HTTPS checks). `android/shared`: the Kotlin both Android apps share (crash records and uploads, the text field above the keyboard); Turu Mas's extension includes it by path. |
 | `air/`, `air_patch/` | Turu Mas (`docs/TURU_MAS.md`): crate `turu_air` (`air/ane/rust`, the engine as an AIR native extension, with its Kotlin in `air/ane/android`), the host SWF and `app.xml` (`air/app`), and crate `turu_air_patch` (patches AQW's client and the SWFs it loads for AIR's sandbox at run time). Built with the AIR SDK: `air/app/build.sh`. |
 | `frontend/src/turu.rs`, `frontend/src/turu/ruffle_host.rs` | Tabs and `spawn_action`; `ruffle_host.rs` holds the Flash host (`TuruFlashHost`, bot -> player via the event loop) and the ExternalInterface provider (player -> bot). |
-| `frontend/src/gui/turu/` | egui UI: nav bar, Script Loader, Options, Skills, logs (VibeSkua layout, Mugetsu palette). |
+| `egui_ui/src/gui/turu/` | egui UI: nav bar, Script Loader, Options, Skills, logs (VibeSkua layout, Mugetsu palette). |
 | `scripts/` | Submodule `muktiarafi/turu-scripts`: TypeScript scripts (`core/` CoreBots/CoreFarms ports, `nation/`, `farm/`, ...), `tsconfig.json`, `types/turu.ts` (copy of `bot/js/turu.ts`), `tools/build-index.mjs` (the index Search Scripts reads). Commit there first. |
 | `ruffle/` | Submodule ruffle-aqw: Ruffle's crates (`core`, `render`, `frontend-utils`, `video`) and Mugetsu's patched crates (`ruffle/patches/`, wired up by `[patch.crates-io]` in the root `Cargo.toml`). Change it when the fix belongs in the player: a missing or wrong Flash API, the player's performance, or AQW-specific behaviour Turu can't reach from outside. Turu's own logic stays in this repo, not in Ruffle. Commit in ruffle-aqw (marked `AQW build:` / `Turu:`), then bump the submodule. |
 
@@ -58,8 +59,8 @@ cargo build -p turu --no-default-features --features software_video,external_vid
 cargo nextest run -p turu_bot            # engine + script runtime tests (fake Flash host): ~25 s, `cargo test` ~30 s (see below)
 cargo nextest run -p turu_shell          # the desktop shell's logic with fake clients, no window: a few seconds
 cargo run -p turu_host                   # rebuild bot/assets/turu.swf from host/as3 (Java); `-- --check` as CI
-cargo test -p turu -p turu_frontend --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen   # app + bot windows (see STATUS.md); cargo test here, not nextest (see below)
-cargo clippy -p turu_bot -p turu_frontend -p turu_shell -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -D warnings -A clippy::redundant_clone   # see STATUS.md
+cargo test -p turu -p turu_frontend -p turu_egui --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen   # app + bot windows (see STATUS.md); cargo test here, not nextest (see below)
+cargo clippy -p turu_bot -p turu_frontend -p turu_egui -p turu_shell -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -D warnings -A clippy::redundant_clone   # see STATUS.md
 cd android && ./gradlew assembleDebug   # Android APK (SDK, NDK 27, cargo-ndk: docs/ANDROID.md)
 air/app/build.sh --no-install           # Turu Mas APK (AIR SDK, JDK 17: docs/TURU_MAS.md)
 docker build -t turu .                  # headless image (Dockerfile, compose.yaml: docs/HEADLESS.md, "Docker")
@@ -75,7 +76,7 @@ Install it with `brew install cargo-nextest` or `cargo install cargo-nextest --l
 it, use `cargo test`. Keep `cargo test` for the app and frontend on macOS: the system checks each
 newly built test program at launch, and nextest launches one per test (over 100 s against
 seconds).
-CI runs all four crates (`turu_bot`, `turu`, `turu_frontend`, `turu_shell`) in one `cargo nextest run --profile ci` (ci.yml).
+CI runs all five crates (`turu_bot`, `turu`, `turu_frontend`, `turu_egui`, `turu_shell`) in one `cargo nextest run --profile ci` (ci.yml).
 
 Release builds: Mugetsu's `../mugetsu/source/build-*.sh` flow (dist profile, PGO) applies;
 on macOS the feature set above is the one Mugetsu uses (Metal, fontconfig loaded at runtime).
@@ -83,7 +84,7 @@ Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
 
 ## Rules that keep it working
 
-* **No winit, rfd or window in `frontend/` or `shell/`** (CI checks `turu_shell`'s dependencies). Reach the app through `turu::set_tab_requests`,
+* **No egui, winit, rfd or window in `frontend/`, and no winit, rfd or window in `shell/` or `egui_ui/`** (CI checks `turu_frontend`'s and `turu_shell`'s dependencies): a window's layout and drawing go in `egui_ui/`, what it knows and does in `frontend/` (a model). Reach the app through `turu::set_tab_requests`,
   `TuruFlashHost::new` and `platform::platform()`; desktop-only pieces stay in `app/`.
 * **Never call into Flash from the winit/UI thread.** `Flash::call` marshals to the event
   loop and blocks; from the UI thread it would wait for itself (the host refuses). UI actions
@@ -115,7 +116,7 @@ Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
   oxc at load (no runtime type check); `tsc --noEmit` in `scripts/` is the type check.
 * Keep `bot/js/turu.ts` readable for humans who write scripts: JSDoc on every member,
   VibeSkua names in camelCase, `string | number` for "name or ID".
-* Match the surrounding code's style. Rust: `cargo fmt` for `bot/`; `frontend/src/gui/turu/`
+* Match the surrounding code's style. Rust: `cargo fmt` for `bot/`; `egui_ui/src/gui/turu/`
   files use `max_width = 120`, formatted one file at a time (see STATUS.md). Upstream Ruffle files keep their
   conventions; mark Turu changes in them with `// Turu:` comments.
 * Pull requests run `.github/workflows/ci.yml` (rebased on main, format, clippy, tests) and

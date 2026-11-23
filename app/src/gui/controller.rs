@@ -235,7 +235,7 @@ impl GuiController {
         );
         let mut system_fonts = load_system_fonts(font_database, preferences.language());
         // Turu: the symbols Turu's windows draw, whatever the system has.
-        turu_frontend::gui::turu::theme::add_symbol_font(&mut system_fonts);
+        turu_egui::gui::turu::theme::add_symbol_font(&mut system_fonts);
         egui_winit.egui_ctx().set_fonts(system_fonts);
 
         egui_extras::install_image_loaders(egui_winit.egui_ctx());
@@ -1087,9 +1087,9 @@ fn aqw_warn_vulkan_fallback(
 }
 
 /// AQW build: draws the FPS counter (a small badge in the top-left corner of the game, shared
-/// with a process tab's client: `turu_frontend::gui::turu::fps_badge`); returns how
+/// with a process tab's client: `turu_egui::gui::turu::fps_badge`); returns how
 /// many shapes it added.
 fn fps_counter(ctx: &egui::Context, top: f64) -> usize {
     let fps = f32::from_bits(crate::mugetsu::SHOWN_FPS.load(std::sync::atomic::Ordering::Relaxed));
-    turu_frontend::gui::turu::fps_badge(ctx, top as f32 / ctx.pixels_per_point(), fps)
+    turu_egui::gui::turu::fps_badge(ctx, top as f32 / ctx.pixels_per_point(), fps)
 }

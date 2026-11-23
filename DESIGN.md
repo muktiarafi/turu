@@ -167,7 +167,7 @@ components:
 
 # Design System: Turu Monitor
 
-> **Scope.** This world, **Nila**, covers the Turu Monitor web surface only: `bot/assets/monitor/index.html`, the page Turu serves at `/`. The desktop and Android app (egui, `frontend/src/gui/turu/theme.rs`) keeps its own Mugetsu palette (dark panels, `#7C6CF0` accent) and is **not** part of this world. Do not apply these tokens, names or rules to the egui UI.
+> **Scope.** This world, **Nila**, covers the Turu Monitor web surface only: `bot/assets/monitor/index.html`, the page Turu serves at `/`. The desktop and Android app (egui, `egui_ui/src/gui/turu/theme.rs`) keeps its own Mugetsu palette (dark panels, `#7C6CF0` accent) and is **not** part of this world. Do not apply these tokens, names or rules to the egui UI.
 
 ## Overview
 
