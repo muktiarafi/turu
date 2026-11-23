@@ -28,6 +28,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.net.toUri
+import com.muktiarafi.turu.models.Api
+import com.muktiarafi.turu.models.PromptAnswer
 import com.muktiarafi.turu.models.PromptView
 import com.muktiarafi.turu.models.PromptsAct
 import com.muktiarafi.turu.models.PromptsView
@@ -58,7 +60,7 @@ class PromptsPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("prompts"), logs = emptyList(),
+            api, token, models = listOf(Api.prompts), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<PromptsView>(text) }
                     .onSuccess { v ->
@@ -79,10 +81,10 @@ class PromptsPanel {
     fun answer(p: PromptView, button: Int, window: (String) -> Unit, open: (String) -> Unit, report: (String) -> Unit) {
         answered = p.id
         prompt = null
-        client?.act("prompts", PromptsAct.answer(p.id, button.takeIf { it >= 0 }?.toUInt()), PromptsAct.JsonSerializer, { reply ->
-            reply.optString("window").takeIf { it.isNotEmpty() }?.let(window)
-            val crash = reply.optString("report")
-            if (crash.isNotEmpty()) report(crash) else reply.optString("open").takeIf { it.isNotEmpty() }?.let(open)
+        val answer = PromptsAct.answer(p.id, button.takeIf { it >= 0 }?.toUInt())
+        client?.act(Api.prompts, answer, PromptAnswer.serializer(), { reply ->
+            reply.window.takeIf { it.isNotEmpty() }?.let(window)
+            if (reply.report.isNotEmpty()) report(reply.report) else reply.open.takeIf { it.isNotEmpty() }?.let(open)
         }) { e -> if (e != null) Log.w(ModelClient.TAG, "prompt answer: $e") }
     }
 }

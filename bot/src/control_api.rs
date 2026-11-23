@@ -182,6 +182,15 @@ pub fn add_model_action(name: &'static str, action: &'static str, run: ModelActi
     models.actions.push((name, action, run));
 }
 
+/// The models added: those with a view, and each `(model, action)`.
+pub fn added_models() -> (Vec<&'static str>, Vec<(&'static str, &'static str)>) {
+    let models = MODELS.read().unwrap_or_else(|e| e.into_inner());
+    (
+        models.views.iter().map(|(n, _)| *n).collect(),
+        models.actions.iter().map(|(n, a, _)| (*n, *a)).collect(),
+    )
+}
+
 /// Model `name`'s view and its revision: a hash of the view, so equal views have equal
 /// revisions and a model needs no bookkeeping.
 fn model_view(bot: &Arc<Bot>, name: &str) -> Option<(u64, Value)> {

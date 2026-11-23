@@ -74,12 +74,13 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
+import com.muktiarafi.turu.models.CopiedText
 import com.muktiarafi.turu.models.GrabRowView
 import com.muktiarafi.turu.models.GrabberAct
 import com.muktiarafi.turu.models.GrabberView
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * The Grabber's copy of the tab on screen (`turu_frontend::models::grabber`), read while the page
@@ -113,7 +114,7 @@ class GrabberPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("grabber"), logs = emptyList(),
+            api, token, models = listOf(Api.grabber), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<GrabberView>(text) }
                     .onSuccess { v ->
@@ -129,10 +130,10 @@ class GrabberPanel {
         ).also { it.start() }
     }
 
-    fun act(action: GrabberAct, answer: (JSONObject) -> Unit = {}) {
+    fun act(action: GrabberAct) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("grabber", action, GrabberAct.JsonSerializer, answer) { error = it }
+        client.act(Api.grabber, action) { error = it }
     }
 
     private fun positions(): List<UInt> = checked.keys.map { it.toUInt() }
@@ -141,9 +142,14 @@ class GrabberPanel {
 
     fun run(label: String) = act(GrabberAct.run(kind = null, label = label, positions = positions(), revision = revision()))
 
-    fun copy(context: Context) = act(GrabberAct.copy(kind = null, positions = positions(), revision = revision())) { answer ->
-        val text = answer.optString("text").takeIf { !answer.isNull("text") && it.isNotEmpty() } ?: return@act
-        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Grabber", text))
+    fun copy(context: Context) {
+        val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
+        error = null
+        val copy = GrabberAct.copy(kind = null, positions = positions(), revision = revision())
+        client.act(Api.grabber, copy, CopiedText.serializer(), { copied ->
+            val text = copied.text?.takeIf { it.isNotEmpty() } ?: return@act
+            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Grabber", text))
+        }) { error = it }
     }
 
     fun toggle(row: GrabRowView, multiple: Boolean) {

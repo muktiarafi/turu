@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.Control
 import com.muktiarafi.turu.models.RailAct
 import com.muktiarafi.turu.models.ScriptsAct
@@ -96,7 +97,7 @@ class ScriptsPanel(
     private fun act(name: String, action: ScriptsAct) {
         busy = name
         error = null
-        models.act("scripts", action, ScriptsAct.JsonSerializer) { failed ->
+        models.act(Api.scripts, action) { failed ->
             busy = null
             error = failed
         }
@@ -119,7 +120,7 @@ class ScriptsPanel(
         busy = "start"
         starting = path
         error = null
-        models.act("rail", RailAct.start_quick(path), RailAct.JsonSerializer) { failed ->
+        models.act(Api.rail, RailAct.start_quick(path)) { failed ->
             busy = null
             starting = null
             error = failed

@@ -57,6 +57,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.DestinationView
 import com.muktiarafi.turu.models.FastTravelAct
 import com.muktiarafi.turu.models.FastTravelView
@@ -86,7 +87,7 @@ class FastTravelPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("fast-travel"), logs = emptyList(),
+            api, token, models = listOf(Api.fastTravel), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<FastTravelView>(text) }
                     .onSuccess { view = it }
@@ -95,13 +96,13 @@ class FastTravelPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("fast-travel", FastTravelAct.open, FastTravelAct.JsonSerializer)
+            it.act(Api.fastTravel, FastTravelAct.open)
         }
     }
 
     fun act(action: FastTravelAct) {
         error = null
-        client?.act("fast-travel", action, FastTravelAct.JsonSerializer) { error = it }
+        client?.act(Api.fastTravel, action) { error = it }
     }
 }
 

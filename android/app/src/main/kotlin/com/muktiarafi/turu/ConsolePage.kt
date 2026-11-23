@@ -51,6 +51,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.ConsoleAct
 import com.muktiarafi.turu.models.ConsoleView
 import com.muktiarafi.turu.models.LineKind
@@ -80,7 +81,7 @@ class ConsolePanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("console"), logs = emptyList(),
+            api, token, models = listOf(Api.console), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<ConsoleView>(text) }
                     .onSuccess { view = it }
@@ -93,7 +94,7 @@ class ConsolePanel {
     fun act(action: ConsoleAct) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("console", action, ConsoleAct.JsonSerializer) { error = it }
+        client.act(Api.console, action) { error = it }
     }
 
     fun copy(context: Context) {

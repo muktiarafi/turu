@@ -461,7 +461,7 @@ pub fn interceptor_act(bot: &Arc<Bot>, act: InterceptorAct) -> Result<Json, Stri
             } else {
                 picked.join("\n")
             };
-            return Ok(json!({ "text": text }));
+            return super::to_json(&super::CopiedText { text: Some(text) });
         }
     }
     Ok(json!({}))

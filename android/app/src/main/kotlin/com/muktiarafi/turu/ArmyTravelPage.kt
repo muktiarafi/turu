@@ -55,6 +55,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.ArmyCommand
 import com.muktiarafi.turu.models.ArmyRow
 import com.muktiarafi.turu.models.ArmyTravelAct
@@ -96,7 +97,7 @@ class ArmyTravelPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("army-travel"), logs = emptyList(),
+            api, token, models = listOf(Api.armyTravel), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<ArmyTravelView>(text) }
                     .onSuccess { view = it }
@@ -109,7 +110,7 @@ class ArmyTravelPanel {
     fun act(action: ArmyTravelAct, done: (String?) -> Unit = {}) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("army-travel", action, ArmyTravelAct.JsonSerializer) { e ->
+        client.act(Api.armyTravel, action) { e ->
             error = e
             done(e)
         }

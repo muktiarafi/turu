@@ -64,8 +64,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.ArmyAct
 import com.muktiarafi.turu.models.ArmyCommand
+import com.muktiarafi.turu.models.LaunchScript
 import com.muktiarafi.turu.models.RepoAct
 import com.muktiarafi.turu.models.RepoQuery
 import com.muktiarafi.turu.models.RepoView
@@ -73,7 +75,6 @@ import com.muktiarafi.turu.models.RowView
 import com.muktiarafi.turu.models.Tone
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * Search Scripts' copy of the tab on screen (`turu_frontend::models::repo`): its own client, read
@@ -98,7 +99,7 @@ class SearchPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("repo"), logs = emptyList(),
+            api, token, models = listOf(Api.repo), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<RepoView>(text) }
                     .onSuccess { view = it }
@@ -111,7 +112,7 @@ class SearchPanel {
     fun act(action: RepoAct, done: (String?) -> Unit = {}) {
         error = null
         val client = client ?: return done("The tab isn't up yet")
-        client.act("repo", action, RepoAct.JsonSerializer) { failed ->
+        client.act(Api.repo, action) { failed ->
             error = failed
             done(failed)
         }
@@ -128,14 +129,13 @@ class SearchPanel {
         error = null
         val client = client ?: return done("The tab isn't up yet", false)
         var ready = true
-        val answer = { a: JSONObject -> ready = a.optBoolean("ready", true) }
         val finish = { failed: String? ->
             error = failed
             done(failed, ready)
         }
         when (pick) {
-            is ScriptPick.Army -> client.act("army", ArmyAct.send(pick.keys, ArmyCommand.script(path)), ArmyAct.JsonSerializer, answer, finish)
-            ScriptPick.Launch -> client.act("repo", RepoAct.launch(path), RepoAct.JsonSerializer, answer, finish)
+            is ScriptPick.Army -> client.act(Api.army, ArmyAct.send(pick.keys, ArmyCommand.script(path)), finish)
+            ScriptPick.Launch -> client.act(Api.repo, RepoAct.launch(path), LaunchScript.serializer(), { ready = it.ready }, finish)
         }
     }
 }

@@ -45,6 +45,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.NotifyDropAct
 import com.muktiarafi.turu.models.NotifyDropView
 import kotlinx.serialization.json.Json
@@ -81,7 +82,7 @@ class NotifyDropPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("notify-drop"), logs = emptyList(),
+            api, token, models = listOf(Api.notifyDrop), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<NotifyDropView>(text) }
                     .onSuccess { v ->
@@ -97,7 +98,7 @@ class NotifyDropPanel {
     private fun act(action: NotifyDropAct) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("notify-drop", action, NotifyDropAct.JsonSerializer) { error = it }
+        client.act(Api.notifyDrop, action) { error = it }
     }
 
     fun add() {

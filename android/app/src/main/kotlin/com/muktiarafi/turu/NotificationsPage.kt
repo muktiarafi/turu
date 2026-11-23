@@ -56,6 +56,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.NoticeKind
 import com.muktiarafi.turu.models.NoticeView
 import com.muktiarafi.turu.models.NotificationsAct
@@ -93,7 +94,7 @@ class NotificationsPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("notifications"), logs = emptyList(),
+            api, token, models = listOf(Api.notifications), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<NotificationsView>(text) }
                     .onSuccess { v ->
@@ -112,7 +113,7 @@ class NotificationsPanel {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
         selected.clear()
-        client.act("notifications", NotificationsAct.CLEAR, NotificationsAct.JsonSerializer) { error = it }
+        client.act(Api.notifications, NotificationsAct.CLEAR) { error = it }
     }
 
     /** The events the filter shows, newest first. */

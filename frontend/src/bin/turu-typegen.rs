@@ -3,14 +3,21 @@
 //! `turuTypes`), so a record changed in Rust can't ship with stale types in the shell. Never
 //! committed. `cargo run -p turu_frontend --no-default-features --features typegen --bin
 //! turu-typegen -- <out dir>`.
+//!
+//! Beside the types it writes `ModelApi.kt`: each model's name on the control API with its view's
+//! and its actions' types, taken from [`ModelView`] and [`ModelActs`], so a page names a model by
+//! a value that carries its types (`Api.grabber`) and can't send it another model's action.
 
+use facet::Facet;
 use facet_generate::generation::json::JsonPlugin;
 use facet_generate::generation::kotlin;
 use facet_generate::reflection::RegistryBuilder;
+use std::fmt::Write as _;
 use turu_frontend::models::{
+    CopiedText, ModelActs, ModelView,
     application_options::{AppOptionsAct, AppOptionsView},
     army::{ArmyAct, ArmyView},
-    army_client::{ArmyClientAct, ArmyGearView},
+    army_client::{ArmyClientAct, ArmyGearView, ClientLog},
     army_travel::{ArmyTravelAct, ArmyTravelView},
     auto::{AutoAct, AutoView},
     bank::{BankAct, BankView},
@@ -19,12 +26,12 @@ use turu_frontend::models::{
     console::{ConsoleAct, ConsoleView},
     core_bots::{CoreBotsAct, CoreBotsView},
     cosmetics::{CosmeticsAct, CosmeticsView},
-    crashes::{CrashesAct, CrashesView},
+    crashes::{CrashText, CrashesAct, CrashesView},
     drops::{DropsAct, DropsView},
     fast_travel::{FastTravelAct, FastTravelView},
     game_options::{GameOptionsAct, GameOptionsView},
     grabber::{GrabberAct, GrabberView},
-    hotkeys::{HotKeysAct, HotKeysView},
+    hotkeys::{HotKeysAct, HotKeysView, KeyMoved},
     jump::{JumpAct, JumpView},
     junk::{JunkAct, JunkView},
     loader::{LoaderAct, LoaderView},
@@ -33,96 +40,150 @@ use turu_frontend::models::{
     notifications::{NotificationsAct, NotificationsView},
     notify_drop::{NotifyDropAct, NotifyDropView},
     packets::{InterceptorAct, InterceptorView, PacketLoggerAct, PacketLoggerView, SpammerAct, SpammerView},
-    prompts::{PromptsAct, PromptsView},
+    prompts::{PromptAnswer, PromptsAct, PromptsView},
     rail::{RailAct, RailView},
-    repo::{RepoAct, RepoView},
+    repo::{LaunchScript, RepoAct, RepoView},
     runtime::{RuntimeAct, RuntimeView},
     scheduler::{SchedulerAct, SchedulerView},
     script_options::{ScriptOptionsAct, ScriptOptionsView},
     scripts::{ScriptsAct, ScriptsView},
     skills::{SkillsAct, SkillsView},
-    stats::{StatsAct, StatsView},
+    stats::{StatsAct, StatsCsv, StatsView},
 };
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+/// The registry, and each model's entry for `ModelApi.kt`: its name, its view's and actions' types.
+struct Gen {
+    registry: RegistryBuilder,
+    models: Vec<(&'static str, Option<String>, String)>,
+}
+
+/// A type's name as Kotlin has it (the last part of its Rust path).
+fn short<T>() -> String {
+    std::any::type_name::<T>()
+        .rsplit("::")
+        .next()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+impl Gen {
+    fn add<T: Facet<'static>>(mut self) -> Result<Self> {
+        self.registry = self.registry.add_type::<T>()?;
+        Ok(self)
+    }
+
+    /// A model with a view: both must be the same model's.
+    fn model<V: ModelView + Facet<'static>, A: ModelActs + Facet<'static>>(mut self) -> Result<Self> {
+        if V::MODEL != A::MODEL {
+            return Err(format!("{} and {} aren't one model's", short::<V>(), short::<A>()).into());
+        }
+        self.models.push((A::MODEL.name(), Some(short::<V>()), short::<A>()));
+        self.add::<V>()?.add::<A>()
+    }
+
+    /// A model with actions only.
+    fn acts<A: ModelActs + Facet<'static>>(mut self) -> Result<Self> {
+        self.models.push((A::MODEL.name(), None, short::<A>()));
+        self.add::<A>()
+    }
+
+    /// `ModelApi.kt`: each model as a value of `Api`, named in camelCase ("fast-travel":
+    /// `Api.fastTravel`).
+    fn api(&self) -> String {
+        let mut kotlin = String::from(
+            "// Written by turu-typegen (frontend/src/bin/turu-typegen.rs): each model a shell reads, by its name on\n\
+             // the control API, with its view's and its actions' types.\n\n\
+             package com.muktiarafi.turu.models\n\n\
+             import kotlinx.serialization.DeserializationStrategy\n\
+             import kotlinx.serialization.SerializationStrategy\n\
+             import kotlinx.serialization.serializer\n\n\
+             /** A model: `GET /models/<name>` answers `V`, `POST /models/<name>/do` takes `A`. */\n\
+             class ModelApi<V, A>(val name: String, val view: DeserializationStrategy<V>?, val act: SerializationStrategy<A>)\n\n\
+             object Api {\n",
+        );
+        for (name, view, acts) in &self.models {
+            let mut parts = name.split('-');
+            let mut field = parts.next().unwrap_or_default().to_owned();
+            for part in parts {
+                let mut chars = part.chars();
+                field.extend(chars.next().map(|c| c.to_ascii_uppercase()));
+                field.push_str(chars.as_str());
+            }
+            let (view_type, view) = match view {
+                Some(v) => (v.as_str(), format!("serializer<{v}>()")),
+                None => ("Nothing", "null".to_owned()),
+            };
+            let _ = writeln!(
+                kotlin,
+                "    val {field} = ModelApi<{view_type}, {acts}>(\"{name}\", {view}, serializer<{acts}>())"
+            );
+        }
+        kotlin.push_str("}\n");
+        kotlin
+    }
+}
+
+fn main() -> Result<()> {
     let out = std::env::args().nth(1).ok_or("give the folder to write into")?;
-    let registry = RegistryBuilder::new()
-        .add_type::<ScriptsView>()?
-        .add_type::<AutoView>()?
-        .add_type::<JumpView>()?
-        .add_type::<JunkView>()?
-        .add_type::<ConsoleView>()?
-        .add_type::<PromptsView>()?
-        .add_type::<HotKeysView>()?
-        .add_type::<PacketLoggerView>()?
-        .add_type::<SpammerView>()?
-        .add_type::<InterceptorView>()?
-        .add_type::<ArmyTravelView>()?
-        .add_type::<ArmyGearView>()?
-        .add_type::<BankView>()?
-        .add_type::<RailView>()?
-        .add_type::<ClientUpdateView>()?
-        .add_type::<LogsView>()?
-        .add_type::<CrashesView>()?
-        .add_type::<RepoView>()?
-        .add_type::<GameOptionsView>()?
-        .add_type::<AppOptionsView>()?
-        .add_type::<CoreBotsView>()?
-        .add_type::<SchedulerView>()?
-        .add_type::<SkillsView>()?
-        .add_type::<LoadoutsView>()?
-        .add_type::<FastTravelView>()?
-        .add_type::<ButlerView>()?
-        .add_type::<CosmeticsView>()?
-        .add_type::<ScriptOptionsView>()?
-        .add_type::<RuntimeView>()?
-        .add_type::<NotifyDropView>()?
-        .add_type::<LoaderView>()?
-        .add_type::<GrabberView>()?
-        .add_type::<ArmyView>()?
-        .add_type::<NotificationsView>()?
-        .add_type::<StatsView>()?
-        .add_type::<DropsView>()?
-        // Each model's actions: what a shell sends to `POST /models/<name>/do`.
-        .add_type::<AppOptionsAct>()?
-        .add_type::<ArmyAct>()?
-        .add_type::<ArmyClientAct>()?
-        .add_type::<ArmyTravelAct>()?
-        .add_type::<AutoAct>()?
-        .add_type::<BankAct>()?
-        .add_type::<ButlerAct>()?
-        .add_type::<ClientUpdateAct>()?
-        .add_type::<ConsoleAct>()?
-        .add_type::<CoreBotsAct>()?
-        .add_type::<CosmeticsAct>()?
-        .add_type::<CrashesAct>()?
-        .add_type::<DropsAct>()?
-        .add_type::<FastTravelAct>()?
-        .add_type::<GameOptionsAct>()?
-        .add_type::<GrabberAct>()?
-        .add_type::<HotKeysAct>()?
-        .add_type::<InterceptorAct>()?
-        .add_type::<JumpAct>()?
-        .add_type::<JunkAct>()?
-        .add_type::<LoaderAct>()?
-        .add_type::<LoadoutsAct>()?
-        .add_type::<LogsAct>()?
-        .add_type::<NotificationsAct>()?
-        .add_type::<NotifyDropAct>()?
-        .add_type::<PacketLoggerAct>()?
-        .add_type::<PromptsAct>()?
-        .add_type::<RailAct>()?
-        .add_type::<RepoAct>()?
-        .add_type::<RuntimeAct>()?
-        .add_type::<SchedulerAct>()?
-        .add_type::<ScriptOptionsAct>()?
-        .add_type::<ScriptsAct>()?
-        .add_type::<SkillsAct>()?
-        .add_type::<SpammerAct>()?
-        .add_type::<StatsAct>()?
-        .build()?;
-    kotlin::Installer::new("com.muktiarafi.turu.models", std::path::Path::new(&out))
+    let generated = Gen {
+        registry: RegistryBuilder::new(),
+        models: Vec::new(),
+    }
+    .model::<ScriptsView, ScriptsAct>()?
+    .model::<AutoView, AutoAct>()?
+    .model::<JumpView, JumpAct>()?
+    .model::<JunkView, JunkAct>()?
+    .model::<ConsoleView, ConsoleAct>()?
+    .model::<PromptsView, PromptsAct>()?
+    .model::<HotKeysView, HotKeysAct>()?
+    .model::<PacketLoggerView, PacketLoggerAct>()?
+    .model::<SpammerView, SpammerAct>()?
+    .model::<InterceptorView, InterceptorAct>()?
+    .model::<ArmyTravelView, ArmyTravelAct>()?
+    .acts::<ArmyClientAct>()?
+    .model::<BankView, BankAct>()?
+    .model::<RailView, RailAct>()?
+    .model::<ClientUpdateView, ClientUpdateAct>()?
+    .model::<LogsView, LogsAct>()?
+    .model::<CrashesView, CrashesAct>()?
+    .model::<RepoView, RepoAct>()?
+    .model::<GameOptionsView, GameOptionsAct>()?
+    .model::<AppOptionsView, AppOptionsAct>()?
+    .model::<CoreBotsView, CoreBotsAct>()?
+    .model::<SchedulerView, SchedulerAct>()?
+    .model::<SkillsView, SkillsAct>()?
+    .model::<LoadoutsView, LoadoutsAct>()?
+    .model::<FastTravelView, FastTravelAct>()?
+    .model::<ButlerView, ButlerAct>()?
+    .model::<CosmeticsView, CosmeticsAct>()?
+    .model::<ScriptOptionsView, ScriptOptionsAct>()?
+    .model::<RuntimeView, RuntimeAct>()?
+    .model::<NotifyDropView, NotifyDropAct>()?
+    .model::<LoaderView, LoaderAct>()?
+    .model::<GrabberView, GrabberAct>()?
+    .model::<ArmyView, ArmyAct>()?
+    .model::<NotificationsView, NotificationsAct>()?
+    .model::<StatsView, StatsAct>()?
+    .model::<DropsView, DropsAct>()?
+    // What actions answer.
+    .add::<ArmyGearView>()?
+    .add::<ClientLog>()?
+    .add::<CopiedText>()?
+    .add::<CrashText>()?
+    .add::<StatsCsv>()?
+    .add::<LaunchScript>()?
+    .add::<KeyMoved>()?
+    .add::<PromptAnswer>()?;
+    let api = generated.api();
+    let registry = generated.registry.build()?;
+    let out = std::path::Path::new(&out);
+    kotlin::Installer::new("com.muktiarafi.turu.models", out)
         .plugin(JsonPlugin)
         .generate(&registry)?;
+    let dir = out.join("com/muktiarafi/turu/models");
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(dir.join("ModelApi.kt"), api)?;
     Ok(())
 }

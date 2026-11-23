@@ -66,6 +66,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.AuraView
 import com.muktiarafi.turu.models.EditorChange
 import com.muktiarafi.turu.models.RulesView
@@ -99,7 +100,7 @@ class SkillsPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("skills"), logs = emptyList(),
+            api, token, models = listOf(Api.skills), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<SkillsView>(text) }
                     .onSuccess { view = it }
@@ -108,13 +109,13 @@ class SkillsPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("skills", SkillsAct.open, SkillsAct.JsonSerializer)
+            it.act(Api.skills, SkillsAct.open)
         }
     }
 
     fun act(action: SkillsAct) {
         error = null
-        client?.act("skills", action, SkillsAct.JsonSerializer) { error = it }
+        client?.act(Api.skills, action) { error = it }
     }
 
     fun editor(change: EditorChange) = act(SkillsAct.editor(change))

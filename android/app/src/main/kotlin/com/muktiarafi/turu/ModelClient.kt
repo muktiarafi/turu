@@ -3,7 +3,8 @@ package com.muktiarafi.turu
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import kotlinx.serialization.SerializationStrategy
+import com.muktiarafi.turu.models.ModelApi
+import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.json.Json
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -24,11 +25,12 @@ import kotlin.concurrent.thread
 class ModelClient(
     private val api: String,
     private val token: String,
-    private val models: List<String>,
+    models: List<ModelApi<*, *>>,
     private val logs: List<String>,
     private val onView: (model: String, json: String) -> Unit,
     private val onLog: (kind: String, time: String, text: String) -> Unit,
 ) {
+    private val models = models.map { it.name }
     @Volatile private var stopped = false
     @Volatile private var events: HttpURLConnection? = null
     private val main = Handler(Looper.getMainLooper())
@@ -106,30 +108,38 @@ class ModelClient(
     }
 
     /**
-     * Runs `action`, one of `model`'s actions in the types generated from the Rust records (its
-     * `…Act`, written with its `JsonSerializer`); `done` gets the error, or null; `answer` what it
-     * answered.
+     * Runs `action`, one of `model`'s actions (`Api.<model>`: the generated types say which); `done`
+     * gets the error, or null.
      */
-    fun <A> act(
-        model: String,
-        action: A,
-        serializer: SerializationStrategy<A>,
-        answer: (JSONObject) -> Unit = {},
-        done: (String?) -> Unit = {},
-    ) = post("/models/$model/do", Json.encodeToString(serializer, action), answer, done)
+    fun <A> act(model: ModelApi<*, A>, action: A, done: (String?) -> Unit = {}) =
+        post<A, Unit>(model, action, null, {}, done)
 
-    /** Posts `body` to `path`; `done` gets the error, or null; `answer` what it answered. */
-    private fun post(path: String, body: String, answer: (JSONObject) -> Unit, done: (String?) -> Unit) {
+    /**
+     * Runs `action`, `answer` getting what it answered as `reply`, a generated type. Which answer
+     * goes with which action isn't checked by the compiler: one that doesn't decode is logged and
+     * reaches `done` as the error.
+     */
+    fun <A, R> act(model: ModelApi<*, A>, action: A, reply: DeserializationStrategy<R>, answer: (R) -> Unit, done: (String?) -> Unit = {}) =
+        post(model, action, reply, answer, done)
+
+    private fun <A, R> post(model: ModelApi<*, A>, action: A, reply: DeserializationStrategy<R>?, answer: (R) -> Unit, done: (String?) -> Unit) {
+        val body = JSON.encodeToString(model.act, action)
         actions.execute {
-            var answered: JSONObject? = null
+            var deliver: () -> Unit = {}
             val error = runCatching {
-                val connection = open(path, "POST").apply {
+                val connection = open("/models/${model.name}/do", "POST").apply {
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json")
                 }
                 connection.outputStream.use { it.write(body.toByteArray()) }
                 if (connection.responseCode == 200) {
-                    answered = runCatching { JSONObject(connection.inputStream.bufferedReader().use { it.readText() }) }.getOrNull()
+                    val text = connection.inputStream.bufferedReader().use { it.readText() }
+                    if (reply != null) {
+                        val value = runCatching { JSON.decodeFromString(reply, text) }
+                            .onFailure { Log.e(TAG, "/models/${model.name}/do's answer doesn't decode: $it") }
+                            .getOrElse { return@runCatching "The tab's answer didn't make sense: ${it.message}" }
+                        deliver = { answer(value) }
+                    }
                     null
                 } else {
                     val text = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
@@ -138,7 +148,7 @@ class ModelClient(
             }.getOrElse { it.message ?: "the tab didn't answer" }
             main.post {
                 if (stopped) return@post
-                answered?.let(answer)
+                if (error == null) deliver()
                 done(error)
             }
         }
@@ -169,5 +179,8 @@ class ModelClient(
 
     companion object {
         const val TAG = "turu-models"
+
+        /** Actions out and answers in; an answer may carry fields a newer slot added. */
+        private val JSON = Json { ignoreUnknownKeys = true }
     }
 }

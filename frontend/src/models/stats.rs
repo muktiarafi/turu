@@ -376,6 +376,14 @@ pub fn dismiss_note(bot: &Arc<Bot>) {
     lock(&STATE.of(bot)).note = None;
 }
 
+/// Export's answer: the stats as CSV, none when there are none.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+pub struct StatsCsv {
+    pub csv: Option<String>,
+}
+
 /// Stats' actions (`POST /models/stats/do`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(
@@ -412,7 +420,7 @@ pub fn act(bot: &Arc<Bot>, act: StatsAct) -> Result<serde_json::Value, String> {
         StatsAct::Dismiss => dismiss_note(bot),
         StatsAct::Advanced { on } => set_advanced(bot, on),
         StatsAct::Unit { unit } => set_unit(bot, &unit)?,
-        StatsAct::Export => return Ok(serde_json::json!({ "csv": export(bot) })),
+        StatsAct::Export => return super::to_json(&StatsCsv { csv: export(bot) }),
     }
     Ok(serde_json::json!({}))
 }

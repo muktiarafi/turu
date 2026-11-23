@@ -46,6 +46,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.RuntimeAct
 import com.muktiarafi.turu.models.RuntimeView
 import kotlinx.serialization.json.Json
@@ -90,7 +91,7 @@ class RuntimePanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("runtime"), logs = emptyList(),
+            api, token, models = listOf(Api.runtime), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<RuntimeView>(text) }
                     .onSuccess { v ->
@@ -108,7 +109,7 @@ class RuntimePanel {
     fun act(action: RuntimeAct, done: () -> Unit = {}) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("runtime", action, RuntimeAct.JsonSerializer) { failed ->
+        client.act(Api.runtime, action) { failed ->
             error = failed
             if (failed == null) done()
         }

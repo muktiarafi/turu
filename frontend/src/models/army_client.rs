@@ -173,6 +173,19 @@ fn run(key: String, peer: Peer, action: String, command: Command) -> Result<(), 
     spawned.map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Logs' answer: the lines from `since` on, and where the next read starts.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+pub struct ClientLog {
+    pub lines: Vec<String>,
+    pub next: u64,
+}
+
+fn json_of(answer: &impl Serialize) -> Result<Json, String> {
+    serde_json::to_value(answer).map_err(|e| e.to_string())
+}
+
 /// An Army client's actions (`POST /models/army-client/do`), each on the row whose key is `key`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(
@@ -210,7 +223,7 @@ pub fn act(act: ArmyClientAct) -> Result<Json, String> {
     match act {
         ArmyClientAct::Gear { key } => {
             let (key, peer) = peer(key)?;
-            serde_json::to_value(gear_view(&key, &peer)).map_err(|e| e.to_string())
+            json_of(&gear_view(&key, &peer))
         }
         ArmyClientAct::Refresh { key } => {
             let (key, peer) = peer(key)?;
@@ -244,7 +257,10 @@ pub fn act(act: ArmyClientAct) -> Result<Json, String> {
                 .flatten()
                 .map(|l| l["text"].as_str().unwrap_or_default())
                 .collect();
-            Ok(json!({ "lines": lines, "next": reply["next"].as_u64().unwrap_or(since) }))
+            json_of(&ClientLog {
+                lines: lines.into_iter().map(str::to_owned).collect(),
+                next: reply["next"].as_u64().unwrap_or(since),
+            })
         }
     }
 }

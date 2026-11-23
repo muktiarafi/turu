@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.CoreBotsAct
 import com.muktiarafi.turu.models.CoreBotsView
 import com.muktiarafi.turu.models.RoleView
@@ -94,7 +95,7 @@ class CoreBotsPanel {
         // The tab before: its draft saved, as closing the window does; said when it had changes
         // and the page stays (another tab came on screen), since nothing else shows it.
         val left = view?.takeIf { it.unsaved && it.username.isNotEmpty() }?.shownName
-        client?.let { old -> old.act("core-bots", CoreBotsAct.close, CoreBotsAct.JsonSerializer) { old.stop() } }
+        client?.let { old -> old.act(Api.coreBots, CoreBotsAct.close) { old.stop() } }
         if (left != null && tab != null) notice = Notice("Saved CoreBots for $left")
         following = tab
         client = null
@@ -102,7 +103,7 @@ class CoreBotsPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("core-bots"), logs = emptyList(),
+            api, token, models = listOf(Api.coreBots), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<CoreBotsView>(text) }
                     .onSuccess { view = it }
@@ -111,13 +112,13 @@ class CoreBotsPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("core-bots", CoreBotsAct.open, CoreBotsAct.JsonSerializer)
+            it.act(Api.coreBots, CoreBotsAct.open)
         }
     }
 
     fun act(action: CoreBotsAct) {
         error = null
-        client?.act("core-bots", action, CoreBotsAct.JsonSerializer) { error = it }
+        client?.act(Api.coreBots, action) { error = it }
     }
 
     /** Changes the role at [index]: the fields given. */

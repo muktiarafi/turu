@@ -48,14 +48,15 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.CounterKind
 import com.muktiarafi.turu.models.CounterView
 import com.muktiarafi.turu.models.ProgressView
 import com.muktiarafi.turu.models.SnapshotView
 import com.muktiarafi.turu.models.StatsAct
+import com.muktiarafi.turu.models.StatsCsv
 import com.muktiarafi.turu.models.StatsView
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /** Stats' copy of the tab on screen (`turu_frontend::models::stats`), read while the page shows. */
 class StatsPanel {
@@ -77,7 +78,7 @@ class StatsPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("stats"), logs = emptyList(),
+            api, token, models = listOf(Api.stats), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<StatsView>(text) }
                     .onSuccess { view = it }
@@ -87,10 +88,17 @@ class StatsPanel {
         ).also { it.start() }
     }
 
-    fun act(action: StatsAct, answer: (JSONObject) -> Unit = {}) {
+    fun act(action: StatsAct) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("stats", action, StatsAct.JsonSerializer, answer = answer) { error = it }
+        client.act(Api.stats, action) { error = it }
+    }
+
+    /** Export: `exported` gets the CSV, when there is any. */
+    fun export(exported: (String) -> Unit) {
+        val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
+        error = null
+        client.act(Api.stats, StatsAct.export, StatsCsv.serializer(), { it.csv?.takeIf(String::isNotEmpty)?.let(exported) }) { error = it }
     }
 }
 
@@ -120,8 +128,7 @@ fun StatsPage(state: ShellState, panel: StatsPanel, fullWindow: () -> Unit) {
     val context = LocalContext.current
     var resetting by remember { mutableStateOf(false) }
     var clearing by remember { mutableStateOf(false) }
-    fun export() = panel.act(StatsAct.export) { answer ->
-        val csv = answer.optString("csv").takeIf { !answer.isNull("csv") && it.isNotEmpty() } ?: return@act
+    fun export() = panel.export { csv ->
         val send = Intent(Intent.ACTION_SEND)
             .setType("text/csv")
             .putExtra(Intent.EXTRA_SUBJECT, "Turu rate history")

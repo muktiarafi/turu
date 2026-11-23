@@ -49,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.GearSlotView
 import com.muktiarafi.turu.models.ItemPlace
 import com.muktiarafi.turu.models.LoadoutView
@@ -81,7 +82,7 @@ class LoadoutsPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("loadouts"), logs = emptyList(),
+            api, token, models = listOf(Api.loadouts), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<LoadoutsView>(text) }
                     .onSuccess { view = it }
@@ -90,13 +91,13 @@ class LoadoutsPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("loadouts", LoadoutsAct.open, LoadoutsAct.JsonSerializer)
+            it.act(Api.loadouts, LoadoutsAct.open)
         }
     }
 
     fun act(action: LoadoutsAct) {
         error = null
-        client?.act("loadouts", action, LoadoutsAct.JsonSerializer) { error = it }
+        client?.act(Api.loadouts, action) { error = it }
     }
 }
 

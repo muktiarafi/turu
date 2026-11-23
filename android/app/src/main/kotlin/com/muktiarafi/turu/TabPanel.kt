@@ -118,9 +118,9 @@ class TabActions(
     val scriptOptions: ScriptOptionsPanel,
     val armyTravel: ArmyTravelPanel,
     val armyClient: ArmyClientPanel,
-    val packetLogger: PacketPanel<com.muktiarafi.turu.models.PacketLoggerView>,
-    val spammer: PacketPanel<com.muktiarafi.turu.models.SpammerView>,
-    val interceptor: PacketPanel<com.muktiarafi.turu.models.InterceptorView>,
+    val packetLogger: PacketPanel<com.muktiarafi.turu.models.PacketLoggerView, com.muktiarafi.turu.models.PacketLoggerAct>,
+    val spammer: PacketPanel<com.muktiarafi.turu.models.SpammerView, com.muktiarafi.turu.models.SpammerAct>,
+    val interceptor: PacketPanel<com.muktiarafi.turu.models.InterceptorView, com.muktiarafi.turu.models.InterceptorAct>,
 )
 
 /** The panel's width, beside the rail (docs/UI.md, "Tab panel"). */

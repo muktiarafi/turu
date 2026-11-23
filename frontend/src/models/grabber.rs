@@ -615,7 +615,9 @@ pub fn act(bot: &Arc<Bot>, act: GrabberAct) -> Result<Json, String> {
                 picked
             };
             let refs: Vec<&Grabbed> = all.iter().collect();
-            return Ok(json!({ "text": copy_text(bot, kind, &refs) }));
+            return super::to_json(&super::CopiedText {
+                text: copy_text(bot, kind, &refs),
+            });
         }
     }
     Ok(json!({}))

@@ -50,12 +50,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.ArmyClientAct
 import com.muktiarafi.turu.models.ArmyGearView
+import com.muktiarafi.turu.models.ClientLog
 import kotlinx.coroutines.delay
+import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.json.Json
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Army Control's client pages (`turu_frontend::models::army_client`): a row's gear and logs, asked
@@ -90,12 +91,16 @@ class ArmyClientPanel {
 
     val ready get() = client != null
 
-    /** An action for the row `key`; `answer` gets its JSON. */
-    fun act(action: ArmyClientAct, quiet: Boolean = false, answer: (JSONObject) -> Unit = {}) {
-        val client = client ?: run { if (!quiet) error = "The tab isn't answering: it's starting again"; return }
-        client.act("army-client", action, ArmyClientAct.JsonSerializer, answer) { e ->
-            if (e != null || !quiet) error = e
-        }
+    /** An action for a row. */
+    fun act(action: ArmyClientAct) {
+        val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
+        client.act(Api.armyClient, action) { error = it }
+    }
+
+    /** A quiet read for a row (an error only shows when it fails): `answer` gets it as `reply`. */
+    fun <R> read(action: ArmyClientAct, reply: DeserializationStrategy<R>, answer: (R) -> Unit) {
+        val client = client ?: return
+        client.act(Api.armyClient, action, reply, answer) { e -> if (e != null) error = e }
     }
 }
 
@@ -116,7 +121,6 @@ private fun FollowClient(state: ShellState, panel: ArmyClientPanel) {
 @Composable
 fun ArmyGearPage(state: ShellState, panel: ArmyClientPanel, key: String, label: String) {
     FollowClient(state, panel)
-    val json = remember { Json { ignoreUnknownKeys = true } }
     var view by remember { mutableStateOf<ArmyGearView?>(null) }
     var stop by remember { mutableStateOf(false) }
     val picked = remember { mutableStateMapOf<String, Long>() }
@@ -124,11 +128,7 @@ fun ArmyGearPage(state: ShellState, panel: ArmyClientPanel, key: String, label: 
     LaunchedEffect(key, state.tabs.active?.api) {
         while (true) {
             if (panel.ready) {
-                panel.act(ArmyClientAct.gear(key), quiet = true) { answer ->
-                    runCatching { json.decodeFromString<ArmyGearView>(answer.toString()) }
-                        .onSuccess { view = it }
-                        .onFailure { Log.e(ModelClient.TAG, "army-client gear doesn't decode: $it") }
-                }
+                panel.read(ArmyClientAct.gear(key), ArmyGearView.serializer()) { view = it }
             }
             delay(1000)
         }
@@ -229,18 +229,17 @@ fun ArmyLogsPage(state: ShellState, panel: ArmyClientPanel, key: String, label: 
     val lines = remember(kind) { mutableStateListOf<String>() }
     var dropped by remember(kind) { mutableStateOf(0L) }
     LaunchedEffect(key, kind, state.tabs.active?.api) {
-        var next = 0L
+        var next = 0uL
         while (true) {
             if (panel.ready) {
-                panel.act(ArmyClientAct.logs(key, kind, next.coerceAtLeast(0L).toULong()), quiet = true) { answer ->
-                    val got = answer.optJSONArray("lines") ?: JSONArray()
-                    for (i in 0 until got.length()) lines.add(got.optString(i))
+                panel.read(ArmyClientAct.logs(key, kind, next), ClientLog.serializer()) { got ->
+                    lines.addAll(got.lines)
                     val over = lines.size - LOG_LINES
                     if (over > 0) {
                         lines.removeRange(0, over)
                         dropped += over
                     }
-                    next = answer.optLong("next", next)
+                    next = got.next
                 }
             }
             delay(2000)

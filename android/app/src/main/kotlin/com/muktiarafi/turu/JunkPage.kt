@@ -78,6 +78,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.JunkAct
 import com.muktiarafi.turu.models.JunkRowView
 import com.muktiarafi.turu.models.JunkView
@@ -114,7 +115,7 @@ class JunkPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("junk"), logs = emptyList(),
+            api, token, models = listOf(Api.junk), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<JunkView>(text) }
                     .onSuccess { view = it; pending.clear() }
@@ -129,7 +130,7 @@ class JunkPanel {
     fun act(action: JunkAct, done: () -> Unit = {}) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("junk", action, JunkAct.JsonSerializer) { e ->
+        client.act(Api.junk, action) { e ->
             error = e
             if (e == null) done()
         }

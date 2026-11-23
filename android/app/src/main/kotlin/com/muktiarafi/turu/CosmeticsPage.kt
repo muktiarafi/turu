@@ -67,6 +67,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.CosmeticItemView
 import com.muktiarafi.turu.models.CosmeticsAct
 import com.muktiarafi.turu.models.CosmeticsQuery
@@ -100,7 +101,7 @@ class CosmeticsPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("cosmetics"), logs = emptyList(),
+            api, token, models = listOf(Api.cosmetics), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<CosmeticsView>(text) }
                     .onSuccess { view = it }
@@ -109,13 +110,13 @@ class CosmeticsPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("cosmetics", CosmeticsAct.open, CosmeticsAct.JsonSerializer)
+            it.act(Api.cosmetics, CosmeticsAct.open)
         }
     }
 
     fun act(action: CosmeticsAct) {
         error = null
-        client?.act("cosmetics", action, CosmeticsAct.JsonSerializer) { error = it }
+        client?.act(Api.cosmetics, action) { error = it }
     }
 
     fun query(change: CosmeticsQuery) = act(CosmeticsAct.query(change))

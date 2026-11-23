@@ -64,6 +64,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.ArmyAct
 import com.muktiarafi.turu.models.ArmyCommand
 import com.muktiarafi.turu.models.ArmyRow
@@ -112,7 +113,7 @@ class ArmyPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("army"), logs = emptyList(),
+            api, token, models = listOf(Api.army), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<ArmyView>(text) }
                     .onSuccess { v ->
@@ -130,7 +131,7 @@ class ArmyPanel {
     fun act(action: ArmyAct) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("army", action, ArmyAct.JsonSerializer) { error = it }
+        client.act(Api.army, action) { error = it }
     }
 
     /** A command to the checked rows, or to every row still running. */

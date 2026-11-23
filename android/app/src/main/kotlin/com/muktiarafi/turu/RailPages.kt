@@ -87,6 +87,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.AutoAct
 import com.muktiarafi.turu.models.AutoView
 import com.muktiarafi.turu.models.Control
@@ -124,13 +125,13 @@ fun AutoPage(state: ShellState, models: TabModels) {
     var sending by remember { mutableStateOf<AutoAct?>(null) }
     val act = { action: AutoAct ->
         error = null
-        models.act("auto", action, AutoAct.JsonSerializer) { error = it }
+        models.act(Api.auto, action) { error = it }
     }
     // The tapped start or Stop shows a spinner until the view says it took.
     val press = { action: AutoAct ->
         sending = action
         error = null
-        models.act("auto", action, AutoAct.JsonSerializer) { error = it; if (it != null) sending = null }
+        models.act(Api.auto, action) { error = it; if (it != null) sending = null }
     }
     LaunchedEffect(view?.running) { sending = null }
     Column(Modifier.fillMaxSize()) {
@@ -345,8 +346,8 @@ private fun ClassPicker(view: AutoView, onOpen: () -> Unit, onPick: (String) -> 
 @Composable
 fun JumpPage(state: ShellState, models: TabModels) {
     val view = models.jump
-    LaunchedEffect(models.tab?.id, models.tab?.api) { models.act("jump", JumpAct.refresh, JumpAct.JsonSerializer) }
-    val act = { action: JumpAct -> models.act("jump", action, JumpAct.JsonSerializer) }
+    LaunchedEffect(models.tab?.id, models.tab?.api) { models.act(Api.jump, JumpAct.refresh) }
+    val act = { action: JumpAct -> models.act(Api.jump, action) }
     Column(Modifier.fillMaxSize()) {
         PageBar("Fast Map Jump", onBack = { state.back() })
         if (view == null) return@Column Waiting(models)

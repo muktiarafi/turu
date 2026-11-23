@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.AppOptionsAct
 import com.muktiarafi.turu.models.AppOptionsView
 import com.muktiarafi.turu.models.OptionValue
@@ -70,7 +71,7 @@ class AppOptionsPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("app-options"), logs = emptyList(),
+            api, token, models = listOf(Api.appOptions), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<AppOptionsView>(text) }
                     .onSuccess { view = it }
@@ -83,7 +84,7 @@ class AppOptionsPanel {
     private fun act(action: AppOptionsAct) {
         error = null
         val client = client ?: return
-        client.act("app-options", action, AppOptionsAct.JsonSerializer) { error = it }
+        client.act(Api.appOptions, action) { error = it }
     }
 
     fun set(option: OptionView, value: Any) = act(AppOptionsAct.set(option.section, option.label, optionValue(value)))

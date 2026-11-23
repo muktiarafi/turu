@@ -48,7 +48,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.CrashRow
+import com.muktiarafi.turu.models.CrashText as ReportText
 import com.muktiarafi.turu.models.CrashesAct
 import com.muktiarafi.turu.models.CrashesView
 import kotlinx.serialization.json.Json
@@ -100,7 +102,7 @@ class CrashesPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("crashes"), logs = emptyList(),
+            api, token, models = listOf(Api.crashes), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<CrashesView>(text) }
                     .onSuccess { view = it }
@@ -116,8 +118,8 @@ class CrashesPanel {
         report = null
         error = null
         val client = client ?: return
-        client.act("crashes", CrashesAct.text(name), CrashesAct.JsonSerializer, { a ->
-            report = CrashText(name, a.optString("text"), a.optString("subject"), a.optBoolean("cut"))
+        client.act(Api.crashes, CrashesAct.text(name), ReportText.serializer(), { a ->
+            report = CrashText(name, a.text, a.subject, a.cut)
         }) { e -> if (e != null) error = e }
     }
 
@@ -125,7 +127,7 @@ class CrashesPanel {
     fun delete(row: CrashRow, done: () -> Unit) {
         error = null
         val client = client ?: return
-        client.act("crashes", CrashesAct.delete(row.name), CrashesAct.JsonSerializer) { e ->
+        client.act(Api.crashes, CrashesAct.delete(row.name)) { e ->
             if (e != null) {
                 error = e
                 return@act
@@ -137,7 +139,7 @@ class CrashesPanel {
     }
 
     private fun restore(name: String) {
-        client?.act("crashes", CrashesAct.restore(name), CrashesAct.JsonSerializer) { e -> if (e != null) error = e }
+        client?.act(Api.crashes, CrashesAct.restore(name)) { e -> if (e != null) error = e }
     }
 }
 

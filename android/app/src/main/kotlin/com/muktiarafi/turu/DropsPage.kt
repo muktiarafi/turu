@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.DropView
 import com.muktiarafi.turu.models.DropsAct
 import com.muktiarafi.turu.models.DropsView
@@ -79,7 +80,7 @@ class DropsPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("drops"), logs = emptyList(),
+            api, token, models = listOf(Api.drops), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<DropsView>(text) }
                     .onSuccess { v ->
@@ -96,7 +97,7 @@ class DropsPanel {
     private fun act(action: DropsAct) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("drops", action, DropsAct.JsonSerializer) { error = it }
+        client.act(Api.drops, action) { error = it }
     }
 
     fun pickupAll() = act(DropsAct.pickup_all)

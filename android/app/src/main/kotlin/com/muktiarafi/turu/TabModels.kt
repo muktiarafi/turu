@@ -5,14 +5,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.AutoView
 import com.muktiarafi.turu.models.BankView
 import com.muktiarafi.turu.models.JumpView
 import com.muktiarafi.turu.models.LogsAct
+import com.muktiarafi.turu.models.ModelApi
 import com.muktiarafi.turu.models.RailView
 import com.muktiarafi.turu.models.ScriptsView
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.SerializationStrategy
 
 /**
  * The tab on screen's view models, read from its slot's control API (`turu_frontend::models`,
@@ -59,7 +60,7 @@ class TabModels {
         val token = next.token ?: return
         client = ModelClient(
             api, token,
-            models = listOf("scripts", "auto", "jump", "bank", "rail"),
+            models = listOf(Api.scripts, Api.auto, Api.jump, Api.bank, Api.rail),
             logs = listOf("script", "debug"),
             onView = ::decode,
             onLog = { kind, time, text -> log(kind)?.let { append(it, time, text) } },
@@ -90,23 +91,23 @@ class TabModels {
         // A record changed on one side only fails loudly here, with the route.
         runCatching {
             when (model) {
-                "scripts" -> scripts = json.decodeFromString<ScriptsView>(text)
-                "auto" -> auto = json.decodeFromString<AutoView>(text)
-                "jump" -> jump = json.decodeFromString<JumpView>(text)
-                "bank" -> bank = json.decodeFromString<BankView>(text)
-                "rail" -> rail = json.decodeFromString<RailView>(text)
+                Api.scripts.name -> scripts = json.decodeFromString<ScriptsView>(text)
+                Api.auto.name -> auto = json.decodeFromString<AutoView>(text)
+                Api.jump.name -> jump = json.decodeFromString<JumpView>(text)
+                Api.bank.name -> bank = json.decodeFromString<BankView>(text)
+                Api.rail.name -> rail = json.decodeFromString<RailView>(text)
             }
         }.onFailure { Log.e(ModelClient.TAG, "/models/$model doesn't decode: $it") }
     }
 
-    /** Runs `action`, one of `model`'s generated `…Act` types, written with `serializer`; `done` gets the error, or null. */
-    fun <A> act(model: String, action: A, serializer: SerializationStrategy<A>, done: (String?) -> Unit = {}) {
+    /** Runs `action`, one of `model`'s (`Api.<model>`); `done` gets the error, or null. */
+    fun <A> act(model: ModelApi<*, A>, action: A, done: (String?) -> Unit = {}) {
         val client = client ?: return done("The tab isn't up yet")
-        client.act(model, action, serializer, done = done)
+        client.act(model, action, done)
     }
 
     fun clearLog(kind: String) {
-        act("logs", LogsAct.clear(kind), LogsAct.JsonSerializer) { if (it == null) log(kind)?.clear() }
+        act(Api.logs, LogsAct.clear(kind)) { if (it == null) log(kind)?.clear() }
     }
 
     companion object {

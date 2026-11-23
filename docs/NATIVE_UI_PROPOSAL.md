@@ -681,14 +681,24 @@ script's message box and options request.
   one enum, `<Name>Act` (`#[serde(tag = "action", rename_all = "kebab-case")]`, and facet's same),
   posted to `POST /models/<name>/do` and read by `models::register()`'s `acts`, which refuses a
   body that isn't one ("not a grabber action: ..."). The Kotlin pages build the generated types
-  (`GrabberAct.search(page = view.page + 1u)`, `ModelClient.act(model, action, GrabberAct.JsonSerializer)`)
-  instead of `JSONObject`s, so an action or a field renamed in Rust breaks the Kotlin build, not a
+  (`GrabberAct.search(page = view.page + 1u)`) instead of `JSONObject`s, so an action or a field renamed in Rust breaks the Kotlin build, not a
   tap. The per-action routes went (only the shell used them). An option's value is the typed
-  `OptionValue` both ways (Game and Application Options, Butler, CoreBots, Script Options). Not
-  typed yet: the answers (Copy's `{ text }`, Search Scripts' `{ ready }`, a prompt's `window`,
-  `open`, `report`), still read with `JSONObject`; and the shell's own JNI calls
-  (`AccountsPanel`'s `Ask`, `SlotShell`'s actions). Checked on the emulator: Jump's `refresh`,
-  Search Scripts' Pinned and Clear the filters.
+  `OptionValue` both ways (Game and Application Options, Butler, CoreBots, Script Options).
+  Checked on the emulator: Jump's `refresh`, Search Scripts' Pinned and Clear the filters.
+* **Typed answers and model names** (2026-11-23): a model's name is written once, in Rust's
+  `models::Model`; each view and action type says its model (`ModelView`, `ModelActs`), and
+  `register()` takes the names from them, a test checking every model is added. `turu-typegen`
+  writes `ModelApi.kt` beside the types: `Api.grabber` is the name with the view's and the
+  actions' types, so `ModelClient.act(Api.grabber, action)` takes only a `GrabberAct`, and
+  `ModelClient(models = listOf(Api.grabber), ...)` names what it follows. What an action answers
+  is a generated record too (`CopiedText`, `CrashText`, `StatsCsv`, `LaunchScript`, `ClientLog`,
+  `KeyMoved`, `PromptAnswer`; Army client's gear its `ArmyGearView`), read with
+  `act(Api.<model>, action, <Answer>.serializer(), { ... })`; its JSON is what the untyped answers
+  had (a test pins each). Which answer goes with which action isn't checked by the compiler: one
+  that doesn't decode is logged and reaches `done` as the error. Still read by hand: the control
+  API's envelope (`{ revision, view }`, `/events`, `/log`) and the shell's own JNI calls
+  (`AccountsPanel`'s `Ask`, `SlotShell`'s actions). Checked on the emulator: a crash report's text
+  (Logs > Crashes), Logs and More.
 * **L5b**: the Script Loader is native (`ScriptsPage.kt`, `ModelClient.kt`), in the shell's
   panel, read from the tab on screen's scripts model and its log over the control API; Search
   Scripts and Edit Script Options open the slot's egui windows (`ToClient::OpenWindow`). However
@@ -1115,8 +1125,10 @@ tab; Stats' `0d9ede239` and `e4bb580a4` one with settings and an answer):
    "kebab-case")]`, `cfg_attr(feature = "typegen", derive(facet::Facet), facet(tag = "action",
    rename_all = "kebab-case"))`, `#[repr(C)]`) and a `pub fn act(.., act: <Name>Act)`, per-tab
    state that isn't the bot's in a `PerTab` (`tab_state.rs`). No egui (`models_import_no_ui`).
-   Add the view and `acts("<name>", ...)` to `models::register()`, and both types to
-   `bin/turu-typegen.rs`. In an action: fields inside a variant are one word (or a newtype
+   Add a `Model` variant and its name, the pair to `model_types!` (both in `models/mod.rs`),
+   `view(..)` and `acts(..)` to `models::register()`, and `.model::<View, Act>()` (plus any answer
+   record) to `bin/turu-typegen.rs`. An action that answers returns a record (`Serialize`, facet's
+   derive), never `json!`. In an action: fields inside a variant are one word (or a newtype
    variant over a struct with `rename_all = "camelCase"`, as `RepoQuery`); integers as the view
    has them (`u32` for a position or page: Kotlin's `UInt`); an option's value is `OptionValue`;
    an enum of unit variants only comes out as a Kotlin `enum class` (`BankAct.OPEN`), one with
@@ -1139,7 +1151,8 @@ tab; Stats' `0d9ede239` and `e4bb580a4` one with settings and an answer):
    window, Army, also unless its egui window is open).
 4. **The page** (`android/.../turu/<Name>Page.kt`): a panel class reading the model over
    `ModelClient` while it shows (copy `SchedulerPanel`), sending its actions as the generated
-   `<Name>Act` (`client.act("<name>", action, <Name>Act.JsonSerializer)`); the generated types come from
+   `<Name>Act` (`client.act(Api.<name>, action)`, and with its answer's record
+   `client.act(Api.<name>, action, <Answer>.serializer(), { ... })`); the generated types come from
    `com.muktiarafi.turu.models` (enum constants are UPPER_CASE). Then `Page.<Name>`
    (`ShellState.kt`), its route and panel field (`TabPanel.kt`, `widePages` if 440 dp),
    `ShellScreens` (`openScreen`'s string, the panel), and More's mapping (`RailPages.kt`).

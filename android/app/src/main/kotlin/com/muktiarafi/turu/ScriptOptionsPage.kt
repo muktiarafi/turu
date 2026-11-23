@@ -57,6 +57,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.OptionValue
 import com.muktiarafi.turu.models.ScriptOptionGroupView
 import com.muktiarafi.turu.models.ScriptOptionKind
@@ -85,13 +86,13 @@ class ScriptOptionsPanel {
         following = tab
         // The tab before: the page left it. With its script waiting, its own window takes the
         // editor back; else the draft goes (`leave`).
-        client?.let { old -> old.act("script-options", ScriptOptionsAct.leave, ScriptOptionsAct.JsonSerializer) { old.stop() } }
+        client?.let { old -> old.act(Api.scriptOptions, ScriptOptionsAct.leave) { old.stop() } }
         client = null
         view = null
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("script-options"), logs = emptyList(),
+            api, token, models = listOf(Api.scriptOptions), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<ScriptOptionsView>(text) }
                     .onSuccess { view = it }
@@ -100,13 +101,13 @@ class ScriptOptionsPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("script-options", ScriptOptionsAct.open, ScriptOptionsAct.JsonSerializer)
+            it.act(Api.scriptOptions, ScriptOptionsAct.open)
         }
     }
 
     fun act(action: ScriptOptionsAct, done: () -> Unit = {}) {
         error = null
-        client?.act("script-options", action, ScriptOptionsAct.JsonSerializer) { failed ->
+        client?.act(Api.scriptOptions, action) { failed ->
             error = failed
             if (failed == null) done()
         }

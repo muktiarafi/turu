@@ -887,7 +887,11 @@ pub fn act(bot: &Arc<Bot>, act: ButlerAct) -> Result<Json, String> {
                 .map(|path| format!("Saved the log to {}", path.display()))
                 .map_err(|e| format!("Couldn't save the log: {e}")),
         ),
-        ButlerAct::CopyLog => return Ok(json!({ "text": bot.butler.log_text() })),
+        ButlerAct::CopyLog => {
+            return super::to_json(&super::CopiedText {
+                text: Some(bot.butler.log_text()),
+            });
+        }
         ButlerAct::Dismiss => lock(&STATE.of(bot)).message = None,
     }
     // Show the new state now rather than at the next read.

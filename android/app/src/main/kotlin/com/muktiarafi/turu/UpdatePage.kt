@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.ClientUpdateAct
 import com.muktiarafi.turu.models.ClientUpdateView
 import com.muktiarafi.turu.models.InstallWay
@@ -73,7 +74,7 @@ class UpdatePanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("client-update"), logs = emptyList(),
+            api, token, models = listOf(Api.clientUpdate), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<ClientUpdateView>(text) }
                     .onSuccess { v ->
@@ -90,7 +91,7 @@ class UpdatePanel {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
         starting = onQuit
-        client.act("client-update", ClientUpdateAct.install(later = onQuit), ClientUpdateAct.JsonSerializer) { e ->
+        client.act(Api.clientUpdate, ClientUpdateAct.install(later = onQuit)) { e ->
             if (e != null) {
                 error = e
                 starting = null

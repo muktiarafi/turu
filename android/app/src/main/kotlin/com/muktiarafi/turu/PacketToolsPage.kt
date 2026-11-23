@@ -72,24 +72,26 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
+import com.muktiarafi.turu.models.CopiedText
 import com.muktiarafi.turu.models.InterceptedRow
 import com.muktiarafi.turu.models.InterceptorAct
 import com.muktiarafi.turu.models.InterceptorView
+import com.muktiarafi.turu.models.ModelApi
 import com.muktiarafi.turu.models.PacketFilter
 import com.muktiarafi.turu.models.PacketLoggerAct
 import com.muktiarafi.turu.models.PacketLoggerView
 import com.muktiarafi.turu.models.SpammerAct
 import com.muktiarafi.turu.models.SpammerView
 import kotlinx.coroutines.delay
-import kotlinx.serialization.SerializationStrategy
+import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * One packet tool's copy of the tab on screen (`turu_frontend::models::packets`): its model's
  * view, decoded to `V`, and its actions. The Logger also reads the `packet` log's lines.
  */
-class PacketPanel<V : Any>(private val model: String, private val decode: (Json, String) -> V, private val readsLog: Boolean = false) {
+class PacketPanel<V : Any, A>(private val model: ModelApi<V, A>, private val readsLog: Boolean = false) {
     var view by mutableStateOf<V?>(null)
         private set
     var error by mutableStateOf<String?>(null)
@@ -115,9 +117,9 @@ class PacketPanel<V : Any>(private val model: String, private val decode: (Json,
         client = ModelClient(
             api, token, models = listOf(model), logs = if (readsLog) listOf("packet") else emptyList(),
             onView = { _, text ->
-                runCatching { decode(json, text) }
+                runCatching { json.decodeFromString(checkNotNull(model.view), text) }
                     .onSuccess { view = it }
-                    .onFailure { Log.e(ModelClient.TAG, "/models/$model doesn't decode: $it") }
+                    .onFailure { Log.e(ModelClient.TAG, "/models/${model.name} doesn't decode: $it") }
             },
             onLog = { _, time, text -> append("$time $text") },
         ).also { c ->
@@ -136,14 +138,21 @@ class PacketPanel<V : Any>(private val model: String, private val decode: (Json,
         if (lines.size > KEEP) lines.removeRange(0, lines.size - KEEP)
     }
 
-    /** Runs `action`, one of this model's generated `…Act` types (see the `act` for each below). */
-    fun <A> send(action: A, serializer: SerializationStrategy<A>, answer: (JSONObject) -> Unit = {}, done: () -> Unit = {}) {
+    /** Runs `action`; `done` once it's done. */
+    fun act(action: A, done: () -> Unit = {}) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act(model, action, serializer, answer) { e ->
+        client.act(model, action) { e ->
             error = e
             if (e == null) done()
         }
+    }
+
+    /** Runs `action`, `answer` getting what it answered as `reply`. */
+    fun <R> ask(action: A, reply: DeserializationStrategy<R>, answer: (R) -> Unit) {
+        val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
+        error = null
+        client.act(model, action, reply, answer) { error = it }
     }
 
     companion object {
@@ -152,17 +161,8 @@ class PacketPanel<V : Any>(private val model: String, private val decode: (Json,
     }
 }
 
-fun PacketPanel<PacketLoggerView>.act(action: PacketLoggerAct, answer: (JSONObject) -> Unit = {}, done: () -> Unit = {}) =
-    send(action, PacketLoggerAct.JsonSerializer, answer, done)
-
-fun PacketPanel<SpammerView>.act(action: SpammerAct, answer: (JSONObject) -> Unit = {}, done: () -> Unit = {}) =
-    send(action, SpammerAct.JsonSerializer, answer, done)
-
-fun PacketPanel<InterceptorView>.act(action: InterceptorAct, answer: (JSONObject) -> Unit = {}, done: () -> Unit = {}) =
-    send(action, InterceptorAct.JsonSerializer, answer, done)
-
 @Composable
-private fun <V : Any> Follow(state: ShellState, panel: PacketPanel<V>) {
+private fun <V : Any> Follow(state: ShellState, panel: PacketPanel<V, *>) {
     DisposableEffect(Unit) { onDispose { panel.follow(null) } }
     LaunchedEffect(state.tabs.active?.id, state.tabs.active?.api) { panel.follow(state.tabs.active) }
 }
@@ -279,7 +279,7 @@ private fun StateDot(text: String, on: Boolean) {
 
 // --- Packet Logger ---------------------------------------------------------------------------
 
-fun packetLoggerPanel() = PacketPanel("packet-logger", { json, text -> json.decodeFromString<PacketLoggerView>(text) }, readsLog = true)
+fun packetLoggerPanel() = PacketPanel(Api.packetLogger, readsLog = true)
 
 /**
  * Diagnostics > Packet Logger (VibeSkua "Logger"): Start or Stop logging with its state, the
@@ -288,7 +288,7 @@ fun packetLoggerPanel() = PacketPanel("packet-logger", { json, text -> json.deco
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PacketLoggerPage(state: ShellState, panel: PacketPanel<PacketLoggerView>, fullWindow: () -> Unit) {
+fun PacketLoggerPage(state: ShellState, panel: PacketPanel<PacketLoggerView, PacketLoggerAct>, fullWindow: () -> Unit) {
     Follow(state, panel)
     val view = panel.view
     val context = LocalContext.current
@@ -373,7 +373,7 @@ private fun Lines(lines: List<String>, empty: String, modifier: Modifier) {
 
 // --- Spammer ---------------------------------------------------------------------------------
 
-fun spammerPanel() = PacketPanel("spammer", { json, text -> json.decodeFromString<SpammerView>(text) })
+fun spammerPanel() = PacketPanel(Api.spammer)
 
 /**
  * Diagnostics > Spammer (VibeSkua `PacketSpammerView`): Start or Stop with what it sends, the
@@ -382,7 +382,7 @@ fun spammerPanel() = PacketPanel("spammer", { json, text -> json.decodeFromStrin
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SpammerPage(state: ShellState, panel: PacketPanel<SpammerView>, fullWindow: () -> Unit) {
+fun SpammerPage(state: ShellState, panel: PacketPanel<SpammerView, SpammerAct>, fullWindow: () -> Unit) {
     Follow(state, panel)
     val view = panel.view
     var packet by remember { mutableStateOf("") }
@@ -508,7 +508,7 @@ private fun DelayBox(value: Long, set: (Long) -> Unit) {
 
 // --- Interceptor -----------------------------------------------------------------------------
 
-fun interceptorPanel() = PacketPanel("interceptor", { json, text -> json.decodeFromString<InterceptorView>(text) })
+fun interceptorPanel() = PacketPanel(Api.interceptor)
 
 /**
  * Diagnostics > Interceptor (VibeSkua `PacketInterceptorView`): the server Connect relogs to
@@ -519,7 +519,7 @@ fun interceptorPanel() = PacketPanel("interceptor", { json, text -> json.decodeF
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun InterceptorPage(state: ShellState, panel: PacketPanel<InterceptorView>, fullWindow: () -> Unit) {
+fun InterceptorPage(state: ShellState, panel: PacketPanel<InterceptorView, InterceptorAct>, fullWindow: () -> Unit) {
     Follow(state, panel)
     val view = panel.view
     val context = LocalContext.current
@@ -537,7 +537,7 @@ fun InterceptorPage(state: ShellState, panel: PacketPanel<InterceptorView>, full
                     DropdownMenuItem(
                         text = { Text(if (n > 0uL) "Copy $n selected" else "Copy all shown") },
                         enabled = view != null && view.matches > 0uL,
-                        onClick = { close(); panel.act(InterceptorAct.copy, answer = { copy(context, "Packets", it.optString("text")) }) },
+                        onClick = { close(); panel.ask(InterceptorAct.copy, CopiedText.serializer()) { copy(context, "Packets", it.text.orEmpty()) } },
                     )
                     DropdownMenuItem(
                     text = { Text("Clear") },

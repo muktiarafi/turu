@@ -1420,6 +1420,14 @@ pub fn view() -> HotKeysView {
     }
 }
 
+/// Assign's answer: the action that lost the key (its title), or empty.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+pub struct KeyMoved {
+    pub moved: String,
+}
+
 /// HotKeys' actions (`POST /models/hotkeys/do`); `id` is an action's ("OpenBank").
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(
@@ -1463,7 +1471,10 @@ pub fn act(store: &Store, act: HotKeysAct) -> Result<Value, String> {
         } => {
             let gesture = Gesture::of_press(&key, ctrl, shift, alt).ok_or("That key can't be a hotkey")?;
             let moved = store.assign(&id, gesture)?;
-            Ok(json!({ "moved": moved.unwrap_or_default() }))
+            serde_json::to_value(KeyMoved {
+                moved: moved.unwrap_or_default().to_owned(),
+            })
+            .map_err(|e| e.to_string())
         }
         HotKeysAct::Clear { id } => store.clear_key(&id).map(|_| json!({})),
         HotKeysAct::Add { id } => store.add(&id).map(|()| json!({})),

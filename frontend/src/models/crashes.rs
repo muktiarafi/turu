@@ -38,8 +38,11 @@ pub struct CrashRow {
     pub written: String,
 }
 
-/// A report's text, as a share sheet or the clipboard can take it.
-#[derive(Debug, Clone, PartialEq)]
+/// A report's text, as a share sheet or the clipboard can take it (and the answer to a shell's
+/// `text`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
 pub struct CrashText {
     pub text: String,
     /// The share sheet's subject: "Turu 1.2.3 crash report: exit-1.txt".
@@ -198,10 +201,7 @@ pub enum CrashesAct {
 
 pub fn act(act: CrashesAct) -> Result<serde_json::Value, String> {
     match act {
-        CrashesAct::Text { name } => {
-            let read = text(&name)?;
-            return Ok(serde_json::json!({ "text": read.text, "subject": read.subject, "cut": read.cut }));
-        }
+        CrashesAct::Text { name } => return super::to_json(&text(&name)?),
         CrashesAct::Delete { name } => delete(&name)?,
         CrashesAct::Restore { name } => restore(&name)?,
     }

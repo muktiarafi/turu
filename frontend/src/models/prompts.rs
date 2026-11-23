@@ -12,7 +12,7 @@ use super::tab_state::lock;
 use crate::crash_reports::{self, Report};
 use crate::graphics_tips::{self, Tip};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value as Json, json};
+use serde_json::Value as Json;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Once};
 use std::time::{Duration, Instant};
@@ -401,16 +401,35 @@ pub fn act(bot: &Arc<Bot>, act: PromptsAct) -> Result<Json, String> {
     }
 }
 
-/// Answers the prompt `id` with `button`. Answers `window` (an egui window to open), `open` (a
-/// native screen: "app_options" for Raise Tab Limit, "crashes" for Show report) and `report` (the
-/// crash report Show report opens, by its name), each empty when nothing opens.
+/// What answering a prompt opens: `window` (an egui window), `open` (a native screen:
+/// "app_options" for Raise Tab Limit, "crashes" for Show report) and `report` (the crash report
+/// Show report opens, by its name), each empty when nothing opens.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+pub struct PromptAnswer {
+    pub window: String,
+    pub open: String,
+    pub report: String,
+}
+
+fn answered(window: &str, open: &str, report: String) -> Result<Json, String> {
+    serde_json::to_value(PromptAnswer {
+        window: window.to_owned(),
+        open: open.to_owned(),
+        report,
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Answers the prompt `id` with `button`: a [`PromptAnswer`].
 pub fn answer(bot: &Arc<Bot>, id: &str, button: Option<usize>) -> Result<Json, String> {
     // Only the prompt still waiting: an answer to one already gone does nothing.
     let Some(now) = current(bot) else {
-        return Ok(json!({ "window": "", "open": "", "report": "" }));
+        return answered("", "", String::new());
     };
     if now.id != id {
-        return Ok(json!({ "window": "", "open": "", "report": "" }));
+        return answered("", "", String::new());
     }
     let (window, mut open) = ("", "");
     let mut report = String::new();
@@ -451,12 +470,13 @@ pub fn answer(bot: &Arc<Bot>, id: &str, button: Option<usize>) -> Result<Json, S
         }
         other => return Err(format!("no prompt {other}")),
     }
-    Ok(json!({ "window": window, "open": open, "report": report }))
+    answered(window, open, report)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn a_stale_answer_does_nothing() {

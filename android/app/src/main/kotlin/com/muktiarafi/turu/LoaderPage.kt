@@ -60,6 +60,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.LoaderAct
 import com.muktiarafi.turu.models.LoaderQuest
 import com.muktiarafi.turu.models.LoaderView
@@ -100,7 +101,7 @@ class LoaderPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("loader"), logs = emptyList(),
+            api, token, models = listOf(Api.loader), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<LoaderView>(text) }
                     .onSuccess { view = it }
@@ -109,14 +110,14 @@ class LoaderPanel {
             onLog = { _, _, _ -> },
         ).also {
             it.start()
-            it.act("loader", LoaderAct.open, LoaderAct.JsonSerializer)
+            it.act(Api.loader, LoaderAct.open)
         }
     }
 
     fun act(action: LoaderAct) {
         val client = client ?: run { error = "The tab isn't answering: it's starting again"; return }
         error = null
-        client.act("loader", action, LoaderAct.JsonSerializer) { error = it }
+        client.act(Api.loader, action) { error = it }
     }
 
     fun load() {

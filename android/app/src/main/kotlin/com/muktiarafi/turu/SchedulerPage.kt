@@ -54,6 +54,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.EntryView
 import com.muktiarafi.turu.models.Note
 import com.muktiarafi.turu.models.SchedulerAct
@@ -84,7 +85,7 @@ class SchedulerPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("scheduler"), logs = emptyList(),
+            api, token, models = listOf(Api.scheduler), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<SchedulerView>(text) }
                     .onSuccess { view = it }
@@ -96,7 +97,7 @@ class SchedulerPanel {
 
     fun act(action: SchedulerAct) {
         error = null
-        client?.act("scheduler", action, SchedulerAct.JsonSerializer) { error = it }
+        client?.act(Api.scheduler, action) { error = it }
     }
 }
 

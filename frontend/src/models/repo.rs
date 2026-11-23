@@ -715,6 +715,14 @@ pub fn task(name: &str) -> Result<(), String> {
     }
 }
 
+/// Launch's answer: whether the script is set now (false while it downloads: it's set after).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchScript {
+    pub ready: bool,
+}
+
 /// Search Scripts' actions (`POST /models/repo/do`); `path` is a script's in the repository.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(
@@ -764,7 +772,11 @@ pub fn act(bot: &Arc<Bot>, act: RepoAct) -> Result<Value, String> {
         RepoAct::Queue { path } => work(bot, &path, Work::Queue)?,
         RepoAct::Download { path } => work(bot, &path, Work::Download)?,
         RepoAct::Replace { path } => work(bot, &path, Work::Replace)?,
-        RepoAct::Launch { path } => return Ok(serde_json::json!({ "ready": set_launch_script(bot, &path)? })),
+        RepoAct::Launch { path } => {
+            return super::to_json(&LaunchScript {
+                ready: set_launch_script(bot, &path)?,
+            });
+        }
         RepoAct::Pin { path, pinned } => set_pinned(&path, pinned),
         RepoAct::UpdateAll => task("update-all")?,
         RepoAct::DownloadAll => task("download-all")?,

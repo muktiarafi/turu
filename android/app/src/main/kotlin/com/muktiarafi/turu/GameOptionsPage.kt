@@ -56,6 +56,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.GameOptionsAct
 import com.muktiarafi.turu.models.GameOptionsView
 import com.muktiarafi.turu.models.KindView
@@ -100,7 +101,7 @@ class GameOptionsPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("game-options"), logs = emptyList(),
+            api, token, models = listOf(Api.gameOptions), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<GameOptionsView>(text) }
                     .onSuccess { next ->
@@ -118,7 +119,7 @@ class GameOptionsPanel {
     private fun act(action: GameOptionsAct, done: (String?) -> Unit = {}) {
         error = null
         val client = client ?: return done("The tab isn't up yet")
-        client.act("game-options", action, GameOptionsAct.JsonSerializer) { failed ->
+        client.act(Api.gameOptions, action) { failed ->
             error = failed
             done(failed)
         }

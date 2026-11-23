@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.BankAct
 import org.json.JSONObject
 
@@ -41,7 +42,7 @@ class ShellScreens(private val activity: TuruActivity) {
         hideRail = { railHidden(true) },
         bank = {
             close()
-            models.act("bank", BankAct.OPEN, BankAct.JsonSerializer)
+            models.act(Api.bank, BankAct.OPEN)
         },
         search = SearchPanel(),
         gameOptions = GameOptionsPanel(),
@@ -75,7 +76,7 @@ class ShellScreens(private val activity: TuruActivity) {
 
     private val railActions = RailActions(
         open = { page -> if (state.open && state.page == page) close() else open(page) },
-        bank = { models.act("bank", BankAct.OPEN, BankAct.JsonSerializer) },
+        bank = { models.act(Api.bank, BankAct.OPEN) },
         window = ::openWindow,
         scripts = scripts,
     )

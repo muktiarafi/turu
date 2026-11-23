@@ -53,11 +53,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.muktiarafi.turu.models.Api
 import com.muktiarafi.turu.models.ButlerAccount
 import com.muktiarafi.turu.models.ButlerAct
 import com.muktiarafi.turu.models.ButlerView
+import com.muktiarafi.turu.models.CopiedText
 import kotlinx.serialization.json.Json
-import org.json.JSONObject
 
 /**
  * Butler for the tab on screen (`turu_frontend::models::butler`): Butler's state is the slot's
@@ -82,7 +83,7 @@ class ButlerPanel {
         val api = tab?.api ?: return
         val token = tab.token ?: return
         client = ModelClient(
-            api, token, models = listOf("butler"), logs = emptyList(),
+            api, token, models = listOf(Api.butler), logs = emptyList(),
             onView = { _, text ->
                 runCatching { json.decodeFromString<ButlerView>(text) }
                     .onSuccess { view = it }
@@ -92,9 +93,15 @@ class ButlerPanel {
         ).also { it.start() }
     }
 
-    fun act(action: ButlerAct, answer: (JSONObject) -> Unit = {}) {
+    fun act(action: ButlerAct) {
         error = null
-        client?.act("butler", action, ButlerAct.JsonSerializer, answer) { error = it }
+        client?.act(Api.butler, action) { error = it }
+    }
+
+    /** Copy the log: `copied` gets its text. */
+    fun copyLog(copied: (String) -> Unit) {
+        error = null
+        client?.act(Api.butler, ButlerAct.copy_log, CopiedText.serializer(), { copied(it.text.orEmpty()) }) { error = it }
     }
 }
 
@@ -129,8 +136,7 @@ fun ButlerPage(state: ShellState, panel: ButlerPanel, fullWindow: () -> Unit) {
                     enabled = (view?.logCount ?: 0u) > 0u,
                     onClick = {
                         close()
-                        panel.act(ButlerAct.copy_log) { answer ->
-                            val text = answer.optString("text")
+                        panel.copyLog { text ->
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("Butler log", text))
                         }
