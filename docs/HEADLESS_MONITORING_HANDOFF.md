@@ -154,6 +154,8 @@ A debug-build profile (`sample <pid> 30`, files `tools/farmrun/out/20261108-prof
 
 Inside frames, **85% of ENTER_FRAME time is AS3 `gotoAndStop` to the frame a clip is already on**: `MovieClip::no_op_goto` still runs `run_inner_goto_frame` over the whole stage (`ruffle/core/src/frame_lifecycle.rs`). It comes from AQW's own code, not skua.swf (skua's modules run at most every 100 ms). It's upstream Ruffle behaviour that emulates Flash. An optimization would need care (count no-op gotos per frame and the clips first).
 
+Measured again (2026-11-23/24, release build, headless, FarmerJoe on Galanoth, `sample` 60 s; the 85% above is a debug build's): with Turu's defaults (settle marks, lean walks on) the no-op gotos cost 0.36% of the main thread's time (about 2.2 ms/s), almost all from AQW's `enterFrame` handlers, so it grows with the frame rate. Without settle marks (`RUFFLE_NO_SETTLE`) ticks take 43 ms/s against 13. ruffle-aqw now keeps a clip settled through a no-op goto (`MovieClip::goto_frame_now`: only a real or queued goto unsettles; a no-op one only clears `queued_goto` and stops or plays), which cut the no-op gotos' share by about 30% (0.25%). What is left is the first walk of each frame through the clips whose timelines advanced, which Flash's order requires. `RUFFLE_LEAN_VERIFY` checks the kept marks (`no-op goto` in its log): 0 found headless and in a window, 12 min each; Ruffle's avm2 tests give the same results as without the change.
+
 ### 6. Smaller things
 
 - **Butler broadcast** makes ~25 Flash calls/s (15% of all) even with one account. Every 2 s it reads the whole inventory (`world.myAvatar.items`, grows with the inventory) just for the class name (`bot/src/butler/mod.rs` `broadcast`). Re-read the class on equip/item events instead.
