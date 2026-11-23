@@ -30,8 +30,8 @@
     <image192x192>icons/icon-192.png</image192x192>
     <image512x512>icons/icon-512.png</image512x512>
   </icon>
-  <!-- targetSdkVersion: the legacy packaging's 34 (Linux), which ADT's Gradle route (macOS, the
-       release job) would raise to 36, with Android 15's forced edge-to-edge. -->
+  <!-- targetSdkVersion: 34, what Turu Mas has had; ADT's Gradle would raise it to 36, with Android
+       15's forced edge-to-edge. minSdkVersion: Turu Mas's minimum, Android 8 (AIR's is 21). -->
   <android>
     <manifestAdditions><![CDATA[<manifest>
 <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34"/>

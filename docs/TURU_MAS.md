@@ -54,9 +54,10 @@ The code keeps "air" in its names (crate `turu_air`, package `com.muktiarafi.tur
 
 ## Build
 
-Needs the AIR SDK 51.5+ (`AIR_HOME`), a **JDK 17** (`AIR_JAVA_HOME`: ADT packages with its own
-Gradle 8.13, which fails on newer JDKs), the Android SDK with the NDK (`ANDROID_HOME`), cargo-ndk
-and libclang, as Turu's Android build (docs/ANDROID.md, "Build"). Then, with a phone on adb:
+Builds on **macOS only** (see "Packaging" below). Needs the AIR SDK 51.5+ (`AIR_HOME`), a **JDK
+17** (`AIR_JAVA_HOME`: ADT packages with its own Gradle 8.13, which fails on newer JDKs), the
+Android SDK with the NDK (`ANDROID_HOME`), cargo-ndk and libclang, as Turu's Android build
+(docs/ANDROID.md, "Build"). Then, with a phone on adb:
 
 ```bash
 air/app/build.sh
@@ -151,26 +152,22 @@ report attached. As in Turu, the report has the tabs over the run (`crash/tabs-<
 
 **Packaging:** an ANE gives AIR one jar and its native libraries, so the extension's `aneLibs`
 task collects what it needs at run time (Sentry, the AndroidX parts it uses, Kotlin's standard
-library: Java 8 class files, which the AIR SDK's old d8 can read) and Sentry's `libsentry.so` and
-`libsentry-android.so`; `air/ane/build.sh` merges and packs them (about 1.7 MB more in the APK).
-On macOS ADT packages through its own Gradle 8.13 and AGP 8.9.1, whose d8 is current:
-`build.sh` passes it the Android SDK (`-platformsdk`), and the release job runs on a macOS runner
-for this and refuses an APK packaged any other way. Gradle's route targets SDK 36 unless told
-otherwise, so `app.xml` pins `targetSdkVersion` 34, what the legacy route gives and what the published
-APKs have. On Linux ADT doesn't find the SDK (neither
-`ANDROID_HOME` nor `~/Android/Sdk`) and packages its "legacy" way, dexing with the AIR SDK's own
-d8 1.2.52; given the SDK it stops with "SDK component at air/android/device/arm8/Runtime.apk is out
-of date" (51.5.1.1, tried in CI 2026-11-23), though the Linux SDK has that file under
-`runtimes/air/android/device/arm8/`. A Linux build can only stay legacy, so the extension still
-keeps to what the legacy route reads. That old d8 crashes on `MethodParameters`
-entries without a name, which some of Sentry's classes have (`v0.3.0-beta.4`'s job:
-"NullPointerException ... visitParameter"), so `air/ane/strip-parameters.py` removes the
-attribute from the merged classes (it only names parameters for reflection). The legacy route also
-dexes without Android's classes, so it can't desugar default interface methods (AndroidX's
-`DefaultLifecycleObserver`, which Sentry implements: "its super class `java.lang.Object` is
-missing"); it dexes for the manifest's minimum SDK, AIR's 21 unless `app.xml` says otherwise, and
-from 24 up nothing needs desugaring. So `app.xml` declares Turu Mas's real minimum, 26 (Android
-8).
+library) and Sentry's `libsentry.so` and `libsentry-android.so`; `air/ane/build.sh` merges and
+packs them (about 1.7 MB more in the APK). ADT packages through its own Gradle 8.13 and AGP 8.9.1,
+whose d8 is current (the extension is Java 11, as Turu's app), once `build.sh` passes it the
+Android SDK (`-platformsdk`). Without the SDK it falls back, saying so only in its debug log, to
+its "legacy" packaging with the AIR SDK's d8 1.2.52, which reads only Java 8 class files and
+crashes on Sentry's; the release job refuses an APK packaged that way (only Gradle's has
+`META-INF/com/android/build/gradle/app-metadata.properties`). Gradle's APK stores the native
+libraries uncompressed (about 60 MB to download, 24 MB the legacy way; installed, about the same).
+Gradle targets SDK 36 unless told otherwise, so `app.xml` pins `targetSdkVersion` 34, what Turu
+Mas had before (36 brings Android 15's forced edge-to-edge).
+
+**macOS only:** the Linux AIR SDK (51.5.1.1, tried in CI 2026-11-23) can't take the Gradle route.
+It doesn't find the Android SDK (neither `ANDROID_HOME` nor `~/Android/Sdk`), and given it with
+`-platformsdk` it stops with "SDK component at air/android/device/arm8/Runtime.apk is out of
+date", though it has that file under `runtimes/air/android/device/arm8/`. So `build.sh` stops on
+Linux, and the release job runs on a macOS runner.
 
 Symbols: the release workflow builds the library with line tables, uploads it with `sentry-cli`
 and keeps it as the `symbols-turu-mas-android-arm64` artifact (90 days).

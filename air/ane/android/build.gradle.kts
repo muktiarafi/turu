@@ -18,19 +18,16 @@ android {
         buildConfig = true
     }
 
-    // Java 8 class files: ADT dexes the extension's jar with the AIR SDK's own d8 (1.2.52 in
-    // 51.5.1.1), which can't read Java 11's ("Compilation failed with an internal error",
-    // `IllegalArgumentException` in its class reader). The verifier's module, Kotlin's standard
-    // library and Sentry's, merged into the same jar, are Java 8 already.
+    // As Turu's app. ADT dexes the extension's jar with its Gradle's d8 (air/app/build.sh).
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 }
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
     }
 }
 

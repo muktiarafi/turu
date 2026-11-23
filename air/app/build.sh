@@ -12,6 +12,13 @@
 # with another key). Output: target/air-app/TuruMas.apk.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+# Only on macOS does ADT package through its Gradle, whose d8 reads the extension's Java 11 classes;
+# the Linux AIR SDK refuses that ("Runtime.apk is out of date", 51.5.1.1) and its legacy packaging
+# can't read them (docs/TURU_MAS.md, "Packaging").
+if [ "$(uname)" != Darwin ]; then
+  echo "Turu Mas builds on macOS only: the Linux AIR SDK can't package it through Gradle" >&2
+  exit 1
+fi
 : "${AIR_HOME:?set AIR_HOME to the AIR SDK}"
 : "${AIR_JAVA_HOME:?set AIR_JAVA_HOME to a JDK 17}"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
@@ -58,15 +65,11 @@ password=${MAS_KEYSTORE_PASSWORD:-turumasdev}
 if [ -z "${MAS_KEYSTORE:-}" ] && [ ! -f "$keystore" ]; then
   "$AIR_HOME/bin/adt" -certificate -cn "Turu Mas (development)" 2048-RSA "$keystore" "$password"
 fi
-# The app's ID as app.xml has it (com.muktiarafi.turumas), not AIR's "air." + ID. On macOS ADT is
-# given the Android SDK, so it packages through its own Gradle (a current d8); the Linux AIR SDK
-# refuses that ("Runtime.apk is out of date", 51.5.1.1) and packages its legacy way without it
-# (docs/TURU_MAS.md, "Packaging").
-sdk=()
-[ "$(uname)" = Darwin ] && sdk=(-platformsdk "$ANDROID_HOME")
+# The app's ID as app.xml has it (com.muktiarafi.turumas), not AIR's "air." + ID. Given the Android
+# SDK, ADT packages through its own Gradle (without it, its legacy way: the release job refuses that).
 AIR_NOANDROIDFLAIR=true "$AIR_HOME/bin/adt" -package -target apk-captive-runtime -arch armv8 \
   -storetype pkcs12 -keystore "$keystore" -storepass "$password" \
-  "$out/TuruMas.apk" "$out/app.xml" ${sdk[@]+"${sdk[@]}"} -extdir "$out/ext" -C "$out" TuruAirHost.swf turu.swf icons
+  "$out/TuruMas.apk" "$out/app.xml" -platformsdk "$ANDROID_HOME" -extdir "$out/ext" -C "$out" TuruAirHost.swf turu.swf icons
 ls -la "$out/TuruMas.apk"
 if [ "${1:-}" != "--no-install" ]; then
   "$ANDROID_HOME/platform-tools/adb" install -r "$out/TuruMas.apk"

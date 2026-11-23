@@ -1209,11 +1209,12 @@ only if someone asks and will maintain it.
 
 ### L9: Turu Mas (not planned)
 
-Turu Mas stays egui. AIR's Java 8 tooling, its focus (a native view takes it from the game field),
-its overlay over every view and the AIR SDK's license make it the riskiest target for the least
-gain. If it is reopened: hand-written JNI as today, bound to the models in-process (several bots,
+Turu Mas stays egui. AIR's tooling (ADT's Gradle has AGP 8.9.1, too old for Compose 1.13 as a
+dependency; until 2026-11-23 the extension had to be Java 8), its focus (a native view takes it
+from the game field), its overlay over every view and the AIR SDK's license make it the riskiest
+target for the least gain. If it is reopened: hand-written JNI as today, bound to the models in-process (several bots,
 one process, no control API needed), and Android's Compose screens through `android/shared` if
-they get through AIR's `d8`.
+ADT's AGP takes their Compose version.
 
 ## Risks
 

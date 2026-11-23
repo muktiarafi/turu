@@ -21,8 +21,8 @@ What both apps share lives in `turu_frontend` (`gui/turu/native_field.rs`, `docu
 `Foreground`. Turu's app depends on it
 (`android/settings.gradle.kts`); Turu Mas's extension includes it by path
 (`air/ane/android/settings.gradle.kts`), and its classes reach the ANE's jar with the other
-libraries (`aneLibs`, `air/ane/build.sh`). It builds Java 8 class files, which AIR's own `d8`
-needs. Each app keeps its JNI glue, its activity and service, and what differs: where the text
+libraries (`aneLibs`, `air/ane/build.sh`). It builds Java 11 class files, as Turu's app (ADT
+dexes Turu Mas's jar through its Gradle: docs/TURU_MAS.md, "Packaging"). Each app keeps its JNI glue, its activity and service, and what differs: where the text
 field goes (Turu's `SurfaceField`, Turu Mas's `ViewField`), and a `CrashApp` saying who it is (name,
 Sentry DSN and release name, client tag, the low-memory hint).
 
