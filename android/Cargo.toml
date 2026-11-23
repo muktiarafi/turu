@@ -16,6 +16,8 @@ workspace = true
 [target.'cfg(target_os = "android")'.dependencies]
 turu_bot = { path = "../bot", default-features = false }
 turu_frontend = { path = "../frontend" }
+# The shell's tab list over the slots (`turu_shell::slots`), without the desktop shell.
+turu_shell = { path = "../shell", default-features = false }
 # The desktop's decoders, and Ruffle's built-in font for `_sans` and friends (no device fonts
 # are loaded yet).
 ruffle_core = { path = "../ruffle/core", features = ["audio", "mp3", "aac", "nellymoser", "lzma", "jpegxr", "default_compatibility_rules", "default_font"] }

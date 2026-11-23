@@ -96,7 +96,7 @@ frontend/                crate `turu_frontend`: what any Turu frontend shares (n
                          Android's screen)
   src/shell.rs, client_link.rs, client_screen.rs   process tabs (docs/TAB_PROCESSES_PROPOSAL.md):
                          what a shell and a client say, a tab's side of the link, a client's screen
-  src/slots.rs           process tabs on Android: each tab a slot, a service in a process of its own
+  src/slots.rs           process tabs on Android (the shell's side is `turu_shell::slots`): each tab a slot, a service in a process of its own
   src/gui/turu/          egui UI: top nav bar, Script Loader, Options, Skills, Logs, ... (VibeSkua layout)
 android/                 crate `turu_android` (cdylib, empty off Android) and the Gradle app that
                          loads it: `docs/ANDROID.md`
@@ -107,10 +107,11 @@ air/                     Turu Mas (docs/TURU_MAS.md): crate `turu_air` (`ane/rus
                          `app.xml` (`app/`); built with the AIR SDK (`air/app/build.sh`)
 air_patch/               crate `turu_air_patch`: patches AQW's client and the SWFs it loads for AIR's
                          sandbox at run time
-shell/                   crate `turu_shell`: the desktop shell's logic without a window (the tabs'
-                         clients and their restarts, the tab list, Grid View, the pictures on the
-                         shell's GPU, pacing, dialogs asked for, updates, Army launches); a front
-                         owns the window and carries out the `Action`s it returns
+shell/                   crate `turu_shell`: the shells' logic without a window. The desktop's
+                         (`desktop` feature: the tabs' clients and their restarts, the tab list,
+                         Grid View, the pictures on the shell's GPU, pacing, dialogs asked for,
+                         updates, Army launches; a front owns the window and carries out the
+                         `Action`s it returns) and Android's (`slots`: `SlotShell`)
 app/                     crate `turu`, the desktop app: started from ruffle-aqw's desktop frontend
                          (Ruffle's, with Mugetsu's changes marked `AQW build:`), plus the window,
                          the headless loop and the dialogs; it re-exports `turu_frontend`'s modules
@@ -145,7 +146,7 @@ Android. A process with a game holds one `Player` and its `Bot` (`frontend/src/p
   drawn by each client from the shell's list, and its clicks go back to the shell
   (`frontend/src/client_link.rs`). The window for a movie given on the command line (plain
   Ruffle) keeps one player of its own, without tabs.
-* **Android.** The activity is the shell (`frontend/src/slots.rs`'s `SlotShell`, carried out by
+* **Android.** The activity is the shell (`turu_shell::slots::SlotShell`, carried out by
   `SlotShell.kt`). Each tab is a slot: a foreground service in a process of its own (`:c1` ...
   `:c9`) running one engine, which draws into the surface the activity hands it. Shell and slots
   speak the same messages over Binder.

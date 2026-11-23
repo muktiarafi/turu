@@ -147,6 +147,8 @@ jobs:
             exit 1
           fi
           cargo check --locked -p turu_shell --all-targets
+          # Android's app takes only its slots (`SlotShell`), without the desktop shell.
+          cargo check --locked -p turu_shell --no-default-features --all-targets
 
       # redundant_clone is allowed as in CLAUDE.md: it flags clones that are needed.
       - name: Clippy

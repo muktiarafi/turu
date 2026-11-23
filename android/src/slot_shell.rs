@@ -1,6 +1,6 @@
 //! Process tabs (docs/TAB_PROCESSES_PROPOSAL.md, M3): the shell's side, in the activity's process,
 //! which runs no engine. `SlotShell.kt` binds the slots and passes on their messages; this keeps
-//! the tab list (`turu_frontend::slots::SlotShell`), writes the slots' records and keeps their
+//! the tab list (`turu_shell::slots::SlotShell`), writes the slots' records and keeps their
 //! passwords itself, and answers each call with what the activity is to do next: a JSON list of
 //! [`ShellAction`]s (`turu_frontend::native_shell`, generated for Kotlin): start, stop or show a
 //! slot, pass a message on to one, what only the activity does (the text field above the keyboard,
@@ -16,7 +16,8 @@ use std::sync::Mutex;
 use turu_bot::accounts::SecretStore;
 use turu_frontend::native_shell::{ActivityMessage, ShellAction, actions_json};
 use turu_frontend::shell::{ToClient, ToShell};
-use turu_frontend::slots::{Action, SlotRecord, SlotShell};
+use turu_frontend::slots::SlotRecord;
+use turu_shell::slots::{Action, SlotShell};
 
 /// The tab list, and the data folder, while the activity runs.
 static SHELL: Mutex<Option<(SlotShell, PathBuf)>> = Mutex::new(None);

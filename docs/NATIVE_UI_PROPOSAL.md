@@ -60,7 +60,7 @@ The steps, with their state:
 |---|---|---|
 | L0 | Spike: Compose in the shell, model copies over the control API, type generation | Done 2026-11-20: go (branch `native-ui-l0`) |
 | L5a | Android: design pass, then the tab strip and Accounts in Compose | Built 2026-11-20 (emulator); checkpoint next |
-| L1 (shell) | The desktop shell's logic out of winit, into `turu_shell` | Built 2026-11-23 (macOS); Android's `SlotShell` not moved |
+| L1 (shell) | The desktop shell's logic out of winit, into `turu_shell` | Built 2026-11-23 (macOS), `SlotShell` with it |
 | Checkpoint | Go on to native bot windows, or stop at L5a | Owner, after L5a |
 | L1 (client) | `turu_frontend` split into a client library without egui and the egui UI | After the checkpoint |
 | L2 | View models in the client, by feature | Pilot and the Android windows' models done 2026-11-20 |
@@ -151,7 +151,8 @@ What it costs here, that the 2026-11-15 plan didn't budget:
 * `turu_frontend` (`frontend/`) holds the tab, the Flash host, the windowless player loop
   (`engine.rs`), `Platform`, the shell link (`shell.rs`: messages, no Ruffle, no window; its key
   table behind `ruffle`), the client's end of it (`client_link.rs`, `client_screen.rs`), Android's
-  shell logic (`slots.rs`: `SlotShell`, plain Rust, tested on the desktop) and the egui UI.
+  shell logic (`slots.rs`: `SlotShell`, plain Rust, tested on the desktop; in `turu_shell::slots`
+  since 2026-11-23) and the egui UI.
 * Three frontends use it: `app/` (the shell, `turu --client`, `--headless`, a one-player window
   for a plain movie), `android/` (the shell in the activity's process, slots as services) and
   `air/ane/rust` (Turu Mas, built without the `ruffle` feature).
@@ -603,8 +604,7 @@ to the background when no native screen is open).
 
 * **The desktop shell (built 2026-11-23, below)**: move the logic of `app/src/shell.rs` into
   `turu_shell` (with `frontend/src/slots.rs`'s `SlotShell`); the winit shell keeps only the window,
-  its events and rfd. The shell's tests run without a window, as `SlotShell`'s do. `SlotShell`
-  didn't move.
+  its events and rfd. The shell's tests run without a window, as `SlotShell`'s do.
 * **The client (after the checkpoint)**: split `frontend/` into `client/` and `egui_ui/`:
   `client_screen.rs`'s egui drawing to the egui side; `client_link.rs` to the client once it asks
   a model, not `gui`, for the bar's size and whether the tab is busy. Rename `Platform` to `Host`.
@@ -649,12 +649,17 @@ cross-compile from a Mac), frame interpolation's `Pace::Refresh` in game, a file
 a tab, and real mouse, keys, IME and cursor through winit (`TURU_SHELL_TEST`'s `click`, `key`
 and `text` enter past the front).
 
-Not done: Android's `SlotShell` stays in `turu_frontend::slots`. It shares nothing of the
-desktop's but the link (already `turu_frontend::shell`), only `android/` uses it (`slot_shell.rs`,
-`java.rs`), and moving it would make the Android app link `turu_shell` (with `webbrowser` and
-`image`) for no gain until something needs both shells in one crate; the game view for a
-native macOS window (L6) hands `turu_shell` a layer, which `Gpu::new` takes as any
-`wgpu::Surface`.
+Android's `SlotShell` followed the same day: `turu_shell::slots`, with its `Action`s and its
+tests; the records, addresses and flags a slot starts with, and the tab list the native screens
+read (`NativeTabs`, generated for Kotlin), stay in `turu_frontend::slots`, since the slots'
+processes and the typed JNI use them. The desktop shell is the crate's default `desktop` feature
+(wgpu, `webbrowser`, `image`); the Android app takes `turu_shell` without it, so it links only the
+slots' shell. CI checks the crate both ways. Checked: its tests (the 12 of `SlotShell`, moved
+as they were) with and without `desktop`, and the Android app's crate built for arm64; not on
+the emulator, as nothing it does changed.
+
+Not done: the game view for a native macOS window (L6) hands `turu_shell` a layer, which
+`Gpu::new` takes as any `wgpu::Surface`.
 
 ### L2: View models (XL, after the checkpoint)
 

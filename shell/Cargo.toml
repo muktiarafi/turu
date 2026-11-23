@@ -1,9 +1,11 @@
 [package]
-# Turu: the desktop shell's logic without a window (docs/NATIVE_UI_PROPOSAL.md, L1's shell part):
-# starting and restarting the tabs' clients, the tab list, Grid View, the clients' pictures on the
-# shell's GPU and the pacing protocol, the dialog queue, updates, Army launches and the monitor's
-# peers. Each shell's window is a front over it (`app/src/shell.rs`: winit). No winit, rfd or
-# player here, and no egui of its own: `turu_frontend` is taken without `ruffle`.
+# Turu: the shells' logic without a window (docs/NATIVE_UI_PROPOSAL.md, L1's shell part). The
+# desktop's (the `desktop` feature): starting and restarting the tabs' clients, the tab list, Grid
+# View, the clients' pictures on the shell's GPU and the pacing protocol, the dialog queue,
+# updates, Army launches and the monitor's peers; its window is a front over it
+# (`app/src/shell.rs`: winit). Android's (`slots`): the tab list over the slots, carried out by the
+# activity (`android/src/slot_shell.rs`). No winit, rfd or player here, and no egui of its own:
+# `turu_frontend` is taken without `ruffle`.
 name = "turu_shell"
 authors.workspace = true
 edition.workspace = true
@@ -15,13 +17,22 @@ workspace = true
 
 [dependencies]
 turu_bot = { path = "../bot", default-features = false }
-turu_frontend = { path = "../frontend", default-features = false, features = ["gpu"] }
-wgpu = { workspace = true }
-anyhow = { workspace = true }
+turu_frontend = { path = "../frontend", default-features = false }
 tracing = { workspace = true }
-webbrowser = "1.2.4"
-# `TURU_SHELL_TEST`'s `dump`: the window's picture as a PNG.
-image = { workspace = true, features = ["png"] }
+# The desktop shell's (the `desktop` feature): its GPU, links, and `TURU_SHELL_TEST`'s `dump` as a
+# PNG.
+wgpu = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+webbrowser = { version = "1.2.4", optional = true }
+image = { workspace = true, features = ["png"], optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+default = ["desktop"]
+# The desktop shell (`Shell`); Android's app takes only `slots`.
+desktop = ["dep:wgpu", "dep:anyhow", "dep:webbrowser", "dep:image", "turu_frontend/gpu"]
 
 # A client that says hello and its status, for the tests (`tests/shell.rs`): no player.
 [[bin]]
@@ -29,3 +40,7 @@ name = "turu-shell-fake-client"
 path = "src/bin/fake_client.rs"
 test = false
 doc = false
+
+[[test]]
+name = "shell"
+required-features = ["desktop"]
