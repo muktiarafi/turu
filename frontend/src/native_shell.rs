@@ -159,15 +159,7 @@ impl ActivityMessage {
             ToShell::FieldHide { field } => Self::FieldHide { field },
             ToShell::OpenUrl { url } => Self::OpenUrl { url },
             ToShell::Share { subject, text } => Self::Share { subject, text },
-            ToShell::PickFile {
-                id,
-                mime_types,
-                folder,
-            } => Self::PickFile {
-                id,
-                mime_types,
-                folder,
-            },
+            ToShell::PickFile { id, mime_types, folder } => Self::PickFile { id, mime_types, folder },
             ToShell::SaveFile {
                 id,
                 mime_type,
@@ -260,11 +252,7 @@ pub enum TabRequest {
 
 /// The account list as the native Accounts shows it, with the launch options.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "typegen",
-    derive(facet::Facet),
-    facet(rename_all = "camelCase")
-)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct AccountsView {
     pub accounts: Vec<AccountRow>,
@@ -283,11 +271,7 @@ pub struct AccountsView {
 /// An account: the tab it plays in (an open tab logging in with it) and whether a password is
 /// saved.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "typegen",
-    derive(facet::Facet),
-    facet(rename_all = "camelCase")
-)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct AccountRow {
     pub username: String,
@@ -301,11 +285,7 @@ pub struct AccountRow {
 
 /// The servers for the launch options, or why there are none.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "typegen",
-    derive(facet::Facet),
-    facet(rename_all = "camelCase")
-)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct ServersView {
     pub servers: Vec<ServerRow>,
@@ -314,11 +294,7 @@ pub struct ServersView {
 
 /// A server: its name and its status line ("Yorumi - 42ms - 120/1000").
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "typegen",
-    derive(facet::Facet),
-    facet(rename_all = "camelCase")
-)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct ServerRow {
     pub name: String,
@@ -389,11 +365,7 @@ pub enum AccountsAsk {
 
 /// The answer to an [`AccountsAsk`]: why not, or the activity's actions (a new tab's).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "typegen",
-    derive(facet::Facet),
-    facet(rename_all = "camelCase")
-)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct AccountsAnswer {
     pub error: Option<String>,
@@ -422,9 +394,8 @@ mod tests {
     /// What the activity writes is read as the link's own message, field for field.
     #[test]
     fn what_the_activity_writes_reads_as_the_links_messages() {
-        let to_client = |m: &SlotMessage| -> ToClient {
-            serde_json::from_value(serde_json::to_value(m).unwrap()).unwrap()
-        };
+        let to_client =
+            |m: &SlotMessage| -> ToClient { serde_json::from_value(serde_json::to_value(m).unwrap()).unwrap() };
         let field = |field| SlotMessage::FieldEdited {
             field,
             text: "Questwalker".into(),
@@ -475,12 +446,8 @@ mod tests {
                 },
             ),
             (
-                SlotMessage::RefreshRate {
-                    millihertz: 120_000,
-                },
-                ToClient::RefreshRate {
-                    millihertz: 120_000,
-                },
+                SlotMessage::RefreshRate { millihertz: 120_000 },
+                ToClient::RefreshRate { millihertz: 120_000 },
             ),
             (
                 SlotMessage::Answer {
@@ -528,17 +495,10 @@ mod tests {
         for (sent, read) in pairs {
             assert_eq!(to_client(&sent), read);
         }
-        let to_shell = |m: &TabRequest| -> ToShell {
-            serde_json::from_value(serde_json::to_value(m).unwrap()).unwrap()
-        };
-        assert_eq!(
-            to_shell(&TabRequest::SelectTab { id: 2 }),
-            ToShell::SelectTab { id: 2 }
-        );
-        assert_eq!(
-            to_shell(&TabRequest::CloseTab { id: 3 }),
-            ToShell::CloseTab { id: 3 }
-        );
+        let to_shell =
+            |m: &TabRequest| -> ToShell { serde_json::from_value(serde_json::to_value(m).unwrap()).unwrap() };
+        assert_eq!(to_shell(&TabRequest::SelectTab { id: 2 }), ToShell::SelectTab { id: 2 });
+        assert_eq!(to_shell(&TabRequest::CloseTab { id: 3 }), ToShell::CloseTab { id: 3 });
         assert!(matches!(
             to_shell(&TabRequest::OpenTab),
             ToShell::OpenTab {
@@ -564,16 +524,14 @@ mod tests {
             number: true,
         };
         // The activity's copy reads as the message it came from.
-        let copy =
-            serde_json::to_value(ActivityMessage::from_shell(show.clone()).unwrap()).unwrap();
+        let copy = serde_json::to_value(ActivityMessage::from_shell(show.clone()).unwrap()).unwrap();
         assert_eq!(serde_json::from_value::<ToShell>(copy).unwrap(), show);
         let picked = ToShell::PickFile {
             id: 7,
             mime_types: "application/json".into(),
             folder: "/f".into(),
         };
-        let copy =
-            serde_json::to_value(ActivityMessage::from_shell(picked.clone()).unwrap()).unwrap();
+        let copy = serde_json::to_value(ActivityMessage::from_shell(picked.clone()).unwrap()).unwrap();
         assert_eq!(serde_json::from_value::<ToShell>(copy).unwrap(), picked);
         assert_eq!(ActivityMessage::from_shell(ToShell::CheckUpdates), None);
     }

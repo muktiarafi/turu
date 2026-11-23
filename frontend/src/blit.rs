@@ -18,9 +18,7 @@ impl Blit {
     pub fn new(device: &wgpu::Device) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Turu blit"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "../../app/src/gui/blit.wgsl"
-            ))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../../app/src/gui/blit.wgsl"))),
         });
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
@@ -70,11 +68,7 @@ impl Blit {
         }
     }
 
-    pub fn pipeline(
-        &self,
-        device: &wgpu::Device,
-        format: wgpu::TextureFormat,
-    ) -> wgpu::RenderPipeline {
+    pub fn pipeline(&self, device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
         self.pipeline_blending(device, format, wgpu::BlendState::REPLACE)
     }
 

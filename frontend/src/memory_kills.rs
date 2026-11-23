@@ -32,8 +32,7 @@ const SIGKILL: i32 = 9;
 /// comes back, so a battery saver's kill isn't called one. `any_kill`: `--test-memory-kills`,
 /// every `SIGKILL` (an emulator can't be made to kill for memory).
 pub fn memory_kill(reason: i32, status: i32, low: bool, any_kill: bool) -> bool {
-    reason == REASON_LOW_MEMORY
-        || (reason == REASON_SIGNALED && status == SIGKILL && (low || any_kill))
+    reason == REASON_LOW_MEMORY || (reason == REASON_SIGNALED && status == SIGKILL && (low || any_kill))
 }
 
 /// Slot `slot`'s file, in the crash folder.
@@ -124,9 +123,7 @@ pub fn at_start(kills: &mut Kills, kill: Option<u64>, now: u64) -> Start {
 pub fn held_args(args: &[String]) -> Vec<String> {
     args.iter()
         .map(|arg| {
-            let (flag, value) = arg
-                .split_once('=')
-                .map_or((arg.as_str(), None), |(f, v)| (f, Some(v)));
+            let (flag, value) = arg.split_once('=').map_or((arg.as_str(), None), |(f, v)| (f, Some(v)));
             let flag = match flag {
                 "--run-script" => "--load-script",
                 "--run-playlist" => "--load-playlist",
@@ -163,19 +160,11 @@ mod tests {
             Start::AfterKill { kills: 2 }
         );
         assert_eq!(
-            at_start(
-                &mut kills,
-                Some(start + 10 * MINUTE),
-                start + 10 * MINUTE + 5
-            ),
+            at_start(&mut kills, Some(start + 10 * MINUTE), start + 10 * MINUTE + 5),
             Start::AfterKill { kills: 3 }
         );
         assert_eq!(
-            at_start(
-                &mut kills,
-                Some(start + 20 * MINUTE),
-                start + 20 * MINUTE + 5
-            ),
+            at_start(&mut kills, Some(start + 20 * MINUTE), start + 20 * MINUTE + 5),
             Start::Held { kills: 4 }
         );
         assert_eq!(kills.held, Some(4));
@@ -186,17 +175,11 @@ mod tests {
         let mut kills = Kills::parse("1000\n1100\n1200\n");
         // The first two are over 30 minutes old at the fourth kill: two in the window.
         let now = 1100 + 30 * MINUTE;
-        assert_eq!(
-            at_start(&mut kills, Some(now - 5), now),
-            Start::AfterKill { kills: 2 }
-        );
+        assert_eq!(at_start(&mut kills, Some(now - 5), now), Start::AfterKill { kills: 2 });
         assert_eq!(kills.times, vec![1200, now - 5]);
         // A kill from a clock set back doesn't count.
         let mut kills = Kills::parse("5000\n");
-        assert_eq!(
-            at_start(&mut kills, Some(100), 200),
-            Start::AfterKill { kills: 1 }
-        );
+        assert_eq!(at_start(&mut kills, Some(100), 200), Start::AfterKill { kills: 1 });
         assert_eq!(kills.times, vec![100]);
     }
 
@@ -215,10 +198,7 @@ mod tests {
         assert_eq!(at_start(&mut kills, None, 50_000), Start::Held { kills: 4 });
         assert!(kills.times.is_empty());
         // Killed again while held: still held.
-        assert_eq!(
-            at_start(&mut kills, Some(50_100), 50_200),
-            Start::Held { kills: 4 }
-        );
+        assert_eq!(at_start(&mut kills, Some(50_100), 50_200), Start::Held { kills: 4 });
         let text = kills.to_text();
         assert_eq!(text, "50100\nheld 4\n");
         assert_eq!(Kills::parse(&text), kills);

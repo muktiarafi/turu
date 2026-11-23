@@ -70,13 +70,9 @@ pub fn install(send: Sender, open: impl Fn() -> bool + Send + 'static) {
                 username: startup.username,
                 password: startup.password,
                 server: startup.server,
-                script: startup
-                    .script
-                    .map(|path| path.to_string_lossy().into_owned()),
+                script: startup.script.map(|path| path.to_string_lossy().into_owned()),
                 run_script: startup.run_script,
-                playlist: startup
-                    .playlist
-                    .map(|path| path.to_string_lossy().into_owned()),
+                playlist: startup.playlist.map(|path| path.to_string_lossy().into_owned()),
                 run_playlist: startup.run_playlist,
                 options_storage: startup.options_storage,
                 exit_on_stop: startup.exit_on_stop,

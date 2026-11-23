@@ -58,10 +58,7 @@ pub fn reopen() {
             username,
             server: string("server"),
             script: string("script").map(PathBuf::from),
-            run_script: entry
-                .get("runScript")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
+            run_script: entry.get("runScript").and_then(Value::as_bool).unwrap_or(false),
             ..Default::default()
         };
         tracing::info!(
@@ -82,16 +79,8 @@ pub fn tab_args(root: &std::path::Path) -> Vec<Vec<String>> {
         .iter()
         .map(|entry| {
             let string = |key: &str| entry.get(key).and_then(Value::as_str).map(str::to_owned);
-            let run_script = entry
-                .get("runScript")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            crate::slots::open_args(
-                string("username"),
-                string("server"),
-                string("script"),
-                run_script,
-            )
+            let run_script = entry.get("runScript").and_then(Value::as_bool).unwrap_or(false);
+            crate::slots::open_args(string("username"), string("server"), string("script"), run_script)
         })
         .collect()
 }
@@ -111,11 +100,7 @@ pub fn save() {
     if !READ.load(Ordering::Relaxed) {
         return;
     }
-    let entries: Vec<Value> = turu::tabs()
-        .iter()
-        .skip(1)
-        .map(|(_, bot)| entry(bot))
-        .collect();
+    let entries: Vec<Value> = turu::tabs().iter().skip(1).map(|(_, bot)| entry(bot)).collect();
     let text = serde_json::to_string_pretty(&entries).unwrap_or_default();
     let mut written = WRITTEN.lock().unwrap_or_else(|e| e.into_inner());
     if written.as_deref() == Some(text.as_str()) {
@@ -146,14 +131,7 @@ mod tests {
         assert_eq!(
             tab_args(dir.path()),
             [
-                vec![
-                    "--user",
-                    "Alt",
-                    "--server",
-                    "Yorumi",
-                    "--run-script",
-                    "farm/Gold.ts"
-                ],
+                vec!["--user", "Alt", "--server", "Yorumi", "--run-script", "farm/Gold.ts"],
                 Vec::<&str>::new(),
             ]
         );

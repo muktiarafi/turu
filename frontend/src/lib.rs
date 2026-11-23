@@ -4,10 +4,10 @@
 //!
 //! See docs/ARCHITECTURE.md.
 
-#[cfg(feature = "ruffle")]
-pub mod capture;
 #[cfg(feature = "gpu")]
 pub mod blit;
+#[cfg(feature = "ruffle")]
+pub mod capture;
 pub mod client;
 pub mod client_link;
 pub mod crash_reports;
@@ -24,14 +24,14 @@ pub mod map_items;
 pub mod map_pads;
 pub mod memory_kills;
 pub mod models;
-pub mod native_shell;
 #[cfg(feature = "ruffle")]
 pub mod movie_texture;
+pub mod native_shell;
 // Mugetsu's code (GPL-3.0, its author's): only for Ruffle, and kept out of Turu Mas
 // (docs/TURU_MAS.md, "Licenses").
+pub mod host;
 #[cfg(feature = "ruffle")]
 pub mod pacing;
-pub mod host;
 #[cfg(feature = "ruffle")]
 pub mod players;
 pub mod process_memory;

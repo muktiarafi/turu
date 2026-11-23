@@ -112,12 +112,7 @@ pub fn parse_thread_stat(tid: u32, stat: &str) -> Option<ThreadCpu> {
 /// names with their share of a core in percent, busiest first, threads of one name added up (a
 /// pool's workers, the GPU driver's), and none under 1%. A thread not there before started since,
 /// so all its time counts; one whose time went down is a new thread with an old one's id.
-pub fn busiest_threads(
-    before: &[ThreadCpu],
-    now: &[ThreadCpu],
-    elapsed: Duration,
-    n: usize,
-) -> Vec<(String, f64)> {
+pub fn busiest_threads(before: &[ThreadCpu], now: &[ThreadCpu], elapsed: Duration, n: usize) -> Vec<(String, f64)> {
     if elapsed.is_zero() {
         return Vec::new();
     }
@@ -246,16 +241,14 @@ pub fn parse_status(text: &str) -> Option<Reading> {
 
 /// Groups `maps` lines by name (anonymous ones without a name as `[anon]`), largest first.
 pub fn group_mappings(maps: impl BufRead, n: usize) -> Vec<(String, u64, u64)> {
-    let mut groups: std::collections::HashMap<String, (u64, u64)> =
-        std::collections::HashMap::new();
+    let mut groups: std::collections::HashMap<String, (u64, u64)> = std::collections::HashMap::new();
     for line in maps.lines().map_while(Result::ok) {
         // start-end perms offset dev inode [name]
         let mut fields = line.splitn(6, ' ');
         let Some((start, end)) = fields.next().and_then(|range| range.split_once('-')) else {
             continue;
         };
-        let (Ok(start), Ok(end)) = (u64::from_str_radix(start, 16), u64::from_str_radix(end, 16))
-        else {
+        let (Ok(start), Ok(end)) = (u64::from_str_radix(start, 16), u64::from_str_radix(end, 16)) else {
             continue;
         };
         let name = fields
@@ -329,10 +322,7 @@ mod tests {
         };
         let percent = cpu_percent(&at(10), &at(19), Duration::from_secs(60)).unwrap();
         assert!((percent - 15.0).abs() < 1e-9);
-        assert_eq!(
-            cpu_percent(&Reading::default(), &at(19), Duration::from_secs(60)),
-            None
-        );
+        assert_eq!(cpu_percent(&Reading::default(), &at(19), Duration::from_secs(60)), None);
         assert_eq!(cpu_percent(&at(10), &at(19), Duration::ZERO), None);
     }
 
@@ -425,11 +415,7 @@ not a mapping
             "[anon:scudo:primary] 512 MB in 2 maps, /dev/mali0 1 MB in 1 maps"
         );
         assert_eq!(
-            group_mappings(
-                "7200000000-7200001000 rw-p 00000000 00:00 0\n".as_bytes(),
-                5
-            )[0]
-            .0,
+            group_mappings("7200000000-7200001000 rw-p 00000000 00:00 0\n".as_bytes(), 5)[0].0,
             "[anon]"
         );
     }

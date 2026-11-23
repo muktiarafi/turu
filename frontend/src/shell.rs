@@ -303,9 +303,7 @@ pub enum ToShell {
     },
     /// Desktop: Army > Accounts' launches in processes of their own, from a tab: the shell's Army
     /// launches them, so they outlive the tab's client and its web monitor lists them.
-    Launch {
-        launches: Vec<turu_bot::army::Launch>,
-    },
+    Launch { launches: Vec<turu_bot::army::Launch> },
     /// Desktop: Army Control's Close (or with `restart`, Restart) of one of the shell's Army
     /// clients.
     ArmyClient {
@@ -511,24 +509,14 @@ pub enum Answered {
     Path { path: Option<String> },
     /// The "save" picker made the document `uri`; the client writes `path`, then copies it in
     /// (both `None`: cancelled).
-    Document {
-        uri: Option<String>,
-        path: Option<String>,
-    },
+    Document { uri: Option<String>, path: Option<String> },
     /// How the installer ended (0 installed, 1 cancelled, 2 failed) and why.
-    Installed {
-        status: i32,
-        message: Option<String>,
-    },
+    Installed { status: i32, message: Option<String> },
 }
 
 /// Where a tab's game is, for the shell's tab list (`ToShell::Status`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "typegen",
-    derive(facet::Facet),
-    facet(rename_all = "snake_case")
-)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "snake_case"))]
 #[serde(rename_all = "snake_case")]
 #[repr(C)]
 pub enum TabGame {
@@ -544,11 +532,7 @@ pub enum TabGame {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "typegen",
-    derive(facet::Facet),
-    facet(rename_all = "snake_case")
-)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "snake_case"))]
 #[serde(rename_all = "snake_case")]
 #[repr(C)]
 pub enum NativeScreen {
@@ -667,11 +651,7 @@ impl UpdateInfo {
 /// Which of Android's two text fields above the keyboard: the game's focused text field, or Turu's
 /// own text box (egui's).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "typegen",
-    derive(facet::Facet),
-    facet(rename_all = "snake_case")
-)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "snake_case"))]
 #[serde(rename_all = "snake_case")]
 #[repr(C)]
 pub enum FieldId {
@@ -729,9 +709,7 @@ pub struct GameKey {
 #[cfg(feature = "ruffle")]
 pub mod keys {
     use super::GameKey;
-    use ruffle_core::events::{
-        KeyDescriptor, KeyLocation, LogicalKey, NamedKey, PhysicalKey, TextControlCode,
-    };
+    use ruffle_core::events::{KeyDescriptor, KeyLocation, LogicalKey, NamedKey, PhysicalKey, TextControlCode};
 
     macro_rules! table {
         ($table:ident, $ty:ident, $($v:ident),* $(,)?) => {
@@ -771,10 +749,7 @@ pub mod keys {
     );
 
     fn name<T: PartialEq + Copy>(table: &[(T, &'static str)], value: T) -> Option<&'static str> {
-        table
-            .iter()
-            .find(|(v, _)| *v == value)
-            .map(|(_, name)| *name)
+        table.iter().find(|(v, _)| *v == value).map(|(_, name)| *name)
     }
 
     fn by_name<T: Copy>(table: &[(T, &str)], name: &str) -> Option<T> {
@@ -799,9 +774,7 @@ pub mod keys {
                 character,
                 named,
                 location: key.key_location as u8,
-                control: control
-                    .and_then(|code| name(CONTROL, code))
-                    .map(str::to_owned),
+                control: control.and_then(|code| name(CONTROL, code)).map(str::to_owned),
             }
         }
 
@@ -809,9 +782,7 @@ pub mod keys {
         pub fn descriptor(&self) -> KeyDescriptor {
             let logical_key = match (self.character, self.named.as_deref()) {
                 (Some(c), _) => LogicalKey::Character(c),
-                (None, Some(named)) => {
-                    by_name(NAMED, named).map_or(LogicalKey::Unknown, LogicalKey::Named)
-                }
+                (None, Some(named)) => by_name(NAMED, named).map_or(LogicalKey::Unknown, LogicalKey::Named),
                 (None, None) => LogicalKey::Unknown,
             };
             KeyDescriptor {
@@ -968,11 +939,7 @@ impl GridShow {
 }
 
 /// Writes `message`, then `payload` (a frame's pixels) if any.
-pub fn write<T: Serialize>(
-    out: &mut impl Write,
-    message: &T,
-    payload: Option<&[u8]>,
-) -> io::Result<()> {
+pub fn write<T: Serialize>(out: &mut impl Write, message: &T, payload: Option<&[u8]>) -> io::Result<()> {
     let json = serde_json::to_vec(message).map_err(io::Error::other)?;
     let len = u32::try_from(json.len()).map_err(io::Error::other)?;
     out.write_all(&len.to_be_bytes())?;
@@ -1094,8 +1061,7 @@ impl FrameSender {
                 loop {
                     let (frame, messages) = {
                         let mut outbox = lock.lock().unwrap_or_else(|e| e.into_inner());
-                        while outbox.frame.is_none() && outbox.messages.is_empty() && !outbox.closed
-                        {
+                        while outbox.frame.is_none() && outbox.messages.is_empty() && !outbox.closed {
                             outbox = wake.wait(outbox).unwrap_or_else(|e| e.into_inner());
                         }
                         if outbox.closed {
@@ -1135,11 +1101,7 @@ impl FrameSender {
     /// Queues a frame, replacing one not sent yet.
     pub fn frame(&self, width: u32, height: u32, pixels: Vec<u8>) {
         self.push(|outbox| {
-            outbox.frame = Some(Pending {
-                width,
-                height,
-                pixels,
-            });
+            outbox.frame = Some(Pending { width, height, pixels });
         });
     }
 
@@ -1155,11 +1117,7 @@ impl FrameSender {
 
     /// Whether the shell is gone (a send failed) or [`Self::close`] was called.
     pub fn is_closed(&self) -> bool {
-        self.shared
-            .0
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .closed
+        self.shared.0.lock().unwrap_or_else(|e| e.into_inner()).closed
     }
 
     fn push(&self, change: impl FnOnce(&mut Outbox)) {
@@ -1248,9 +1206,7 @@ mod tests {
             ToClient::RailHidden { hidden: true },
             ToClient::StartAgain,
             ToClient::Hide,
-            ToClient::RefreshRate {
-                millihertz: 119_880,
-            },
+            ToClient::RefreshRate { millihertz: 119_880 },
             ToClient::Refreshed,
             ToClient::Ime {
                 ime: ImeInput::Preedit {
@@ -1259,9 +1215,7 @@ mod tests {
                 },
             },
             ToClient::Ime {
-                ime: ImeInput::Commit {
-                    text: "日本".into(),
-                },
+                ime: ImeInput::Commit { text: "日本".into() },
             },
             ToClient::Ime {
                 ime: ImeInput::Disabled,
@@ -1280,10 +1234,7 @@ mod tests {
         }
         let mut input = bytes.as_slice();
         for message in &to_client {
-            assert_eq!(
-                read::<ToClient>(&mut input).unwrap().as_ref(),
-                Some(message)
-            );
+            assert_eq!(read::<ToClient>(&mut input).unwrap().as_ref(), Some(message));
         }
         assert_eq!(read::<ToClient>(&mut input).unwrap(), None);
     }
@@ -1291,18 +1242,12 @@ mod tests {
     #[test]
     fn tab_messages_round_trip() {
         let to_shell = [
-            ToShell::Cursor {
-                cursor: Cursor::Hand,
-            },
+            ToShell::Cursor { cursor: Cursor::Hand },
             ToShell::Cursor {
                 cursor: Cursor::ResizeNwSe,
             },
-            ToShell::Pace {
-                pace: Pace::Refresh,
-            },
-            ToShell::Pace {
-                pace: Pace::Uncapped,
-            },
+            ToShell::Pace { pace: Pace::Refresh },
+            ToShell::Pace { pace: Pace::Uncapped },
             ToShell::Ime {
                 allowed: true,
                 password: false,
@@ -1486,12 +1431,7 @@ mod tests {
     #[test]
     fn an_unknown_pace_is_frames() {
         let message: ToShell = serde_json::from_str(r#"{"type":"pace","pace":"triple"}"#).unwrap();
-        assert_eq!(
-            message,
-            ToShell::Pace {
-                pace: Pace::Unknown
-            }
-        );
+        assert_eq!(message, ToShell::Pace { pace: Pace::Unknown });
     }
 
     #[test]
@@ -1638,9 +1578,7 @@ mod tests {
             url: "https://example.com".into(),
         });
         sender.frame(1, 1, vec![99; 4]);
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut frames = Vec::new();
         let mut urls = 0;
         while frames.last() != Some(&vec![99; 4]) {

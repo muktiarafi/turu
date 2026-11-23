@@ -35,9 +35,7 @@ impl<E> Slot<E> {
         Self {
             tab,
             player,
-            perf: tab
-                .and_then(turu::tab_bot)
-                .map(|bot| bot.flash.perf().clone()),
+            perf: tab.and_then(turu::tab_bot).map(|bot| bot.flash.perf().clone()),
             extra,
         }
     }
@@ -48,9 +46,7 @@ impl<E> Slot<E> {
 
     fn lock(&self) -> TabPlayer<'_> {
         // A lock that fails is a fatal error, not a lack of player.
-        self.player
-            .try_lock()
-            .expect("Player lock must be available")
+        self.player.try_lock().expect("Player lock must be available")
     }
 
     /// Detaches the tab's bot, which would otherwise take the closed game for a disconnect.

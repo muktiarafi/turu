@@ -24,17 +24,15 @@ impl GpuWaiter {
     /// last handle to this.
     pub fn new(device: wgpu::Device, name: &str) -> std::io::Result<Self> {
         let (jobs, waiting) = mpsc::channel::<Job>();
-        std::thread::Builder::new()
-            .name(name.into())
-            .spawn(move || {
-                for (index, then) in waiting {
-                    let _ = device.poll(wgpu::PollType::Wait {
-                        submission_index: Some(index),
-                        timeout: Some(WAIT_AT_MOST),
-                    });
-                    then();
-                }
-            })?;
+        std::thread::Builder::new().name(name.into()).spawn(move || {
+            for (index, then) in waiting {
+                let _ = device.poll(wgpu::PollType::Wait {
+                    submission_index: Some(index),
+                    timeout: Some(WAIT_AT_MOST),
+                });
+                then();
+            }
+        })?;
         Ok(Self { jobs })
     }
 

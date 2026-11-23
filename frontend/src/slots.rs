@@ -124,9 +124,7 @@ pub fn peers_from_files(dir: &Path, me: u32) -> Vec<turu_bot::monitor::hub::Peer
             let address = SlotAddress::read(dir, slot)?;
             Some(turu_bot::monitor::hub::PeerSource {
                 id: format!("tab:{slot}"),
-                label: record
-                    .username()
-                    .map_or_else(|| format!("Tab {slot}"), str::to_owned),
+                label: record.username().map_or_else(|| format!("Tab {slot}"), str::to_owned),
                 api: address.api.parse().ok()?,
                 token: address.token,
             })
@@ -141,10 +139,7 @@ pub fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
         if arg == flag {
             return iter.next().map(String::as_str);
         }
-        if let Some(value) = arg
-            .strip_prefix(flag)
-            .and_then(|rest| rest.strip_prefix('='))
-        {
+        if let Some(value) = arg.strip_prefix(flag).and_then(|rest| rest.strip_prefix('=')) {
             return Some(value);
         }
     }
@@ -167,15 +162,7 @@ pub fn open_args(
         args.extend(["--server".into(), server]);
     }
     if let Some(script) = script.filter(|s| !s.trim().is_empty()) {
-        args.extend([
-            if run_script {
-                "--run-script"
-            } else {
-                "--load-script"
-            }
-            .into(),
-            script,
-        ]);
+        args.extend([if run_script { "--run-script" } else { "--load-script" }.into(), script]);
     }
     args
 }
@@ -188,11 +175,7 @@ pub fn exit_args(exit_on_stop: bool) -> Option<String> {
 
 /// The flags for a tab's playlist and Script Options storage (`OpenTab`'s), after
 /// [`open_args`]'.
-pub fn playlist_args(
-    playlist: Option<String>,
-    run_playlist: bool,
-    options_storage: Option<String>,
-) -> Vec<String> {
+pub fn playlist_args(playlist: Option<String>, run_playlist: bool, options_storage: Option<String>) -> Vec<String> {
     let mut args = Vec::new();
     if let Some(playlist) = playlist.filter(|p| !p.trim().is_empty()) {
         let flag = if run_playlist {
@@ -249,11 +232,7 @@ pub fn split_args(args: &[String]) -> (Vec<String>, Option<String>, Vec<String>)
 
 /// The tab list as the shell's native screens show it (`TabsItem.kt`, `TabPanel.kt`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "typegen",
-    derive(facet::Facet),
-    facet(rename_all = "camelCase")
-)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct NativeTabs {
     pub tabs: Vec<NativeTab>,
@@ -270,11 +249,7 @@ pub struct NativeTabs {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "typegen",
-    derive(facet::Facet),
-    facet(rename_all = "camelCase")
-)]
+#[cfg_attr(feature = "typegen", derive(facet::Facet), facet(rename_all = "camelCase"))]
 #[serde(rename_all = "camelCase")]
 pub struct NativeTab {
     pub id: u32,
@@ -309,12 +284,7 @@ mod tests {
     fn a_tabs_playlist_and_storage_become_its_flags() {
         assert_eq!(
             playlist_args(Some("daily.json".into()), true, Some("Squad A".into())),
-            [
-                "--run-playlist",
-                "daily.json",
-                "--script-options-storage",
-                "Squad A"
-            ]
+            ["--run-playlist", "daily.json", "--script-options-storage", "Squad A"]
         );
         assert_eq!(
             playlist_args(Some("daily.json".into()), false, None),
@@ -339,10 +309,7 @@ mod tests {
         assert_eq!(SlotRecord::read(dir.path(), 2), Some(record.clone()));
         assert_eq!(record.username(), Some("Hero"));
         assert_eq!(
-            SlotRecord::read_all(dir.path())
-                .keys()
-                .copied()
-                .collect::<Vec<_>>(),
+            SlotRecord::read_all(dir.path()).keys().copied().collect::<Vec<_>>(),
             [2]
         );
         let text = std::fs::read_to_string(dir.path().join("c2.json")).unwrap();
@@ -411,10 +378,7 @@ mod tests {
         address(50004).write(dir.path(), 4).unwrap();
         let peers = peers_from_files(dir.path(), 1);
         assert_eq!(peers.len(), 1);
-        assert_eq!(
-            (peers[0].id.as_str(), peers[0].label.as_str()),
-            ("tab:2", "Alt")
-        );
+        assert_eq!((peers[0].id.as_str(), peers[0].label.as_str()), ("tab:2", "Alt"));
         assert_eq!(peers[0].api.port(), 50002);
         SlotAddress::remove(dir.path(), 2);
         assert!(peers_from_files(dir.path(), 1).is_empty());

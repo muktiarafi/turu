@@ -155,11 +155,7 @@ impl Pacing {
         let due = self.picture_due + interval;
         if started + self.refresh_interval / 2 >= due {
             // Keep the rhythm, unless it fell more than a picture behind.
-            self.picture_due = if started < due + interval {
-                due
-            } else {
-                started
-            };
+            self.picture_due = if started < due + interval { due } else { started };
             true
         } else {
             false
@@ -216,8 +212,7 @@ impl Pacing {
             now.duration_since(*since.get_or_insert(now)).as_secs_f64() >= secs
         };
         let affordable = divisor_for(self.draw_cost_ms * 1.3, 1.3).max(pipeline_divisor(1.4));
-        let once_per_frame =
-            (self.refresh_interval * self.draw_divisor).as_secs_f64() * 1.5 > 1.0 / frame_rate;
+        let once_per_frame = (self.refresh_interval * self.draw_divisor).as_secs_f64() * 1.5 > 1.0 / frame_rate;
         let big_step = once_per_frame || affordable * 2 <= self.draw_divisor;
         if lasted(&mut self.divisor_up_since, needed > self.draw_divisor, 0.5)
             || lasted(
@@ -240,22 +235,14 @@ impl Pacing {
 impl Pacing {
     /// Uncapped, at most one new picture every `interval` (the FPS limit, else none), evenly by
     /// the clock: whether a draw that started at `started` draws a new one.
-    pub fn new_uncapped_picture_due(
-        &mut self,
-        started: Instant,
-        interval: Option<Duration>,
-    ) -> bool {
+    pub fn new_uncapped_picture_due(&mut self, started: Instant, interval: Option<Duration>) -> bool {
         let Some(interval) = interval else {
             return true;
         };
         let due = self.picture_due + interval;
         if started + Duration::from_micros(300) >= due {
             // Keep the rhythm, unless it fell more than a picture behind.
-            self.picture_due = if started < due + interval {
-                due
-            } else {
-                started
-            };
+            self.picture_due = if started < due + interval { due } else { started };
             true
         } else {
             false
@@ -333,10 +320,7 @@ mod tests {
     fn uncapped_pictures_keep_the_limit() {
         let mut pacing = Pacing::new();
         let start = pacing.picture_due;
-        assert!(
-            pacing.new_uncapped_picture_due(start, None),
-            "no limit: always"
-        );
+        assert!(pacing.new_uncapped_picture_due(start, None), "no limit: always");
         let interval = Duration::from_millis(10);
         assert!(!pacing.new_uncapped_picture_due(start + Duration::from_millis(5), Some(interval)));
         assert!(pacing.new_uncapped_picture_due(start + Duration::from_millis(10), Some(interval)));

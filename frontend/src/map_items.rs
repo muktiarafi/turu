@@ -169,17 +169,12 @@ fn scan_ops(pool: &ConstantPool, ops: &[Op], found: &mut Vec<(i64, i64)>) {
             .min_by_key(|(other, _)| (other.abs_diff(at), *other > at))
             .map(|(_, value)| value)
     };
-    for item in sets
-        .iter()
-        .filter(|s| s.name == "mapitem" || s.name == "itemdrop")
-    {
+    for item in sets.iter().filter(|s| s.name == "mapitem" || s.name == "itemdrop") {
         let quest = nearest(
             item.at,
             &mut sets
                 .iter()
-                .filter(|s| {
-                    (s.name == "intquest" || s.name == "questnum") && s.object == item.object
-                })
+                .filter(|s| (s.name == "intquest" || s.name == "questnum") && s.object == item.object)
                 .map(|s| (s.at, s.value)),
         );
         add(found, item.value, quest.unwrap_or(0));
@@ -277,14 +272,10 @@ mod tests {
     }
 
     fn lex(i: u32) -> Op {
-        Op::GetLex {
-            index: Index::new(i),
-        }
+        Op::GetLex { index: Index::new(i) }
     }
     fn set(i: u32) -> Op {
-        Op::SetProperty {
-            index: Index::new(i),
-        }
+        Op::SetProperty { index: Index::new(i) }
     }
     fn short(v: i16) -> Op {
         Op::PushShort { value: v }
@@ -354,9 +345,7 @@ mod tests {
             vec![
                 vec![
                     get_world(),
-                    Op::PushInt {
-                        value: Index::new(1),
-                    },
+                    Op::PushInt { value: Index::new(1) },
                     Op::CallProperty {
                         index: Index::new(6),
                         num_args: 1,
@@ -391,9 +380,7 @@ mod tests {
                 ],
                 vec![
                     get_world(),
-                    Op::PushDouble {
-                        value: Index::new(1),
-                    },
+                    Op::PushDouble { value: Index::new(1) },
                     Op::CallPropVoid {
                         index: Index::new(5),
                         num_args: 1,
@@ -408,10 +395,7 @@ mod tests {
                 ],
             ],
         );
-        assert_eq!(
-            scan(&swf).unwrap(),
-            [(44, 260), (48, 70000), (49, 267), (123, 0)]
-        );
+        assert_eq!(scan(&swf).unwrap(), [(44, 260), (48, 70000), (49, 267), (123, 0)]);
     }
 
     #[test]
@@ -426,11 +410,7 @@ mod tests {
 
     #[test]
     fn rejects_what_isnt_a_swf() {
-        assert!(
-            scan(b"<html>404</html>")
-                .unwrap_err()
-                .starts_with("not a SWF")
-        );
+        assert!(scan(b"<html>404</html>").unwrap_err().starts_with("not a SWF"));
     }
 
     /// A real map, when one is given: `TURU_MAP_SWF=path cargo test ... real_map -- --nocapture`.

@@ -105,10 +105,8 @@ pub fn record(dir: &Path) {
     if log.lines.len() >= LINES {
         log.lines.pop_front();
     }
-    log.lines.push_back(format!(
-        "{} {summary}",
-        chrono::Local::now().format("%H:%M:%S")
-    ));
+    log.lines
+        .push_back(format!("{} {summary}", chrono::Local::now().format("%H:%M:%S")));
     log.last = summary;
     let mut text = log.header.clone();
     for line in &log.lines {
@@ -137,10 +135,7 @@ mod tests {
     #[test]
     fn several_tabs_name_the_shown_one_and_the_most() {
         assert_eq!(
-            summary(
-                &[(false, TabState::InGame), (true, TabState::LoginScreen)],
-                3
-            ),
+            summary(&[(false, TabState::InGame), (true, TabState::LoginScreen)], 3),
             "2 tabs, at most 3 this run: tab 1 in game; tab 2 (shown) not logged in"
         );
     }

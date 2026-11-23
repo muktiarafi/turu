@@ -186,12 +186,7 @@ impl Client {
     /// Answers `tab`'s question `id` with `button` (its index; none when closed without one):
     /// what the answer asks the windows to open. An answer to a question already gone does
     /// nothing.
-    pub fn answer(
-        self,
-        tab: TabId,
-        id: &str,
-        button: Option<usize>,
-    ) -> Result<PromptAnswer, String> {
+    pub fn answer(self, tab: TabId, id: &str, button: Option<usize>) -> Result<PromptAnswer, String> {
         let bot = self.tab_bot(tab).ok_or("no such tab")?;
         if id.starts_with("options:") {
             script_options::answer_request(&bot, id, button == Some(1))?;
@@ -232,14 +227,8 @@ mod tests {
     struct FakeGame;
 
     impl turu_bot::FlashHost for FakeGame {
-        fn call(
-            &self,
-            name: &str,
-            args: Vec<turu_bot::FlashArg>,
-        ) -> Result<String, turu_bot::HostError> {
-            if let Some(answer) =
-                turu_bot::testing::batched(name, &args, |n, a| self.call(n, a).unwrap_or_default())
-            {
+        fn call(&self, name: &str, args: Vec<turu_bot::FlashArg>) -> Result<String, turu_bot::HostError> {
+            if let Some(answer) = turu_bot::testing::batched(name, &args, |n, a| self.call(n, a).unwrap_or_default()) {
                 return Ok(answer);
             }
             Ok(if name == "isLoggedIn" { "true" } else { "null" }.into())
@@ -249,10 +238,7 @@ mod tests {
     fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
         let start = std::time::Instant::now();
         while !done() {
-            assert!(
-                start.elapsed() < std::time::Duration::from_secs(10),
-                "{what}"
-            );
+            assert!(start.elapsed() < std::time::Duration::from_secs(10), "{what}");
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
@@ -264,8 +250,7 @@ mod tests {
         use crate::models::form::OptionValue;
         use crate::models::script_options::ScriptOptionsAct;
         use turu_bot::script::options::MAIN;
-        let dir =
-            std::env::temp_dir().join(format!("turu-client-questions-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("turu-client-questions-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         turu_bot::paths::set_default_root(dir.join("data"));
         let script = dir.join("asks.ts");
@@ -295,10 +280,7 @@ export default function main(): void {
         let Some(Question::Prompt(asked)) = client().question(tab) else {
             unreachable!()
         };
-        assert_eq!(
-            (asked.title.as_str(), asked.buttons.len()),
-            ("Questwalker asks", 2)
-        );
+        assert_eq!((asked.title.as_str(), asked.buttons.len()), ("Questwalker asks", 2));
         assert!(
             client().answer(tab, "box:stale", Some(0)).is_ok(),
             "a stale answer does nothing"
@@ -336,13 +318,9 @@ export default function main(): void {
     #[test]
     fn a_models_view_reads_in_process() {
         let tab = client().active_tab();
-        let first = client()
-            .view(tab, Model::Scripts)
-            .expect("the scripts view");
+        let first = client().view(tab, Model::Scripts).expect("the scripts view");
         assert!(first.view.is_object(), "{first:?}");
-        let again = client()
-            .view(tab, Model::Scripts)
-            .expect("the scripts view");
+        let again = client().view(tab, Model::Scripts).expect("the scripts view");
         assert_eq!(first.revision, again.revision, "nothing changed");
     }
 
@@ -361,10 +339,7 @@ export default function main(): void {
     fn a_closed_tab_has_no_view() {
         let gone = turu::add_tab(Startup::default()).0;
         turu::remove_tab(gone);
-        assert_eq!(
-            client().view(gone, Model::Scripts),
-            Err("no such tab".into())
-        );
+        assert_eq!(client().view(gone, Model::Scripts), Err("no such tab".into()));
     }
 
     /// An action read from what a shell sends serializes back to the same JSON, so
@@ -376,9 +351,7 @@ export default function main(): void {
 
     #[test]
     fn actions_with_data_round_trip() {
-        use crate::models::{
-            game_options::GameOptionsAct, grabber::GrabberAct, prompts::PromptsAct,
-        };
+        use crate::models::{game_options::GameOptionsAct, grabber::GrabberAct, prompts::PromptsAct};
         use serde_json::json;
         round_trip::<GrabberAct>(
             json!({ "action": "run", "kind": "Inventory", "label": "To Inventory", "positions": [1, 2], "revision": 3 }),
@@ -392,9 +365,7 @@ export default function main(): void {
             json!({ "text": "HighHP" }),
             json!("none"),
         ] {
-            round_trip::<GameOptionsAct>(
-                json!({ "action": "set", "label": "Skip cutscenes", "value": value }),
-            );
+            round_trip::<GameOptionsAct>(json!({ "action": "set", "label": "Skip cutscenes", "value": value }));
         }
     }
 
@@ -404,10 +375,7 @@ export default function main(): void {
             path: "farm/Gold.ts".into(),
         })
         .unwrap();
-        assert_eq!(
-            body,
-            serde_json::json!({ "action": "load", "path": "farm/Gold.ts" })
-        );
+        assert_eq!(body, serde_json::json!({ "action": "load", "path": "farm/Gold.ts" }));
         let back: ScriptsAct = serde_json::from_value(body).unwrap();
         assert_eq!(
             back,

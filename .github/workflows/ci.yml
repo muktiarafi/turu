@@ -71,6 +71,10 @@ jobs:
       - name: Check the shell library's formatting
         run: cargo fmt -p turu_shell --check
 
+      # turu_frontend too (its rustfmt.toml: max_width = 120).
+      - name: Check the client library's formatting
+        run: cargo fmt -p turu_frontend --check
+
       # The app's own files (not cargo fmt -p turu: Ruffle's desktop files keep their layout), at
       # 120 columns as the UI windows.
       - name: Check the app's own files' formatting

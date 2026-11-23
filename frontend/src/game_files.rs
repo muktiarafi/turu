@@ -110,11 +110,7 @@ fn remember(served: &mut VecDeque<Url>, url: Url) {
 /// `ChiralValley/town-Mobius-21Feb14.swf`), as the Ruffle host finds a loaded movie.
 fn find_served(served: &VecDeque<Url>, path: &str) -> Option<Url> {
     let suffix = format!("/{}", path.trim_start_matches('/'));
-    served
-        .iter()
-        .rev()
-        .find(|url| url.path().ends_with(&suffix))
-        .cloned()
+    served.iter().rev().find(|url| url.path().ends_with(&suffix)).cloned()
 }
 
 /// A SWF [`fetch`] served whose URL path ends in `path`, read back from the disk cache and
@@ -127,17 +123,10 @@ pub fn served_swf(path: &str) -> Option<Vec<u8>> {
     crate::map_pads::uncompressed_swf(&entry.body)
 }
 
-fn fetch_with(
-    client: &reqwest::blocking::Client,
-    cache: Option<&HttpCache>,
-    url: &str,
-) -> Result<Vec<u8>, String> {
+fn fetch_with(client: &reqwest::blocking::Client, cache: Option<&HttpCache>, url: &str) -> Result<Vec<u8>, String> {
     let url = Url::parse(url).map_err(|e| format!("{url}: {e}"))?;
     let Some(cache) = cache.filter(|_| matches!(url.scheme(), "http" | "https")) else {
-        let response = client
-            .get(url.clone())
-            .send()
-            .map_err(|e| format!("{url}: {e}"))?;
+        let response = client.get(url.clone()).send().map_err(|e| format!("{url}: {e}"))?;
         return read_body(&url, response);
     };
     let cached = cache.lookup(&url);
@@ -152,10 +141,7 @@ fn fetch_with(
             request = request.header(reqwest::header::IF_NONE_MATCH, &entry.meta.etag);
         }
         if !entry.meta.last_modified.is_empty() {
-            request = request.header(
-                reqwest::header::IF_MODIFIED_SINCE,
-                &entry.meta.last_modified,
-            );
+            request = request.header(reqwest::header::IF_MODIFIED_SINCE, &entry.meta.last_modified);
         }
     }
     let served = |entry: Entry| {
@@ -182,9 +168,7 @@ fn fetch_with(
         .flatten();
     let body = read_body(&url, response)?;
     // A connection that closed early gives a short body without an error.
-    if let Some(policy) =
-        policy.filter(|policy| policy.len.is_none_or(|len| len == body.len() as u64))
-    {
+    if let Some(policy) = policy.filter(|policy| policy.len.is_none_or(|len| len == body.len() as u64)) {
         cache.store(&url, &policy, &body);
     }
     Ok(body)
@@ -267,10 +251,7 @@ mod tests {
         }
 
         fn counts(&self) -> (usize, usize) {
-            (
-                self.requests.lock().unwrap().len(),
-                self.bodies.load(Ordering::Relaxed),
-            )
+            (self.requests.lock().unwrap().len(), self.bodies.load(Ordering::Relaxed))
         }
     }
 
@@ -285,14 +266,10 @@ mod tests {
     #[test]
     fn fetch_answers_from_disk_and_revalidates() {
         let server = Server::start();
-        let dir =
-            TempDir(std::env::temp_dir().join(format!("turu-game-files-{}", std::process::id())));
+        let dir = TempDir(std::env::temp_dir().join(format!("turu-game-files-{}", std::process::id())));
         let cache = HttpCache::new(&dir.0, 1 << 30).unwrap();
         let client = reqwest::blocking::Client::new();
-        let file = format!(
-            "http://127.0.0.1:{}/gamefiles/mon/Frogzard.swf",
-            server.port
-        );
+        let file = format!("http://127.0.0.1:{}/gamefiles/mon/Frogzard.swf", server.port);
         let get = |url: &str| fetch_with(&client, Some(&cache), url);
 
         // Downloaded and kept.

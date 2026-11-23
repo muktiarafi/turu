@@ -23,10 +23,8 @@ impl FileDialog {
     }
 
     pub fn add_filter(mut self, name: impl Into<String>, extensions: &[&str]) -> Self {
-        self.filters.push((
-            name.into(),
-            extensions.iter().map(|e| (*e).to_owned()).collect(),
-        ));
+        self.filters
+            .push((name.into(), extensions.iter().map(|e| (*e).to_owned()).collect()));
         self
     }
 
@@ -322,10 +320,7 @@ pub const SAFE_DRAWING: [(&str, &str); 6] = [
 /// [`SAFE_DRAWING`], and of [`DEFAULT_ON`] only those whose own `<name>` file brings one back
 /// (to find the one at fault). Never one already set from outside (`RUFFLE_LEAN_RENDER=every`,
 /// for tests).
-pub fn drawing_switches(
-    flag: impl Fn(&str) -> bool,
-    safe: bool,
-) -> Vec<(&'static str, &'static str)> {
+pub fn drawing_switches(flag: impl Fn(&str) -> bool, safe: bool) -> Vec<(&'static str, &'static str)> {
     let safe_ones = SAFE_DRAWING.iter().copied().filter(|_| safe);
     let default_on = DEFAULT_ON
         .iter()
