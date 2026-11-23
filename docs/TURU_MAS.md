@@ -153,9 +153,16 @@ report attached. As in Turu, the report has the tabs over the run (`crash/tabs-<
 task collects what it needs at run time (Sentry, the AndroidX parts it uses, Kotlin's standard
 library: Java 8 class files, which the AIR SDK's old d8 can read) and Sentry's `libsentry.so` and
 `libsentry-android.so`; `air/ane/build.sh` merges and packs them (about 1.7 MB more in the APK).
-On Linux (the release job) ADT packages its "legacy" way, dexing with the AIR SDK's own d8
-1.2.52; on a Mac with an Android SDK it builds through Gradle 8.13 and AGP 8.9.1, whose d8 is
-current, so a jar can pass locally and fail in CI. That old d8 crashes on `MethodParameters`
+On macOS ADT packages through its own Gradle 8.13 and AGP 8.9.1, whose d8 is current:
+`build.sh` passes it the Android SDK (`-platformsdk`), and the release job runs on a macOS runner
+for this and refuses an APK packaged any other way. Gradle's route targets SDK 36 unless told
+otherwise, so `app.xml` pins `targetSdkVersion` 34, what the legacy route gives and what the published
+APKs have. On Linux ADT doesn't find the SDK (neither
+`ANDROID_HOME` nor `~/Android/Sdk`) and packages its "legacy" way, dexing with the AIR SDK's own
+d8 1.2.52; given the SDK it stops with "SDK component at air/android/device/arm8/Runtime.apk is out
+of date" (51.5.1.1, tried in CI 2026-11-23), though the Linux SDK has that file under
+`runtimes/air/android/device/arm8/`. A Linux build can only stay legacy, so the extension still
+keeps to what the legacy route reads. That old d8 crashes on `MethodParameters`
 entries without a name, which some of Sentry's classes have (`v0.3.0-beta.4`'s job:
 "NullPointerException ... visitParameter"), so `air/ane/strip-parameters.py` removes the
 attribute from the merged classes (it only names parameters for reflection). The legacy route also

@@ -58,10 +58,15 @@ password=${MAS_KEYSTORE_PASSWORD:-turumasdev}
 if [ -z "${MAS_KEYSTORE:-}" ] && [ ! -f "$keystore" ]; then
   "$AIR_HOME/bin/adt" -certificate -cn "Turu Mas (development)" 2048-RSA "$keystore" "$password"
 fi
-# The app's ID as app.xml has it (com.muktiarafi.turumas), not AIR's "air." + ID.
+# The app's ID as app.xml has it (com.muktiarafi.turumas), not AIR's "air." + ID. On macOS ADT is
+# given the Android SDK, so it packages through its own Gradle (a current d8); the Linux AIR SDK
+# refuses that ("Runtime.apk is out of date", 51.5.1.1) and packages its legacy way without it
+# (docs/TURU_MAS.md, "Packaging").
+sdk=()
+[ "$(uname)" = Darwin ] && sdk=(-platformsdk "$ANDROID_HOME")
 AIR_NOANDROIDFLAIR=true "$AIR_HOME/bin/adt" -package -target apk-captive-runtime -arch armv8 \
   -storetype pkcs12 -keystore "$keystore" -storepass "$password" \
-  "$out/TuruMas.apk" "$out/app.xml" -extdir "$out/ext" -C "$out" TuruAirHost.swf turu.swf icons
+  "$out/TuruMas.apk" "$out/app.xml" ${sdk[@]+"${sdk[@]}"} -extdir "$out/ext" -C "$out" TuruAirHost.swf turu.swf icons
 ls -la "$out/TuruMas.apk"
 if [ "${1:-}" != "--no-install" ]; then
   "$ANDROID_HOME/platform-tools/adb" install -r "$out/TuruMas.apk"
