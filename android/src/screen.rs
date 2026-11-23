@@ -27,8 +27,8 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use turu_frontend::engine::Step;
 use turu_egui::gui::turu::TuruUi;
+use turu_frontend::engine::Step;
 pub use turu_frontend::movie_texture::{Blit, MovieTexture};
 use turu_frontend::pacing::Pacing;
 use turu_frontend::touch::GameTouches;
@@ -41,6 +41,7 @@ const UI_FRAME: Duration = Duration::from_millis(33);
 
 thread_local! {
     /// The engine thread's screen, once the first window came.
+    #[allow(clippy::missing_const_for_thread_local, reason = "it is const: clippy misreads Android's expansion")]
     pub static SCREEN: RefCell<Option<Screen>> = const { RefCell::new(None) };
 }
 
@@ -79,8 +80,10 @@ pub struct Screen {
     descriptors: Arc<Descriptors>,
     /// The window's surface, while there is a window.
     surface: Option<wgpu::Surface<'static>>,
-    /// The window `surface` is on (its pointer).
-    surface_for: usize,
+    /// The window `surface` is on, held (a reference of the screen's own) for as long as the
+    /// surface: the engine may still draw after `detach_surface` gave up waiting and let its
+    /// reference go. Declared after `surface`, so it's dropped after it.
+    window: Option<NativeWindow>,
     format: wgpu::TextureFormat,
     /// The window, in pixels.
     size: (u32, u32),
@@ -221,7 +224,7 @@ impl Screen {
         window: &NativeWindow,
         pixels_per_point: f32,
     ) -> Option<Self> {
-        // SAFETY: the window stays valid until `detach`, which drops the surface first.
+        // SAFETY: the screen keeps a reference to the window (`window`) as long as the surface.
         let surface = match unsafe {
             descriptors
                 .wgpu_instance
@@ -257,7 +260,7 @@ impl Screen {
         let screen = Self {
             descriptors,
             surface: Some(surface),
-            surface_for: window.ptr().as_ptr() as usize,
+            window: Some(window.clone()),
             format,
             size: crate::window_size(window),
             pixels_per_point,
@@ -339,12 +342,18 @@ impl Screen {
 
     /// Draws in `window` from now on (unless it already does: Vulkan allows one surface a window).
     pub fn attach(&mut self, window: &NativeWindow) {
-        let ptr = window.ptr().as_ptr() as usize;
-        if self.surface.is_some() && self.surface_for == ptr {
+        if self.surface.is_some()
+            && self
+                .window
+                .as_ref()
+                .is_some_and(|w| w.ptr() == window.ptr())
+        {
             return;
         }
         self.surface = None;
-        // SAFETY: the window stays valid until `detach`, which drops the surface first.
+        self.window = None;
+        // SAFETY: the surface is kept beside a reference to the window (`self.window`), dropped
+        // only after it.
         match unsafe {
             self.descriptors
                 .wgpu_instance
@@ -352,7 +361,7 @@ impl Screen {
         } {
             Ok(surface) => {
                 self.surface = Some(surface);
-                self.surface_for = ptr;
+                self.window = Some(window.clone());
                 // A new window (the activity came back): its display mode is asked for again.
                 self.asked_refresh = None;
                 self.size = crate::window_size(window);
@@ -370,6 +379,7 @@ impl Screen {
     /// The window is going away: no more drawing in it.
     pub fn detach(&mut self) {
         self.surface = None;
+        self.window = None;
         self.keyboard_shown = false;
     }
 
@@ -580,9 +590,7 @@ impl Screen {
         {
             self.pictures.not_shown();
         }
-        if self.surface.is_none() {
-            return None;
-        }
+        self.surface.as_ref()?;
         self.prefer_refresh_rate(player.frame_rate());
         // Headless Mode's screen hides the game: nothing to interpolate.
         let interpolating = ruffle_core::frame_interpolation::enabled()
@@ -801,9 +809,7 @@ impl Screen {
         // The native field's Send, as Enter in Turu's text box (`ui_field.rs`).
         raw_input
             .events
-            .extend(turu_egui::gui::turu::native_field::input_events(
-                &self.egui,
-            ));
+            .extend(turu_egui::gui::turu::native_field::input_events(&self.egui));
         let top = self.top() / ppp;
         let keyboard = crate::ui::keyboard_height() as f32 / ppp;
         // The game's focused text field, as a native one above the keyboard (`game_field.rs`);

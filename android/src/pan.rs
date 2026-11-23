@@ -15,6 +15,7 @@ const MARGIN: f32 = 8.0;
 
 thread_local! {
     /// The layer moved up, and by how much (points). The UI runs on the engine thread.
+    #[allow(clippy::missing_const_for_thread_local, reason = "it is const: clippy misreads Android's expansion")]
     static PANNED: Cell<Option<(LayerId, f32)>> = const { Cell::new(None) };
 }
 

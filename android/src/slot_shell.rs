@@ -91,8 +91,11 @@ pub(crate) fn with_shell_actions(
     with_shell(work)
 }
 
+/// The open tabs' logins: each slot and its username, if it has one.
+pub(crate) type Logins = Vec<(u32, Option<String>)>;
+
 /// The data folder and the open tabs' logins, while the activity runs.
-pub(crate) fn shell_root() -> Option<(PathBuf, Vec<(u32, Option<String>)>)> {
+pub(crate) fn shell_root() -> Option<(PathBuf, Logins)> {
     let shell = SHELL.lock().unwrap_or_else(|e| e.into_inner());
     shell
         .as_ref()

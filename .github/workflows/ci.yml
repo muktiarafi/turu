@@ -71,6 +71,10 @@ jobs:
       - name: Check the shell library's formatting
         run: cargo fmt -p turu_shell --check
 
+      # Formatted on any system, though it builds only for Android.
+      - name: Check the Android library's formatting
+        run: cargo fmt -p turu_android --check
+
       - name: Check the UI windows' formatting
         run: |
           for file in egui_ui/src/gui/turu/*.rs; do
@@ -179,6 +183,56 @@ jobs:
         run: |
           cargo clippy --locked -p turu_bot -p turu_frontend -p turu_egui -p turu_shell -p turu --all-targets \
             --no-default-features --features "$FEATURES" -- -D warnings -A clippy::redundant_clone
+
+  # turu_android is empty off Android, so the Clippy job above never sees it: checked here for
+  # arm64 with the NDK, its path dependencies (the engine, the frontend, Ruffle's crates) with it.
+  clippy-android:
+    name: Clippy (Android)
+    runs-on: ubuntu-24.04
+    env:
+      NDK_VERSION: 27.3.13750724
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: git submodule update --init --depth 1 ruffle android/vendor/rustls-platform-verifier
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: aarch64-linux-android
+
+      # Ruffle compiles its Flash classes (playerglobal) with asc.jar.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-clippy-android
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # As release.yml's Android build: the NDK, cargo-ndk, and libclang for rquickjs's bindgen.
+      - name: Install the NDK, cargo-ndk and libclang
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION"
+          cargo install cargo-ndk --version 4.1.2 --locked
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev
+          libclang=$(find /usr/lib/llvm-* -name 'libclang.so*' | sort -V | tail -1)
+          ndk="$ANDROID_HOME/ndk/$NDK_VERSION"
+          {
+            echo "LIBCLANG_PATH=$(dirname "$libclang")"
+            echo "ANDROID_NDK_HOME=$ndk"
+            echo "BINDGEN_EXTRA_CLANG_ARGS=--sysroot=$ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          } | tee -a "$GITHUB_ENV"
+
+      # redundant_clone is allowed as in the Clippy job.
+      - name: Clippy
+        run: |
+          cargo ndk -t arm64-v8a clippy --locked -p turu_android --all-targets \
+            -- -D warnings -A clippy::redundant_clone
 
   # bot/assets/turu.swf, Turu's host SWF, is built from host/as3 (turu_host) and committed, so a
   # Rust-only build needs no Java: check it is what the source builds.

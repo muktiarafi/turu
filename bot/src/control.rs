@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 thread_local! {
     /// Set on threads that belong to the running script (the script thread and the
     /// script-owned helper loops). Bot calls on those threads honour Stop and Pause.
+    #[allow(clippy::missing_const_for_thread_local, reason = "it is const: clippy misreads Android's expansion")]
     static SCRIPT_THREAD: Cell<bool> = const { Cell::new(false) };
 }
 

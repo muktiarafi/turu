@@ -126,7 +126,7 @@ impl Key {
     /// For egui, without the text: the key with its modifiers, so Turu's HotKeys see presses
     /// that go to the game (as the desktop's winit gives egui every key).
     pub fn egui_key_events(&self) -> Vec<egui::Event> {
-        let Some(key) = egui_key(&self.key.logical_key) else {
+        let Some(key) = egui_key(self.key.logical_key) else {
             return Vec::new();
         };
         vec![egui::Event::Key {
@@ -140,7 +140,7 @@ impl Key {
 }
 
 /// egui's key for a Ruffle logical key: named keys, letters, digits and function keys.
-fn egui_key(key: &LogicalKey) -> Option<egui::Key> {
+fn egui_key(key: LogicalKey) -> Option<egui::Key> {
     let named = match key {
         LogicalKey::Character(c) => {
             return egui::Key::from_name(&c.to_ascii_uppercase().to_string());

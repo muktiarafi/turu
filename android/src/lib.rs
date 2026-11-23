@@ -78,8 +78,10 @@ static APP: Mutex<Option<AndroidApp>> = Mutex::new(None);
 
 thread_local! {
     /// The engine thread's GPU, for the screen the first window gets.
+    #[allow(clippy::missing_const_for_thread_local, reason = "it is const: clippy misreads Android's expansion")]
     static GPU: RefCell<Option<(Arc<Descriptors>, Arc<Blit>)>> = const { RefCell::new(None) };
     /// The game's volume while it's muted in the background, to give back on return.
+    #[allow(clippy::missing_const_for_thread_local, reason = "it is const: clippy misreads Android's expansion")]
     static BACKGROUND_MUTED: Cell<Option<f32>> = const { Cell::new(None) };
 }
 
@@ -516,32 +518,9 @@ fn take_graphics(args: &mut Vec<OsString>) -> Option<Graphics> {
 /// The engine thread: sets the bot up from `turu-args.txt`, then runs the player, drawing while
 /// there is a window.
 fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
-    // Rayon's pool (ruffle-aqw finishes command buffers and uploads textures on it) is made by the
-    // first thread to use it, this one, and Linux gives new threads their maker's name: its
-    // workers were "Turu Engine" too, and the memory log's busiest threads added their CPU to the
-    // engine's. Made first, with names of their own.
-    if let Err(e) = rayon::ThreadPoolBuilder::new()
-        .thread_name(|i| format!("Turu Rayon {i}"))
-        .build_global()
-    {
-        log::warn!("Couldn't name rayon's threads: {e}");
-    }
-    let runtime = match tokio::runtime::Runtime::new() {
-        Ok(runtime) => runtime,
-        Err(e) => {
-            log::error!("Couldn't start the async runtime: {e}");
-            return;
-        }
-    };
-    let _guard = runtime.enter();
-    // The UI runs here too: a Flash call from this thread would wait for itself.
-    turu::init_main_thread();
-    turu_frontend::host::set(Arc::new(platform::AndroidHost));
-    tracing::info!(
-        "Turu {} on Android; data folder {}",
-        turu::VERSION,
-        root.display()
-    );
+    // The startup flags first: some become environment variables, which are set before this
+    // process starts threads of its own (rayon's and tokio's below, the bot's later). Reading
+    // them starts none and needs neither pool.
 
     // Every engine is a slot's (M6). It shares the app's once-only jobs with the other slots
     // (`turu::start_monitor_election`, `turu_bot::shared_job`); before the startup flags, which
@@ -602,21 +581,11 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
             args.len()
         );
     }
-    // AQW (since its 2026-10-10 update) uses Flash APIs newer than its loader's SWF version.
-    ruffle_core::set_show_all_apis(true);
-    // Mugetsu's defaults (`main.rs`), per thread, so here, on the player's: how long a frame
-    // waits for its new shapes, and Flash-style edge smoothing.
-    ruffle_core::set_shape_wait(Some(Duration::from_millis(12)));
-    // Mugetsu 2.0.0: AQW's skill effects remove themselves again from their own removal
-    // events (see `ruffle_core::set_forgiving_removal`). (Detailed shapes keep the default
-    // 32 px at least, as on built-in graphics: `set_shape_min_px`.)
-    ruffle_core::set_forgiving_removal(true);
-    ruffle_render::tessellator::set_flash_aa(true);
     // Mugetsu 2.0.0's speed-ups (`DEFAULT_ON`), as on a computer; with Safe Drawing, Ruffle's
     // plain ways of drawing instead (`SAFE_DRAWING`). `--env` below can still change one.
     for (var, value) in turu_frontend::host::drawing_switches(|_| false, safe_drawing) {
-        // SAFETY: before the engine's threads exist and before Ruffle reads them; the
-        // process's other threads (Java's) don't read Turu's environment.
+        // SAFETY: no thread of Turu's exists yet (rayon's, tokio's and the bot's start below), and
+        // the process's other threads (Java's) don't read Turu's environment.
         unsafe { std::env::set_var(var, value) };
     }
     for var in test_tips {
@@ -628,6 +597,7 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
             // SAFETY: as the drawing switches'.
             Some((name, value)) if !name.is_empty() => unsafe { std::env::set_var(name, value) },
             // `--env NAME`: unset (a drawing switch set above, say: `--env RUFFLE_LEAN_RENDER`).
+            // SAFETY: as the drawing switches'.
             None if !pair.is_empty() => unsafe { std::env::remove_var(&pair) },
             _ => tracing::warn!("--env {pair:?}: expected NAME=value or NAME"),
         }
@@ -635,9 +605,51 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     // `--releases-url <url>`: `TURU_RELEASES_URL`, where client updates are looked for (a test
     // feed, say), which an app can't be started with.
     if let Some(url) = releases_url {
-        // SAFETY: as the drawing switches', before the update checks' thread exists.
+        // SAFETY: as the drawing switches'.
         unsafe { std::env::set_var("TURU_RELEASES_URL", url) };
     }
+    // `--perf-log <seconds>`: `TURU_PERF_LOG`, which an app can't be started with.
+    if let Some(seconds) = perf_log {
+        // SAFETY: as the drawing switches'.
+        unsafe { std::env::set_var("TURU_PERF_LOG", seconds) };
+    }
+
+    // Rayon's pool (ruffle-aqw finishes command buffers and uploads textures on it) is made by the
+    // first thread to use it, this one, and Linux gives new threads their maker's name: its
+    // workers were "Turu Engine" too, and the memory log's busiest threads added their CPU to the
+    // engine's. Made first, with names of their own.
+    if let Err(e) = rayon::ThreadPoolBuilder::new()
+        .thread_name(|i| format!("Turu Rayon {i}"))
+        .build_global()
+    {
+        log::warn!("Couldn't name rayon's threads: {e}");
+    }
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            log::error!("Couldn't start the async runtime: {e}");
+            return;
+        }
+    };
+    let _guard = runtime.enter();
+    // The UI runs here too: a Flash call from this thread would wait for itself.
+    turu::init_main_thread();
+    turu_frontend::host::set(Arc::new(platform::AndroidHost));
+    tracing::info!(
+        "Turu {} on Android; data folder {}",
+        turu::VERSION,
+        root.display()
+    );
+    // AQW (since its 2026-10-10 update) uses Flash APIs newer than its loader's SWF version.
+    ruffle_core::set_show_all_apis(true);
+    // Mugetsu's defaults (`main.rs`), per thread, so here, on the player's: how long a frame
+    // waits for its new shapes, and Flash-style edge smoothing.
+    ruffle_core::set_shape_wait(Some(Duration::from_millis(12)));
+    // Mugetsu 2.0.0: AQW's skill effects remove themselves again from their own removal
+    // events (see `ruffle_core::set_forgiving_removal`). (Detailed shapes keep the default
+    // 32 px at least, as on built-in graphics: `set_shape_min_px`.)
+    ruffle_core::set_forgiving_removal(true);
+    ruffle_render::tessellator::set_flash_aa(true);
     ruffle_core::frame_interpolation::set_enabled(root.join(INTERPOLATION_FILE).exists());
     load_performance(root);
     load_show_fps_and_memory_limit(root);
@@ -645,11 +657,6 @@ fn engine(root: &Path, events: &std::sync::mpsc::Receiver<EngineEvent>) {
     turu::start_api();
     restart::start();
     memory_kills::watch_hold();
-    // `--perf-log <seconds>`: `TURU_PERF_LOG`, which an app can't be started with.
-    if let Some(seconds) = perf_log {
-        // SAFETY: before the engine's threads exist (the perf log's is started just below).
-        unsafe { std::env::set_var("TURU_PERF_LOG", seconds) };
-    }
     turu::start_perf_log(Some({
         // The engine thread as a whole while there's a window (`frame_perf`).
         let mut last = frame_perf::snapshot();

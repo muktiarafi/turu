@@ -86,7 +86,8 @@ pub(crate) fn args(root: &Path, slot: u32, login: bool) -> Vec<OsString> {
     match (port, turu_bot::control_api::new_token()) {
         (Ok(address), Ok(token)) => {
             args.push(format!("--api={address}").into());
-            // SAFETY: before the engine's threads exist (`start_engine`, early).
+            // SAFETY: read with the startup flags, before the engine starts any thread of Turu's
+            // (`engine`); the process's other threads (Java's) don't read Turu's environment.
             unsafe { std::env::set_var("TURU_API_TOKEN", &token) };
             // For the slot that runs the web monitor, when no shell lists the slots.
             let file = turu_frontend::slots::SlotAddress {

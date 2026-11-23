@@ -43,18 +43,23 @@ before merging:
 |---|---|---|
 | Rebased on main | branch contains `main`, no merge commits | `git rebase origin/main` |
 | Submodules pushed | `ruffle` and `scripts` point at commits on their branches (`aqw`, `main`) | push the submodule first |
-| Format | `bot/` with `cargo fmt`, the UI windows with `max_width = 120` | see below |
+| Format | `bot/` and `android/` with `cargo fmt`, the UI windows with `max_width = 120` | see below |
 | Clippy | `turu_bot`, `turu_frontend`, `turu`, tests included; any warning fails, Ruffle's crates' too | see below |
+| Clippy (Android) | `turu_android` for arm64, with the crates it builds; any warning fails | see below (NDK, cargo-ndk, libclang: docs/ANDROID.md) |
 | Host SWF | `turu_host`: format, clippy, tests, and `bot/assets/turu.swf` built from `host/as3` | `cargo run -p turu_host -- --check` |
 | Test | engine tests, app and frontend tests, scripts type-check | see below |
 
 ```bash
 # Format: bot/ with cargo fmt; the UI windows with rustfmt (mod.rs formats them all; never cargo fmt -p turu)
-cargo fmt -p turu_bot
+cargo fmt -p turu_bot -p turu_android
 rustfmt --edition 2024 --config max_width=120 egui_ui/src/gui/turu/mod.rs
 
 # Clippy
 cargo clippy -p turu_bot -p turu_frontend -p turu --all-targets --no-default-features --features turu/software_video,turu/external_video,turu/lzma,turu/jpegxr,turu/fontconfig-dlopen -- -D warnings -A clippy::redundant_clone
+
+# Clippy for Android (ANDROID_NDK_HOME, and BINDGEN_EXTRA_CLANG_ARGS=--sysroot=<the NDK's sysroot>
+# as android/app/build.gradle.kts sets them)
+cargo ndk -t arm64-v8a clippy -p turu_android --all-targets -- -D warnings -A clippy::redundant_clone
 
 # Tests (CI runs the three crates' in one cargo-nextest command, much faster for the engine:
 # `cargo nextest run --profile ci -p turu_bot`, the same flags as below; .config/nextest.toml)
