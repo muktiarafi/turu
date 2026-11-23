@@ -41,6 +41,10 @@ const PARALLEL_DOWNLOADS: usize = 8;
 /// From this many files, one zip of the repository is fetched instead of each file.
 const ARCHIVE_THRESHOLD: usize = 25;
 
+/// The largest file read from a repository zip. Scripts are a few hundred KB at most; the zip's
+/// own idea of a file's size comes from whoever made it, so it isn't trusted.
+const MAX_ZIPPED_FILE: u64 = 16 * 1024 * 1024;
+
 /// The repository's TypeScript settings, downloaded next to the scripts for code editors.
 const TSCONFIG: &str = "tsconfig.json";
 
@@ -1236,9 +1240,17 @@ fn unzip(archive: &[u8], wanted: &HashSet<&str>) -> Result<HashMap<String, Vec<u
         }
         let path = path.to_owned();
         drop(name);
-        let mut bytes = Vec::with_capacity(file.size() as usize);
-        file.read_to_end(&mut bytes)
+        let mut bytes = Vec::new();
+        file.by_ref()
+            .take(MAX_ZIPPED_FILE + 1)
+            .read_to_end(&mut bytes)
             .map_err(|e| format!("bad zip: {e}"))?;
+        if bytes.len() as u64 > MAX_ZIPPED_FILE {
+            return Err(format!(
+                "bad zip: {path} is over {} MB",
+                MAX_ZIPPED_FILE >> 20
+            ));
+        }
         files.insert(path, bytes);
     }
     Ok(files)

@@ -4,7 +4,6 @@
 //! loop thread (where Ruffle's `Player` lives) and blocking until it answers.
 
 use std::collections::BTreeMap;
-use std::fmt;
 use std::time::Duration;
 
 /// An argument passed to one of `turu.swf`'s ExternalInterface callbacks.
@@ -73,24 +72,17 @@ impl From<serde_json::Value> for FlashArg {
 }
 
 /// Why a call into Flash failed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum HostError {
     /// No player is running (not started yet, or it was closed).
+    #[error("the game isn't running")]
     NoPlayer,
     /// The event loop is gone (the app is quitting).
+    #[error("the app is closing")]
     Closed,
     /// The player didn't answer in time.
+    #[error("the game didn't answer in time")]
     Timeout,
-}
-
-impl fmt::Display for HostError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoPlayer => write!(f, "the game isn't running"),
-            Self::Closed => write!(f, "the app is closing"),
-            Self::Timeout => write!(f, "the game didn't answer in time"),
-        }
-    }
 }
 
 /// Calls an ExternalInterface callback registered by `turu.swf`.

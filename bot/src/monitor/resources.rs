@@ -258,7 +258,8 @@ impl Probe {
             // A send right to the host port; kept for the probe's life rather than asked for
             // (and leaked) with every reading.
             #[cfg(target_os = "macos")]
-            #[allow(deprecated)]
+            #[allow(deprecated, reason = "libc points Mach calls to the mach2 crate; same call")]
+            // SAFETY: `mach_host_self` has no preconditions; it returns a port name, nothing to free.
             host: unsafe { libc::mach_host_self() },
         }
     }

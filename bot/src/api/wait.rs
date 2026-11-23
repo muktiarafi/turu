@@ -292,7 +292,9 @@ fn for_signal(
     timeout: i64,
     take: impl Fn(&mut crate::state::Signals) -> &mut bool,
 ) -> BotResult<bool> {
-    let deadline = Instant::now() + Duration::from_millis(timeout.max(0) as u64 * WAIT_SLEEP);
+    // The timeout is the script's: a huge one waits "forever" rather than overflowing.
+    let ms = (timeout.max(0) as u64).saturating_mul(WAIT_SLEEP);
+    let deadline = Instant::now() + Duration::from_millis(ms);
     loop {
         // Before the flag: a packet between the look and the sleep still wakes it.
         let mark = bot.control.mark();

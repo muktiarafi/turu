@@ -48,7 +48,10 @@ fn opt_i64<'de, D: Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Error> {
 }
 
 /// VibeSkua's `StringBoolConverter`: `"1"` / `"0"`.
-#[allow(clippy::trivially_copy_pass_by_ref)] // serde's `serialize_with` passes a reference.
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's `serialize_with` passes a reference"
+)]
 fn string_bool<S: Serializer>(value: &bool, s: S) -> Result<S::Ok, S::Error> {
     s.serialize_str(if *value { "1" } else { "0" })
 }

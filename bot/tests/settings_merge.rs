@@ -57,3 +57,33 @@ fn settings_a_newer_turu_wrote_are_kept() {
     let saved: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(saved["fromANewerTuru"], 42);
 }
+
+#[test]
+fn unreadable_options_are_kept_aside_and_saved_whole() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = Paths {
+        root: dir.path().to_owned(),
+    };
+    assert!(paths.load_options().is_none());
+    std::fs::write(paths.options_file(), "{ \"half a fi").unwrap();
+    assert!(paths.load_options().is_none());
+    let mut bad = paths.options_file().into_os_string();
+    bad.push(".bad");
+    assert_eq!(std::fs::read_to_string(&bad).unwrap(), "{ \"half a fi");
+
+    let options = turu_bot::options::BotOptions::default();
+    paths.save_options(&options).unwrap();
+    assert!(paths.load_options().is_some());
+    // Written beside it and renamed: nothing left over.
+    let leftovers = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter(|e| {
+            e.as_ref()
+                .unwrap()
+                .path()
+                .extension()
+                .is_some_and(|x| x == "tmp")
+        })
+        .count();
+    assert_eq!(leftovers, 0);
+}

@@ -6,7 +6,7 @@ pub enum BotError {
     #[error("script stopped")]
     Stopped,
     #[error("flash: {0}")]
-    Host(HostError),
+    Host(#[from] HostError),
     #[error("couldn't read game data from {path}: {message}")]
     Json { path: String, message: String },
     #[error("{0}")]
@@ -20,12 +20,6 @@ pub enum BotError {
     Script(String),
     #[error("{0}")]
     Other(String),
-}
-
-impl From<HostError> for BotError {
-    fn from(value: HostError) -> Self {
-        Self::Host(value)
-    }
 }
 
 pub type BotResult<T> = Result<T, BotError>;

@@ -177,7 +177,7 @@ impl BotEvent {
     }
 }
 
-type Handler = Box<dyn Fn(&BotEvent) + Send + Sync>;
+type Handler = Arc<dyn Fn(&BotEvent) + Send + Sync>;
 
 /// Work the bot must do on its own thread because it calls into Flash.
 #[derive(Debug)]
@@ -204,7 +204,9 @@ pub enum Work {
 }
 
 pub struct EventBus {
-    handlers: Mutex<Vec<(u64, Handler)>>,
+    /// Copied on write: [`EventBus::emit`] takes the list and runs it without the lock, so a
+    /// handler may subscribe, unsubscribe or emit, and emits don't wait for each other.
+    handlers: Mutex<Arc<Vec<(u64, Handler)>>>,
     next_id: AtomicU64,
     work_tx: Sender<Work>,
     pub(crate) work_rx: Receiver<Work>,
@@ -214,7 +216,7 @@ impl Default for EventBus {
     fn default() -> Self {
         let (work_tx, work_rx) = unbounded();
         Self {
-            handlers: Mutex::new(Vec::new()),
+            handlers: Mutex::default(),
             next_id: AtomicU64::new(1),
             work_tx,
             work_rx,
@@ -227,16 +229,20 @@ impl EventBus {
     /// Handlers run on whatever thread emitted the event and must not block.
     pub fn subscribe(&self, handler: impl Fn(&BotEvent) + Send + Sync + 'static) -> u64 {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        self.handlers.lock().push((id, Box::new(handler)));
+        let mut handlers = self.handlers.lock();
+        Arc::make_mut(&mut handlers).push((id, Arc::new(handler)));
         id
     }
 
+    /// Removes a handler. An emit already under way on another thread may still run it once.
     pub fn unsubscribe(&self, id: u64) {
-        self.handlers.lock().retain(|(i, _)| *i != id);
+        let mut handlers = self.handlers.lock();
+        Arc::make_mut(&mut handlers).retain(|(i, _)| *i != id);
     }
 
     pub fn emit(&self, event: BotEvent) {
-        for (_, handler) in self.handlers.lock().iter() {
+        let handlers = self.handlers.lock().clone();
+        for (_, handler) in handlers.iter() {
             handler(&event);
         }
     }
@@ -395,4 +401,31 @@ pub(crate) fn player_packet_sent(bot: &Arc<Bot>, packet: &str) {
 /// An extension response the client handled, from the player: as the host SWF's `pext`.
 pub(crate) fn player_extension_packet(bot: &Arc<Bot>, packet: Value) {
     crate::api::packets::on_extension_packet(bot, packet);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn a_handler_can_unsubscribe_itself_while_it_runs() {
+        let bus = Arc::new(EventBus::default());
+        let calls = Arc::new(AtomicUsize::new(0));
+        let id = Arc::new(AtomicU64::new(0));
+        let handler = {
+            let (bus, calls, id) = (Arc::downgrade(&bus), calls.clone(), id.clone());
+            move |_: &BotEvent| {
+                calls.fetch_add(1, Ordering::Relaxed);
+                if let Some(bus) = bus.upgrade() {
+                    // Held the bus's lock before: this deadlocked.
+                    bus.unsubscribe(id.load(Ordering::Relaxed));
+                }
+            }
+        };
+        id.store(bus.subscribe(handler), Ordering::Relaxed);
+        bus.emit(BotEvent::Logout);
+        bus.emit(BotEvent::Logout);
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+    }
 }

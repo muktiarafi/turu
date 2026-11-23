@@ -365,14 +365,13 @@ impl Paths {
     }
 
     pub fn load_settings(&self) -> Option<AppSettings> {
-        let text = fs::read_to_string(self.settings_file()).ok()?;
-        serde_json::from_str(&text).ok()
+        load_or_keep(&self.settings_file())
     }
 
     pub fn save_settings(&self, settings: &AppSettings) -> io::Result<()> {
         self.ensure()?;
         let text = serde_json::to_string_pretty(settings).map_err(io::Error::other)?;
-        fs::write(self.settings_file(), text)
+        write_atomically(&self.settings_file(), &text)
     }
 
     /// Saves the settings this process changed since `base` (what it last read or wrote) without
@@ -416,14 +415,47 @@ impl Paths {
     }
 
     pub fn load_options(&self) -> Option<BotOptions> {
-        let text = fs::read_to_string(self.options_file()).ok()?;
-        serde_json::from_str(&text).ok()
+        load_or_keep(&self.options_file())
     }
 
+    /// Written beside it and renamed over it: several processes save it (each tab's client),
+    /// and half a file would be read as no options at all.
     pub fn save_options(&self, options: &BotOptions) -> io::Result<()> {
         self.ensure()?;
         let text = serde_json::to_string_pretty(options).map_err(io::Error::other)?;
-        fs::write(self.options_file(), text)
+        write_atomically(&self.options_file(), &text)
+    }
+}
+
+/// The JSON in `path`, or `None` when there's none or it can't be read. A file that can't be
+/// read is logged and copied to `<path>.bad` first: the caller starts from defaults and its next
+/// save would otherwise overwrite what the user had.
+fn load_or_keep<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Option<T> {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return None,
+        Err(e) => {
+            tracing::warn!("Couldn't read {}: {e}; using the defaults.", path.display());
+            return None;
+        }
+    };
+    match serde_json::from_str(&text) {
+        Ok(value) => Some(value),
+        Err(e) => {
+            let mut bad = path.as_os_str().to_owned();
+            bad.push(".bad");
+            let kept = fs::write(&bad, &text).is_ok();
+            tracing::warn!(
+                "{} is unreadable ({e}); using the defaults.{}",
+                path.display(),
+                if kept {
+                    format!(" It was kept as {}.", PathBuf::from(&bad).display())
+                } else {
+                    String::new()
+                }
+            );
+            None
+        }
     }
 }
 

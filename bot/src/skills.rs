@@ -588,7 +588,10 @@ struct SkillModeJson {
     skills: Vec<SkillJson>,
 }
 
-#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes a reference
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes a reference"
+)]
 fn is_false(value: &bool) -> bool {
     !value
 }
@@ -640,7 +643,10 @@ struct RuleJson {
 }
 
 /// `50` rather than `50.0`, as System.Text.Json writes a whole float.
-#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes a reference
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes a reference"
+)]
 fn whole_or_float<S: Serializer>(value: &Option<f32>, s: S) -> Result<S::Ok, S::Error> {
     match value {
         Some(v) if v.fract() == 0.0 && v.abs() < 1e15 => s.serialize_i64(*v as i64),
