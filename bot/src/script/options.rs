@@ -56,6 +56,14 @@ pub struct OptionDecl {
     /// from, among the account's items. The value is still the name, typed or picked.
     #[serde(default)]
     pub item: Option<ItemPick>,
+    /// The script stops without a value (an empty text, an unpicked item): the window says so
+    /// and asks before saving it empty. Turu's own; VibeSkua's options have no such mark.
+    #[serde(default)]
+    pub required: bool,
+    /// For an item option: the enhancement the item should have ("Forge", "Absolution"); the
+    /// window lists the account's items that have it first.
+    #[serde(default)]
+    pub enhancement: String,
 }
 
 /// The items an item option (`option.item`) offers: the account's wearable items, all of them or

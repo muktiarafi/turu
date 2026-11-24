@@ -1350,23 +1350,36 @@ above, and why:
   spinner) only while there is one. ⋮: Reset to Real Gear, Check catalog updates, Full window
   (Manual SWF, and the catalog beside its item, are the window's). With the keyboard up the
   segments and the foot step aside.
-* **Script Options** (L5b, 2026-11-20), a page of the panel (440 dp) from the Script Loader's
-  Options, More > Scripts > Edit Script Options, the Scheduler's Script options (a queued entry's)
-  and whenever a script asks for its options (before a run, `bot.config.configure`). Under the bar
-  where they are saved ("A queued entry's options · Saved in options/Farm.cfg") and, while the
-  script waits, "The script waits for these options: Save or Cancel lets it go on" in amber. A
-  filter from ten options on. Each option: its label, description and the picked choice's
-  explanation, with a switch, a number box, a drop-down of the choices beside it, or a text box
-  under it; an item option's box takes a typed name and a drop-down of the account's items of that
-  kind ("Worn", "Bank"; what's typed narrows it), with a warning when the name isn't among them.
-  Groups under their titles; a group of many switches is a checklist: "3 of 40 picked", All and
-  None (for the rows shown), Hide owned (N), each row toggling as a whole with "Owned" or "In bank",
-  and an amber note with "Use select" when a choice elsewhere leaves it unused. Cancel and Save
-  at the foot; Back cancels. ⋮: Reset to defaults… (asked; saved only by Save), Full window. The
-  draft is the slot's, so Full window shows the same. Leaving the page (the scrim, another page,
-  another tab) drops the draft, unless the script waits for it: then the slot's own window shows
-  it again, and in a tab not on screen it waits in that tab's picture until the tab is shown. With
-  the keyboard up the filter steps aside unless it's the field typed in.
+* **Script Options** (L5b, 2026-11-20; critique pass 2026-11-24), a page of the panel (440 dp)
+  from the Script Loader's Options, More > Scripts > Edit Script Options, the Scheduler's Script
+  options (a queued entry's) and whenever a script asks for its options (before a run,
+  `bot.config.configure`). Under the bar "A queued entry's options" when it is one, and, while the
+  script waits, "The script waits for these options: Save or Cancel lets it go on" in amber; where
+  they're saved ("Saved in options/Farm.cfg") is in ⋮. Each option: its label, description and
+  editor (a switch, a number box, a drop-down of the choices beside it, or a text box under it).
+  A choice of six or fewer that the script explains (CoreAdvanced's merge mode) is a radio list,
+  each choice under its words ("AC only", "Merge mats": `_` as spaces, camelCase split) with its
+  explanation. Required options (`required`) sit under "Needed to run" with how many are empty;
+  Save with one empty asks ("The script stops without Helm: Forge, …": Keep editing, Save anyway),
+  and each empty one then says "Empty: the script stops without it". An item option's box takes a
+  typed name; its arrow opens the account's items of that kind (without the keyboard), those with
+  the enhancement asked for (`enhancement`) first under "With Forge", then "Other helms", each with
+  its enhancement and "Worn"/"Bank"; typing narrows them; "Use <item> (Forge)" when exactly one
+  fits and it's empty, "No helm with Healer here yet" when none does, and a warning when the name
+  isn't among the account's items. Groups under their titles; a group of many switches is a
+  checklist whose head stays in view while it scrolls: "3 of 40 picked", All and None (for the
+  rows shown), Hide owned (N), each row toggling as a whole with "Owned" or "In bank". While a
+  choice elsewhere leaves it unused, its rows are dimmed, the head says "Not used while set to
+  All", and an amber note above offers "Use Select"; ticking a row (or All) sets that choice too,
+  with a snackbar ("“Select the mode to use” set to Select") and Undo. A filter from ten options
+  on (a checklist counting as one, or a checklist of twenty), scrolling with them. Markdown's `**`
+  is dropped from descriptions. CoreBots' "Skip this window next time" is the foot's "Don't show
+  before each run" checkbox, beside Cancel and Save; Back cancels. ⋮: Reset to defaults… (asked;
+  saved only by Save), Full window. The draft is the slot's, so Full window shows the same.
+  Leaving the page (the scrim, another page, another tab) drops the draft, unless the script
+  waits for it: then the slot's own window shows it again, and in a tab not on screen it waits in
+  that tab's picture until the tab is shown. With the keyboard up the filter steps aside unless
+  it's the field typed in.
 * **Runtime** (L5b, 2026-11-20), a page of the panel (440 dp) from More > Combat and however the
   slot opens it, as segments with their counts (Drops 2, Quests 1, Boosts with how many are on);
   the bar says "Picking drops · Boosting" in green while either runs, whichever part shows. Drops:

@@ -25,6 +25,9 @@ use turu_bot::script::options::{ItemPick, Kind, MAIN, OptionDecl, ScriptOptions}
 
 /// A group of this many switches or more is a checklist.
 pub const CHECKLIST: usize = 8;
+/// CoreBots' "Skip this window next time" (`Core.skipOptions`): a native page shows it at the foot,
+/// as "Don't show before each run", rather than as the first option.
+pub const SKIP_OPTION: &str = "SkipOption";
 /// How often the account's items are taken from the gear cache again.
 const GEAR_READ: Duration = Duration::from_secs(1);
 
@@ -450,14 +453,50 @@ pub fn explanation(description: &str) -> String {
     tidy(text)
 }
 
-/// A description on one line's terms: tabs and runs of spaces as one space, each line trimmed.
+/// A description on one line's terms: tabs and runs of spaces as one space, each line trimmed,
+/// and markdown's bold marks (`**VERY**`) dropped, as nothing here draws them.
 pub fn tidy(text: &str) -> String {
+    let text = text.replace("**", "");
     text.lines()
         .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
         .collect::<Vec<_>>()
         .join("\n")
         .trim()
         .to_owned()
+}
+
+/// A choice's name as words: `_` as spaces ("Dragon_Pet" -> "Dragon Pet"), and a camelCase
+/// name split and capitalized ("all" -> "All", "mergeMats" -> "Merge mats", "acOnly" -> "AC only":
+/// a first word of two letters is an abbreviation).
+pub fn words(choice: &str) -> String {
+    if choice.contains(['_', ' ']) {
+        return choice.replace('_', " ");
+    }
+    let mut parts: Vec<String> = Vec::new();
+    let mut previous_lower = false;
+    for c in choice.chars() {
+        if c.is_uppercase() && previous_lower || parts.is_empty() {
+            parts.push(String::new());
+        }
+        previous_lower = c.is_lowercase() || c.is_ascii_digit();
+        if let Some(part) = parts.last_mut() {
+            part.push(c);
+        }
+    }
+    if parts.len() == 1 {
+        return capitalized(choice);
+    }
+    parts
+        .iter()
+        .enumerate()
+        .map(|(i, part)| match i {
+            0 if part.chars().count() <= 2 => part.to_uppercase(),
+            0 => capitalized(part),
+            _ if part.chars().all(|c| c.is_uppercase()) => part.clone(),
+            _ => part.to_lowercase(),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A default as the window's tooltip shows it (VibeSkua: "Default: True").
@@ -502,6 +541,12 @@ pub struct ScriptOptionsView {
     pub error: String,
     /// Logged in and the account's items are being read.
     pub reading_items: bool,
+    /// The labels of the required options left empty: Save asks first.
+    pub missing_required: Vec<String>,
+    /// CoreBots' "Skip this window next time" ([`SKIP_OPTION`]), shown at the foot instead of as a
+    /// row: its group (`skip_category`, "" when the script has none) and whether it's on.
+    pub skip_category: String,
+    pub skip_on: bool,
     pub groups: Vec<ScriptOptionGroupView>,
 }
 
@@ -521,10 +566,17 @@ pub struct ScriptOptionGroupView {
     pub hiding_owned: bool,
     /// "Used only when Mode is set to select. It's set to all now." ("" when it's used).
     pub unused_note: String,
-    /// The choice that makes it used, for the note's button ("Use select").
+    /// The choice that makes it used, for the note's button ("Use Select"): where it is, its
+    /// name and words, and the choice it's set to now (for an Undo).
     pub use_category: String,
     pub use_option: String,
     pub use_choice: String,
+    pub use_words: String,
+    pub use_now: String,
+    /// The words of the choice it's set to now ("All").
+    pub use_now_words: String,
+    /// The choice option's label ("Select the mode to use").
+    pub use_label: String,
     pub rows: Vec<ScriptOptionRowView>,
 }
 
@@ -539,10 +591,14 @@ pub struct ScriptOptionRowView {
     pub on: bool,
     pub number: i64,
     pub text: String,
-    /// A choice's names (`key`) and words (`_` as spaces).
+    /// A choice's names (`key`), words ([`words`]) and what each does.
     pub choices: Vec<ScriptOptionChoice>,
     /// What the picked choice does ("" without an explanation).
     pub explanation: String,
+    /// The script can't run without a value.
+    pub required: bool,
+    /// A heading shown above this row ("Needed to run" over the first of a run of required ones).
+    pub section: String,
     /// "Default: True".
     pub default_words: String,
     /// In a checklist: "Owned", "In bank" or "".
@@ -552,6 +608,10 @@ pub struct ScriptOptionRowView {
     pub item_noun: String,
     pub candidates: Vec<ScriptOptionItem>,
     pub missing: String,
+    /// The enhancement the item should have ("Absolution"; "" when the option names none).
+    pub enhancement: String,
+    /// The one candidate with that enhancement, offered while the name is empty ("" otherwise).
+    pub suggestion: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -560,6 +620,8 @@ pub struct ScriptOptionRowView {
 pub struct ScriptOptionChoice {
     pub key: String,
     pub words: String,
+    /// What it does, from the script's explanation option ("" without one).
+    pub explanation: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -569,6 +631,10 @@ pub struct ScriptOptionItem {
     pub name: String,
     /// "Worn", "Bank" or "".
     pub tag: String,
+    /// Its enhancement ("Forge"; "" when none).
+    pub enhancement: String,
+    /// It has the enhancement the option asks for: listed first.
+    pub fits: bool,
 }
 
 fn row_view(category: &Category, option: &OptionDecl, value: &Value, gear: &Gear) -> ScriptOptionRowView {
@@ -595,24 +661,41 @@ fn row_view(category: &Category, option: &OptionDecl, value: &Value, gear: &Gear
     } else {
         ""
     };
+    let wanted = option.enhancement.trim();
     let (item_noun, candidates, missing) = match option.item {
-        Some(pick) => (
-            noun(pick).0.to_owned(),
-            gear.file
+        Some(pick) => {
+            let mut items: Vec<ScriptOptionItem> = gear
+                .file
                 .map(|file| {
                     candidates(file, pick)
                         .into_iter()
-                        .map(|i| ScriptOptionItem {
-                            name: i.name.clone(),
-                            tag: place_tag(i).unwrap_or("").to_owned(),
+                        .map(|i| {
+                            let enhancement = item_enhancement(i);
+                            ScriptOptionItem {
+                                name: i.name.clone(),
+                                tag: place_tag(i).unwrap_or("").to_owned(),
+                                fits: !wanted.is_empty() && enhancement.eq_ignore_ascii_case(wanted),
+                                enhancement: enhancement.to_owned(),
+                            }
                         })
                         .collect()
                 })
-                .unwrap_or_default(),
-            missing_note(pick, &text, gear).unwrap_or_default(),
-        ),
+                .unwrap_or_default();
+            // Those with the enhancement asked for first; the order within each stays.
+            items.sort_by_key(|i| !i.fits);
+            (
+                noun(pick).0.to_owned(),
+                items,
+                missing_note(pick, &text, gear).unwrap_or_default(),
+            )
+        }
         None => (String::new(), Vec::new(), String::new()),
     };
+    let suggestion = match candidates.iter().filter(|i| i.fits).collect::<Vec<_>>()[..] {
+        [only] if text.trim().is_empty() => only.name.clone(),
+        _ => String::new(),
+    };
+    let explained = category.explanations.get(&option.name);
     ScriptOptionRowView {
         name: option.name.clone(),
         label: option.display_name.clone(),
@@ -626,16 +709,36 @@ fn row_view(category: &Category, option: &OptionDecl, value: &Value, gear: &Gear
             .iter()
             .map(|c| ScriptOptionChoice {
                 key: c.clone(),
-                words: c.replace('_', " "),
+                words: words(c),
+                explanation: explained.and_then(|texts| texts.get(c)).cloned().unwrap_or_default(),
             })
             .collect(),
         explanation,
+        required: option.required,
+        section: String::new(),
         default_words: format!("Default: {}", default_text(&option.default_value)),
         owned: owned.to_owned(),
         item_noun,
         candidates,
         missing,
+        enhancement: wanted.to_owned(),
+        suggestion,
     }
+}
+
+/// An item's enhancement by name ("Forge", a weapon's proc "Elysium"); "" when it has none.
+fn item_enhancement(item: &GearItem) -> &'static str {
+    if item.enhancement_pattern_id > 0 || item.proc_id > 0 {
+        turu_bot::loadouts::enhancement_name(item.enhancement_pattern_id, item.proc_id)
+    } else {
+        ""
+    }
+}
+
+/// A required option without a value: an empty text or item (a switch, number or choice always
+/// has one).
+fn empty(option: &OptionDecl, value: &Value) -> bool {
+    option.required && option.kind == Kind::Text && value.as_str().is_none_or(|t| t.trim().is_empty())
 }
 
 impl State {
@@ -660,6 +763,8 @@ impl State {
             self.error.clone().unwrap_or_default(),
         );
         let hide_owned = self.hide_owned.clone();
+        let mut missing_required = Vec::new();
+        let (mut skip_category, mut skip_on) = (String::new(), false);
         let draft = self.draft.clone();
         let gear = self.gear(bot);
         let reading_items = gear.file.is_none() && gear.reading;
@@ -667,10 +772,25 @@ impl State {
             let plan = Plan::of(draft);
             for category in &plan.categories {
                 let value_of = |name: &str| draft.get_in(&category.name, name).cloned().unwrap_or(Value::Null);
-                let mut rows: Vec<ScriptOptionRowView> = category
-                    .rows()
-                    .map(|o| row_view(category, o, &value_of(&o.name), &gear))
-                    .collect();
+                let mut rows: Vec<ScriptOptionRowView> = Vec::new();
+                let mut after_required = false;
+                for option in category.rows() {
+                    let value = value_of(&option.name);
+                    if option.name == SKIP_OPTION && option.kind == Kind::Bool && skip_category.is_empty() {
+                        skip_category = category.name.clone();
+                        skip_on = value.as_bool().unwrap_or(false);
+                        continue;
+                    }
+                    if empty(option, &value) {
+                        missing_required.push(option.display_name.clone());
+                    }
+                    let mut row = row_view(category, option, &value, &gear);
+                    if option.required && !after_required {
+                        row.section = "Needed to run".to_owned();
+                    }
+                    after_required = option.required;
+                    rows.push(row);
+                }
                 let picked = rows
                     .iter()
                     .filter(|r| r.kind == ScriptOptionKind::Switch && r.on)
@@ -681,31 +801,34 @@ impl State {
                 if hiding {
                     rows.retain(|r| r.owned.is_empty());
                 }
-                let (unused_note, use_category, use_option, use_choice) = match plan.links.get(&category.name) {
-                    Some(link) => {
-                        let now = draft
-                            .get_in(&link.category, &link.option)
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned();
-                        if now == link.choice {
-                            Default::default()
-                        } else {
-                            (
-                                format!(
-                                    "Used only when \u{201c}{}\u{201d} is set to {}. It's set to {} now.",
-                                    link.display_name,
-                                    link.choice.replace('_', " "),
-                                    now.replace('_', " ")
-                                ),
-                                link.category.clone(),
-                                link.option.clone(),
-                                link.choice.clone(),
-                            )
+                let (unused_note, use_category, use_option, use_choice, use_now, use_label) =
+                    match plan.links.get(&category.name) {
+                        Some(link) => {
+                            let now = draft
+                                .get_in(&link.category, &link.option)
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned();
+                            if now == link.choice {
+                                Default::default()
+                            } else {
+                                (
+                                    format!(
+                                        "Used only when \u{201c}{}\u{201d} is set to {}. It's set to {} now.",
+                                        link.display_name,
+                                        words(&link.choice),
+                                        words(&now)
+                                    ),
+                                    link.category.clone(),
+                                    link.option.clone(),
+                                    link.choice.clone(),
+                                    now,
+                                    link.display_name.clone(),
+                                )
+                            }
                         }
-                    }
-                    None => Default::default(),
-                };
+                        None => Default::default(),
+                    };
                 groups.push(ScriptOptionGroupView {
                     name: category.name.clone(),
                     title: if category.name == MAIN {
@@ -721,7 +844,11 @@ impl State {
                     unused_note,
                     use_category,
                     use_option,
+                    use_words: words(&use_choice),
                     use_choice,
+                    use_now_words: words(&use_now),
+                    use_now,
+                    use_label,
                     rows,
                 });
             }
@@ -734,6 +861,9 @@ impl State {
             waiting,
             error,
             reading_items,
+            missing_required,
+            skip_category,
+            skip_on,
             groups,
         }
     }
@@ -838,6 +968,17 @@ mod tests {
             "Mode: [select] only\nShould it buy?"
         );
         assert_eq!(plural("class"), "classes");
+        assert_eq!(tidy("these are **VERY** important"), "these are VERY important");
+    }
+
+    #[test]
+    fn choices_read_as_words() {
+        assert_eq!(words("all"), "All");
+        assert_eq!(words("acOnly"), "AC only");
+        assert_eq!(words("mergeMats"), "Merge mats");
+        assert_eq!(words("select"), "Select");
+        assert_eq!(words("Dragon_Pet"), "Dragon Pet");
+        assert_eq!(words("UseHP"), "Use HP");
     }
 
     /// Answers the few game calls a script makes, as `bot/tests/runtime.rs`'s fake does.

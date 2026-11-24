@@ -169,6 +169,18 @@ export default function main(): void {
   ```ts
   option.item("ForgeHelm", "Helm: Forge", "Your helm with the Forge enhancement", "helm"),
   ```
+
+  Two more fields are Turu's own (VibeSkua has neither): `enhancement` names the enhancement the
+  item should have ("Forge", "Absolution", a weapon's "Elysium"), and the window lists the
+  account's items with it first, offering the item when only one has it; `required: true` says
+  the script stops without a value, and the window marks the option and asks before saving it
+  empty:
+
+  ```ts
+  { ...option.item("ForgeHelm", "Helm: Forge", "Your Forge helm", "helm"), enhancement: "Forge", required: true },
+  ```
+- **Choice names** show as words: `_` as spaces, and camelCase split (`acOnly` as "AC only",
+  `mergeMats` as "Merge mats"); `bot.config.get` still returns the name.
 - **Option groups** (VibeSkua `MultiOptions`): pass them as the fourth argument of
   `defineScriptOptions`, keyed by the group's name. They show after the other options under that
   name (`_` as spaces) and are saved as `Group:Name=Value` lines. Read and write them with

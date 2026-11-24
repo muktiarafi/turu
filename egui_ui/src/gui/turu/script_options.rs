@@ -19,7 +19,7 @@ use super::theme::{ACCENT, EDGE, INSET, MUTED, SMALL_RADIUS, TEXT, WARNING};
 use super::widgets::{self, Kind as ButtonKind};
 use crate::models::script_options::{
     self as model, Category, Gear, Link, Plan, Request, State, candidates, default_text, matches, missing_note, noun,
-    place_tag, plural, tidy,
+    place_tag, plural, tidy, words,
 };
 use crate::models::tab_state::lock;
 use egui::text::{LayoutJob, TextWrapping};
@@ -377,7 +377,7 @@ fn labels(ui: &mut Ui, option: &OptionDecl, value: &Value, explanations: Option<
         .zip(value.as_str())
         .and_then(|(texts, picked)| texts.get(picked))
     {
-        let picked = value.as_str().unwrap_or_default().replace('_', " ");
+        let picked = words(value.as_str().unwrap_or_default());
         let mut job = LayoutJob::default();
         let size = widgets::small_label_size();
         job.append(
@@ -441,10 +441,10 @@ fn editor(
             ComboBox::from_id_salt(("script_option", category, &option.name))
                 .width(width - 8.0)
                 .height(320.0)
-                .selected_text(current.replace('_', " "))
+                .selected_text(words(current))
                 .show_ui(ui, |ui| {
                     for choice in &option.choices {
-                        let label = RichText::new(choice.replace('_', " "));
+                        let label = RichText::new(words(choice));
                         let row = ui.add_sized(
                             vec2(ui.available_width(), widgets::target(22.0, 40.0)),
                             egui::Button::selectable(choice == current, label),
@@ -669,11 +669,11 @@ fn checklist(
             .inner_margin(Margin::symmetric(10, 8))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                let choice = link.choice.replace('_', " ");
+                let choice = words(&link.choice);
                 let note = format!(
                     "Used only when \u{201c}{}\u{201d} is set to {choice}. It's set to {} now.",
                     link.display_name,
-                    now.replace('_', " ")
+                    words(now)
                 );
                 let button_width = 120.0;
                 let note = RichText::new(note).size(widgets::small_label_size()).color(WARNING);
@@ -791,7 +791,7 @@ fn checklist(
 
 /// The note's button: sets the linked choice ("Use select").
 fn use_choice(ui: &mut Ui, link: &Link, width: f32, edits: &mut Vec<(String, String, Value)>) {
-    let choice = link.choice.replace('_', " ");
+    let choice = words(&link.choice);
     let size = vec2(width, widgets::target(24.0, 40.0));
     if widgets::button(ui, &format!("Use {choice}"), ButtonKind::Normal, true, size, "")
         .on_hover_text(format!("Set {} to {choice}", link.display_name))

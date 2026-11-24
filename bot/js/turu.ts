@@ -988,6 +988,19 @@ export interface ScriptOption {
      * pick it from their wearable items of this slot (`"any"`: all of them), or type it.
      */
     item?: ScriptOptionItem;
+    /**
+     * The script can't run without a value (an empty text, an item not picked yet): the window
+     * says so and asks before saving it empty. Turu's own; VibeSkua has no such mark.
+     *
+     * @example
+     * { ...option.item("ForgeHelm", "Helm: Forge", "Your Forge helm", "helm"), required: true }
+     */
+    required?: boolean;
+    /**
+     * For an item option: the enhancement the item should have ("Forge", "Absolution", "Elysium").
+     * The window lists the account's items with it first, and offers the item when only one has it.
+     */
+    enhancement?: string;
 }
 
 /** The items an {@link option.item} offers: the account's wearable items of one slot, or all of them. */
