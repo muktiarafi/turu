@@ -3,15 +3,17 @@
 //! game's own target portrait shows the auras; this says whose they are and what just came off.
 //! Scroll of Enrage's two (Focus and Reckless) have a line of their own on top, with who cast them
 //! and the seconds each has left, or how long since they came off. Under it each caster's auras
-//! (you first, the boss's own last) with their stacks and a bar for the time left. It starts on
+//! (you first, the boss's own last) with their icons, stacks and a bar for the time left. It starts on
 //! the right; dragged elsewhere it stays there (`AppSettings::target_auras_pos`), and a
 //! double-click puts it back.
 
 use super::player_hud::{LINE, PAD, UNDER_PORTRAIT, bar, figure, movable, short, text};
-use super::theme::{CARD, DANGER, EDGE, INSET, MUTED, PANEL, SMALL_RADIUS, TEXT, WARNING};
+use super::theme::{CARD, DANGER, EDGE, INSET, MUTED, PANEL, SMALL_RADIUS, TEXT, TRACK, WARNING};
 use egui::{Align, Color32, Context, CornerRadius, FontId, Id, Painter, Pos2, Rect, Stroke, StrokeKind, pos2, vec2};
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
-use turu_bot::target_auras::{AuraView, CasterAuras, CasterKind, PinState, PinView, TargetView};
+use turu_bot::target_auras::{AuraIcon, AuraView, CasterAuras, CasterKind, PinState, PinView, TargetView};
 
 const WIDTH: f32 = 236.0;
 const HEADER: f32 = 20.0;
@@ -19,8 +21,11 @@ const HEADER: f32 = 20.0;
 const PIN_PAD: f32 = 6.0;
 const PIN_HEIGHT: f32 = 2.0 * LINE + 2.0 * PIN_PAD;
 const SECTION_GAP: f32 = 8.0;
-/// An aura: its name and stacks, then the bar of its time left.
-const CHIP: f32 = LINE + 4.0;
+/// An aura: its icon, name and stacks, then the bar of its time left.
+const CHIP: f32 = LINE + 5.0;
+/// The game's icon for an aura, drawn by the game ([`TargetAuras::icon`]) at twice this.
+const ICON: f32 = 16.0;
+const ICON_GAP: f32 = 4.0;
 const CHIP_GAP: f32 = 10.0;
 const DRAIN: f32 = 2.0;
 /// The lines of auras shown before "+N more" (fewer on a short screen).
@@ -40,6 +45,7 @@ pub fn show(ctx: &Context) {
     {
         return;
     }
+    drop_old_icons(ctx);
     let me = bot.state.lock().username.clone();
     let Some(view) = bot.target_auras.snapshot(me.as_deref(), Instant::now()) else {
         // A target can come between frames the UI would otherwise skip.
@@ -281,7 +287,8 @@ fn chip_width(painter: &Painter, aura: &AuraView) -> f32 {
     let stacks = stacks(aura).map_or(0.0, |s| {
         3.0 + painter.layout_no_wrap(s, FontId::monospace(11.0), MUTED).size().x
     });
-    (name + stacks).max(28.0)
+    let icon = if aura.icon.is_some() { ICON + ICON_GAP } else { 0.0 };
+    (icon + name + stacks).max(28.0)
 }
 
 /// "×10" for an aura of more than one stack.
@@ -291,8 +298,30 @@ fn stacks(aura: &AuraView) -> Option<String> {
 
 /// One aura: its name and stacks, a bar under it for the time it has left (none for one that
 /// doesn't run out).
-fn chip(painter: &Painter, x: f32, width: f32, top: f32, aura: &AuraView, kind: CasterKind) {
+fn chip(painter: &Painter, left: f32, width: f32, top: f32, aura: &AuraView, kind: CasterKind) {
     let color = if kind == CasterKind::Monster { MUTED } else { TEXT };
+    let mut x = left;
+    // Its icon, where the game has one; until it is drawn, an empty square of its size, so
+    // nothing moves when it comes.
+    if let Some(link) = &aura.icon {
+        let rect = Rect::from_min_size(pos2(x, top + (LINE - ICON) / 2.0), vec2(ICON, ICON));
+        match icon_texture(painter.ctx(), link) {
+            Some(texture) => {
+                let uv = Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0));
+                let tint = if kind == CasterKind::Monster {
+                    Color32::from_gray(170)
+                } else {
+                    Color32::WHITE
+                };
+                let _ = painter.image(texture.id(), rect, uv, tint);
+            }
+            None => {
+                painter.rect_filled(rect, CornerRadius::same(3), TRACK);
+            }
+        }
+        x += ICON + ICON_GAP;
+    }
+    let width = width - (x - left);
     let stacks = stacks(aura);
     let stacks_width = stacks.as_ref().map_or(0.0, |s| {
         3.0 + painter
@@ -316,9 +345,53 @@ fn chip(painter: &Painter, x: f32, width: f32, top: f32, aura: &AuraView, kind: 
     }
     if aura.left.is_some() {
         let (share, color) = drain(Some(aura));
-        bar(painter, x, x + width, top + LINE + DRAIN, DRAIN, share, color);
+        bar(painter, left, x + width, top + LINE + DRAIN + 1.0, DRAIN, share, color);
     }
 }
+
+const ICON_TEXTURES: &str = "turu_target_auras_icons";
+
+/// The egui texture of the icon `link` (or the game's stand-in for it), uploaded once per drawing.
+/// Kept by the drawing, not the name: an icon drawn twice in a frame whose drawing changes between
+/// the two (the stand-in replaced by the game's) must not free the texture the first one used.
+fn icon_texture(ctx: &Context, link: &str) -> Option<egui::TextureHandle> {
+    let icon = crate::turu::bot().target_auras.icon(link)?;
+    let id = Id::new(ICON_TEXTURES);
+    let key = Arc::as_ptr(&icon) as usize;
+    // Borrowed in place: `get_temp` would clone the whole map, and its drawings with it.
+    let known = ctx.data_mut(|d| {
+        d.get_temp_mut_or_default::<IconTextures>(id)
+            .0
+            .get(&key)
+            .map(|(_, t)| t.clone())
+    });
+    if known.is_some() {
+        return known;
+    }
+    let image = egui::ColorImage::from_rgba_unmultiplied([icon.size, icon.size], &icon.rgba);
+    let texture = ctx.load_texture(format!("aura icon {link}"), image, egui::TextureOptions::LINEAR);
+    ctx.data_mut(|d| {
+        d.get_temp_mut_or_default::<IconTextures>(id)
+            .0
+            .insert(key, (icon, texture.clone()));
+    });
+    Some(texture)
+}
+
+/// Frees the textures of drawings the bot no longer keeps (we hold the last reference), before the
+/// frame draws: egui frees a texture at the end of the frame its last handle goes, which must not
+/// be a frame that draws it.
+fn drop_old_icons(ctx: &Context) {
+    ctx.data_mut(|d| {
+        d.get_temp_mut_or_default::<IconTextures>(Id::new(ICON_TEXTURES))
+            .0
+            .retain(|_, (icon, _)| Arc::strong_count(icon) > 1);
+    });
+}
+
+/// The icons uploaded, by the address of the drawing each was made from (kept with it).
+#[derive(Clone, Default)]
+struct IconTextures(HashMap<usize, (Arc<AuraIcon>, egui::TextureHandle)>);
 
 /// How much of an aura's time is left and the bar's colour: yellow in its last seconds.
 fn drain(aura: Option<&AuraView>) -> (Option<f32>, Color32) {

@@ -1117,8 +1117,14 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
   Ns ago"), then each caster's auras (you first, the others by name, the boss's own last and in
   grey) with their stacks and a bar for the time left, yellow in its last 2 s; 9 lines of auras (4
   on a short screen) and "+N more". It starts on the right, can be dragged (saved,
-  `targetAurasPos`), and a double-click puts it back. The game's target portrait already shows the
-  auras' icons; the HUD shows none (they are the game's symbols).
+  `targetAurasPos`), and a double-click puts it back. Each aura has its icon as the game draws it:
+  turu.swf's `GetAuraIcon` takes the packet's `icon` as the game's aura HUD does (the last of a
+  comma list, `i,i,i,i,i,LR2` is `LR2`), finds its class where the game's `world.getClass` looks
+  but without its side effects (that one remembers a miss for the room and says so in chat), and
+  draws its first frame 32 px square, sent as Base64 ARGB. The timer asks for an icon the panel
+  shows, once per name; one the game can't find yet (its class file not loaded) shows the game's
+  own stand-in, `isp2`, and is tried again 3 times, 5 s apart, and again in the next room. Until
+  an icon is drawn its place is an empty square, so the line doesn't move when it comes.
   It follows the packets: `ct`'s `a` list (`aura+`/`aura++` with the caster in `cInf`,
   `aura-`/`aura--` by name, `aura*` a boss's cleanse, also sent alone), `ct`'s `m` (a monster's
   death clears it), `mtls`, `moveToArea`'s `uoBranch` (players' `entID`s), and the `gar` you send

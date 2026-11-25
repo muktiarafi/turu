@@ -311,17 +311,13 @@ impl Stream {
 
 const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-/// A compressed server packet: `Z` and zlib data in Base64. Read leniently as the game does
-/// (unknown characters count as zero, padding is optional); `None` when it isn't one.
-pub fn unpack(message: &str) -> Option<String> {
-    let body = message.strip_prefix('Z')?;
-    let body = body.trim_end_matches('=');
-    if body.len() * 3 / 4 < 8 || body.chars().any(|c| c as u32 > 255) {
-        return None;
-    }
-    let mut bytes = Vec::with_capacity(body.len() * 3 / 4);
+/// `text` from Base64, read leniently as the game does: unknown characters count as zero, padding
+/// is optional.
+pub(crate) fn base64(text: &str) -> Vec<u8> {
+    let text = text.trim_end_matches('=');
+    let mut bytes = Vec::with_capacity(text.len() * 3 / 4);
     let (mut bits, mut count) = (0u32, 0u32);
-    for b in body.bytes() {
+    for b in text.bytes() {
         let value = BASE64.iter().position(|&c| c == b).unwrap_or(0) as u32;
         bits = (bits << 6) | value;
         count += 6;
@@ -330,6 +326,18 @@ pub fn unpack(message: &str) -> Option<String> {
             bytes.push((bits >> count) as u8);
         }
     }
+    bytes
+}
+
+/// A compressed server packet: `Z` and zlib data in Base64. Read leniently as the game does
+/// (unknown characters count as zero, padding is optional); `None` when it isn't one.
+pub fn unpack(message: &str) -> Option<String> {
+    let body = message.strip_prefix('Z')?;
+    let body = body.trim_end_matches('=');
+    if body.len() * 3 / 4 < 8 || body.chars().any(|c| c as u32 > 255) {
+        return None;
+    }
+    let bytes = base64(body);
     let mut inflated = Vec::new();
     ZlibDecoder::new(&bytes[..])
         .take(MAX_INFLATED + 1)

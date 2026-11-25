@@ -25,6 +25,7 @@ use crate::models::Aura;
 use parking_lot::Mutex;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -98,6 +99,8 @@ struct Live {
     since: Instant,
     /// When it was first put on, to keep its place among the others.
     order: u64,
+    /// Its icon's name in the game ([`icon_link`]).
+    icon: Option<String>,
 }
 
 impl Live {
@@ -209,6 +212,8 @@ pub struct AuraView {
     pub duration: Option<f32>,
     /// Seconds left.
     pub left: Option<f32>,
+    /// Its icon's name in the game, for [`TargetAuras::icon`].
+    pub icon: Option<String>,
 }
 
 impl AuraView {
@@ -221,13 +226,44 @@ impl AuraView {
             stacks: aura.stacks,
             duration: left.map(|_| aura.duration as f32),
             left,
+            icon: aura.icon.clone(),
         }
     }
 }
 
+/// An aura's icon as the game draws it: `size` pixels square, RGBA (not premultiplied).
+#[derive(Debug, PartialEq, Eq)]
+pub struct AuraIcon {
+    pub size: usize,
+    pub rgba: Vec<u8>,
+}
+
+#[derive(Debug)]
+enum IconState {
+    /// Shown on the HUD, not drawn yet.
+    Wanted,
+    Ready(Arc<AuraIcon>),
+    /// The game couldn't draw it (its class file not loaded yet): tried again a few times.
+    Missing {
+        at: Instant,
+        tries: u8,
+    },
+}
+
+/// The icons' size in pixels: 16 points on a screen of two pixels a point.
+const ICON_PX: u32 = 32;
+/// The icon the game's aura HUD shows for one it can't find.
+pub const FALLBACK_ICON: &str = "isp2";
+const ICON_TRIES: u8 = 3;
+const ICON_RETRY: Duration = Duration::from_secs(5);
+/// Icons drawn per read of the game, so one read stays short.
+const ICONS_PER_READ: usize = 8;
+
 #[derive(Debug, Default)]
 pub struct TargetAuras {
     table: Mutex<Table>,
+    /// By the game's icon name; kept across rooms.
+    icons: Mutex<HashMap<String, IconState>>,
     /// Following the packets (the HUD shown). Off, the handlers return at this check.
     active: AtomicBool,
 }
@@ -252,6 +288,13 @@ impl TargetAuras {
     pub fn on_room(&self, branch: &[Value]) {
         if !self.is_active() {
             return;
+        }
+        // The game forgets the classes it missed with each room: the icons it couldn't draw may
+        // load now.
+        for state in self.icons.lock().values_mut() {
+            if matches!(state, IconState::Missing { .. }) {
+                *state = IconState::Wanted;
+            }
         }
         let mut table = self.table.lock();
         *table = Table::default();
@@ -307,6 +350,7 @@ impl TargetAuras {
                             continue;
                         };
                         let stacks = num(aura.get("stk")).unwrap_or(1).max(1);
+                        let icon = aura.get("icon").and_then(Value::as_str).and_then(icon_link);
                         let duration = float(aura.get("dur")).unwrap_or(0.0);
                         let key = name.to_lowercase();
                         monster.gone.remove(&key);
@@ -320,6 +364,9 @@ impl TargetAuras {
                                 live.stacks = stacks;
                                 live.duration = duration;
                                 live.since = now;
+                                if icon.is_some() {
+                                    live.icon = icon;
+                                }
                             }
                             None => {
                                 table.next_order += 1;
@@ -330,6 +377,7 @@ impl TargetAuras {
                                     duration,
                                     since: now,
                                     order: table.next_order,
+                                    icon,
                                 });
                             }
                         }
@@ -402,14 +450,83 @@ impl TargetAuras {
         if !self.is_active() {
             return false;
         }
+        if !self.icons_due(Instant::now()).is_empty() {
+            return true;
+        }
         let table = self.table.lock();
         let target = table.target.and_then(|id| table.monsters.get(&id));
         !table.pending.is_empty() || target.is_some_and(|m| m.name.is_empty() || !m.seeded)
     }
 
+    /// The icon named `link` for the HUD: the game's drawing of it once the timer has it (asked
+    /// for here the first time), the game's own stand-in ([`FALLBACK_ICON`]) while the game can't
+    /// find it, `None` until then.
+    pub fn icon(&self, link: &str) -> Option<Arc<AuraIcon>> {
+        let mut icons = self.icons.lock();
+        match icons.get(link) {
+            Some(IconState::Ready(icon)) => Some(icon.clone()),
+            Some(IconState::Wanted) => None,
+            Some(IconState::Missing { .. }) if link != FALLBACK_ICON => {
+                drop(icons);
+                self.icon(FALLBACK_ICON)
+            }
+            Some(IconState::Missing { .. }) => None,
+            None => {
+                icons.insert(link.to_owned(), IconState::Wanted);
+                None
+            }
+        }
+    }
+
+    /// The icons to draw now: wanted ones, and missing ones due another try.
+    fn icons_due(&self, now: Instant) -> Vec<String> {
+        self.icons
+            .lock()
+            .iter()
+            .filter(|(_, state)| match state {
+                IconState::Wanted => true,
+                IconState::Missing { at, tries } => *tries < ICON_TRIES && *at + ICON_RETRY <= now,
+                IconState::Ready(_) => false,
+            })
+            .map(|(link, _)| link.clone())
+            .take(ICONS_PER_READ)
+            .collect()
+    }
+
+    /// Has turu.swf draw the icons due (`GetAuraIcon`). A host without the call (an older
+    /// turu.swf) leaves them missing for good.
+    fn draw_icons(&self, bot: &Bot) {
+        let now = Instant::now();
+        for link in self.icons_due(now) {
+            let answer = bot
+                .flash
+                .call("GetAuraIcon", vec![link.as_str().into(), ICON_PX.into()]);
+            let mut icons = self.icons.lock();
+            let tries = match icons.get(&link) {
+                Some(IconState::Missing { tries, .. }) => *tries,
+                _ => 0,
+            };
+            let state = match answer {
+                Ok(raw) => match parse_icon(&raw) {
+                    Some(icon) => IconState::Ready(Arc::new(icon)),
+                    None => IconState::Missing {
+                        at: now,
+                        tries: tries + 1,
+                    },
+                },
+                Err(_) => IconState::Missing {
+                    at: now,
+                    tries: ICON_TRIES,
+                },
+            };
+            icons.insert(link, state);
+        }
+    }
+
     /// Reads what the packets left unknown (Flash calls: never from the UI thread or a packet
     /// handler): the room's players' `entID`s, the monsters' names, your target's auras once.
     pub fn refresh(&self, bot: &Bot) -> BotResult<()> {
+        self.draw_icons(bot);
         let (want_players, target) = {
             let table = self.table.lock();
             let target = table.target.filter(|id| {
@@ -482,6 +599,7 @@ impl TargetAuras {
                         duration,
                         since,
                         order: table.next_order,
+                        icon: icon_link(&aura.icon),
                     });
                 }
             }
@@ -634,6 +752,33 @@ fn update_monster(table: &mut Table, id: i64, fields: &Map<String, Value>) {
     if let Some(max) = num(fields.get("intHPMax")) {
         monster.max_hp = max;
     }
+}
+
+/// An icon's name in the game as its aura HUD takes it: the last of a comma list
+/// (`i,i,i,i,i,LR2` is `LR2`); `None` when empty.
+fn icon_link(icon: &str) -> Option<String> {
+    let link = icon.rsplit(',').next().unwrap_or_default().trim();
+    (!link.is_empty() && link != "undefined" && link != "null").then(|| link.to_owned())
+}
+
+/// `GetAuraIcon`'s answer, `"<size>:<Base64 of ARGB pixels>"`, as RGBA; `None` when it's empty,
+/// the wrong length, or wholly transparent (nothing was drawn).
+fn parse_icon(raw: &str) -> Option<AuraIcon> {
+    let (size, pixels) = raw.trim().trim_matches('"').split_once(':')?;
+    let size: usize = size.parse().ok().filter(|s| (1..=128).contains(s))?;
+    let argb = crate::capture::base64(pixels);
+    if argb.len() != size * size * 4 {
+        return None;
+    }
+    let (pixels, _) = argb.as_chunks::<4>();
+    if pixels.iter().all(|[a, ..]| *a == 0) {
+        return None;
+    }
+    let rgba = pixels
+        .iter()
+        .flat_map(|&[a, r, g, b]| [r, g, b, a])
+        .collect();
+    Some(AuraIcon { size, rgba })
 }
 
 /// What a caster whose name isn't known is called.
@@ -913,6 +1058,25 @@ mod tests {
         let view = hud.snapshot(None, Instant::now()).unwrap();
         assert_eq!(view.monster, "Ultra Boss");
         assert_eq!(view.casters[0].name, "Nightjar");
+    }
+
+    #[test]
+    fn icons_are_named_and_read_as_the_game_does() {
+        assert_eq!(icon_link("i,i,i,i,i,LR2").as_deref(), Some("LR2"));
+        assert_eq!(icon_link("iwd1,ied1").as_deref(), Some("ied1"));
+        assert_eq!(icon_link("apal3").as_deref(), Some("apal3"));
+        assert_eq!(icon_link(""), None);
+        // Two by two pixels, opaque red, as ARGB.
+        let icon = parse_icon("\"2://8AAP//AAD//wAA//8AAA==\"").unwrap();
+        assert_eq!(icon.size, 2);
+        assert_eq!(&icon.rgba[..4], [255, 0, 0, 255]);
+        assert_eq!(parse_icon(""), None);
+        assert_eq!(
+            parse_icon("3://8AAP//AAD//wAA//8AAA=="),
+            None,
+            "the wrong length"
+        );
+        assert_eq!(parse_icon("1:AAAAAA=="), None, "nothing drawn");
     }
 
     #[test]

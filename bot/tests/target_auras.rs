@@ -37,6 +37,9 @@ impl FlashHost for Game {
             ("getMonsters", _) => r#"[{"MonID": 7, "MonMapID": 1, "strMonName": "Ultra Boss",
                 "intHP": 15000000, "intHPMax": 22222222, "strFrame": "Boss", "intState": 2}]"#
                 .into(),
+            // Two by two pixels, opaque red (ARGB); a class not loaded yet draws nothing.
+            ("GetAuraIcon", "LR2" | "isp2") => "\"2://8AAP//AAD//wAA//8AAA==\"".into(),
+            ("GetAuraIcon", _) => "\"\"".into(),
             ("GetMonsterAuraByID", "1") => format!(
                 r#"[{{"nam": "Decay", "dur": 30, "ts": {}}},
                     {{"nam": "Run Out", "dur": 5, "ts": {}}},
@@ -202,4 +205,46 @@ fn a_read_names_what_the_packets_dont() {
         .filter(|c| c.starts_with("GetMonsterAuraByID"))
         .count();
     assert_eq!(reads, 1, "the earlier auras are read once");
+}
+
+#[test]
+fn icons_are_drawn_by_the_game_once_and_stand_in_when_missing() {
+    let (bot, game) = bot();
+    send(&bot, "%xt%zm%gar%1%177%aa>m:1%wvz%");
+    receive(
+        &bot,
+        r#"{"t":"xt","b":{"r":-1,"o":{"cmd":"ct","a":[
+            {"cmd":"aura+","tInf":"m:1","cInf":"p:99999","auras":[{"nam":"Seared","dur":12,"t":"s","stk":10,"icon":"i,i,i,i,i,LR2"}]},
+            {"cmd":"aura+","tInf":"m:1","cInf":"p:99999","auras":[{"nam":"Commandment","dur":10,"t":"s","icon":"apal1"}]}]}}}"#,
+    );
+    let view = view_when(&bot, |v| v.as_ref().is_some_and(|v| !v.casters.is_empty())).unwrap();
+    let links: Vec<Option<&str>> = view.casters[0]
+        .auras
+        .iter()
+        .map(|a| a.icon.as_deref())
+        .collect();
+    assert_eq!(links, [Some("LR2"), Some("apal1")]);
+
+    // The panel asks; the timer has the game draw them (never the UI thread).
+    assert_eq!(bot.target_auras.icon("LR2"), None);
+    assert_eq!(bot.target_auras.icon("apal1"), None);
+    bot.target_auras.refresh(&bot).unwrap();
+    let drawn = bot.target_auras.icon("LR2").unwrap();
+    assert_eq!((drawn.size, &drawn.rgba[..4]), (2, &[255u8, 0, 0, 255][..]));
+    // apal1's class isn't loaded: the game's stand-in, once it is drawn too.
+    assert_eq!(bot.target_auras.icon("apal1"), None);
+    bot.target_auras.refresh(&bot).unwrap();
+    assert!(bot.target_auras.icon("apal1").is_some());
+
+    let draws = |name: &str| {
+        game.calls
+            .lock()
+            .iter()
+            .filter(|c| *c == &format!("GetAuraIcon {name}"))
+            .count()
+    };
+    assert_eq!(draws("LR2"), 1, "drawn once");
+    bot.target_auras.refresh(&bot).unwrap();
+    assert_eq!(draws("LR2"), 1);
+    assert_eq!(draws("apal1"), 1, "tried again only after a while");
 }
