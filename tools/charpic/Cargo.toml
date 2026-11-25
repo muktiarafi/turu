@@ -1,0 +1,26 @@
+[package]
+name = "turu_charpic"
+description = "Turu: an AQW character's Profile Pic, made by the character page's own SWF on Turu's Ruffle"
+authors.workspace = true
+edition.workspace = true
+license = "GPL-3.0-or-later"
+version.workspace = true
+publish = false
+
+[[bin]]
+name = "charpic"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+base64 = "0.22.1"
+image = { workspace = true, features = ["png"] }
+reqwest = { workspace = true, features = ["native-tls"] }
+ruffle_core = { path = "../../ruffle/core", features = ["default_compatibility_rules"] }
+ruffle_frontend_utils = { path = "../../ruffle/frontend-utils", features = ["navigator"] }
+ruffle_render_wgpu = { path = "../../ruffle/render/wgpu" }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+url = { workspace = true }

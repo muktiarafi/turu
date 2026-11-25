@@ -7664,6 +7664,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "turu_charpic"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "image",
+ "reqwest",
+ "ruffle_core",
+ "ruffle_frontend_utils",
+ "ruffle_render_wgpu",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "turu_egui"
 version = "0.4.0"
 dependencies = [
