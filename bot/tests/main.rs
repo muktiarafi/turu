@@ -46,6 +46,7 @@ mod settings_merge;
 mod skill_sets;
 mod spammer_interceptor;
 mod stats_rates;
+mod target_auras;
 
 #[test]
 fn every_test_file_is_a_module() {

@@ -1109,6 +1109,29 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
   one process; Turu's tabs are processes of their own (Android's slots, a desktop shell's
   clients) and an update closes them all, so Download & install (and Download & restart) wait
   while any other tab runs a script or Auto, naming it, as they wait for this tab's script. The
+- **Target Auras** (2026-11-25, Turu's own: VibeSkua has none; `turu_bot::target_auras`,
+  `egui_ui/src/gui/turu/target_auras.rs`): Combat > Target Auras (also Options > Application, and
+  the ToggleTargetAuras hotkey) shows the auras on the monster you last attacked and **who put
+  each one on**, for party fights (Ultras): its name and HP, then an "Enrage" line (Scroll of
+  Enrage's Focus and Reckless: who cast them and the seconds each has left, or "Down"/"Cleansed
+  Ns ago"), then each caster's auras (you first, the others by name, the boss's own last and in
+  grey) with their stacks and a bar for the time left, yellow in its last 2 s; 9 lines of auras (4
+  on a short screen) and "+N more". It starts on the right, can be dragged (saved,
+  `targetAurasPos`), and a double-click puts it back. The game's target portrait already shows the
+  auras' icons; the HUD shows none (they are the game's symbols).
+  It follows the packets: `ct`'s `a` list (`aura+`/`aura++` with the caster in `cInf`,
+  `aura-`/`aura--` by name, `aura*` a boss's cleanse, also sent alone), `ct`'s `m` (a monster's
+  death clears it), `mtls`, `moveToArea`'s `uoBranch` (players' `entID`s), and the `gar` you send
+  (your target). The server keeps one aura of a name per monster, so a second caster's `aura+`
+  takes it over and the HUD names the latest. It sends no time stamp: the time left counts from
+  the packet, and an aura of 3600 s or more (boss mechanics send 7200) has no countdown; a timed one
+  whose time ran out goes even if no `aura-` came. The game is read (at most once a second) only for
+  a caster the room's `uoBranch` didn't name, the monster's name, and once per target the auras it
+  had before the HUD saw it (shown under "Unknown"). Checked against a capture of an Ultra fight
+  with four players and of a room join (2026-11-25): `uoBranch` carries each player's `entID` and
+  `strUsername`, so the room's casters need no read; an arrival's JSON `uotls` wasn't seen, so a
+  player who came later is named by a read if it lacks `entID`. Hidden in Grid View and Headless
+  Mode; not in Turu Mas.
   shell's tab list says only "busy", so Auto counts in other tabs. On Android two tabs can't
   download the update at once either (a lock in `jobs/`): the second is told another tab is.
 - **Game Options asks before Private Rooms goes off, in CoreBots' words** (2026-11-22,

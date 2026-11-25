@@ -46,6 +46,7 @@ pub mod spammer;
 pub mod startup;
 pub mod state;
 pub mod stats;
+pub mod target_auras;
 #[doc(hidden)]
 pub mod testing;
 pub mod updates;
@@ -133,6 +134,8 @@ pub struct Bot {
     pub notifications: notifications::Feed,
     /// The Player HUD's HP and MP of the players in your room.
     pub vitals: vitals::Vitals,
+    /// The Target Auras HUD's auras on your target and who cast them.
+    pub target_auras: target_auras::TargetAuras,
     pub paths: paths::Paths,
 }
 
@@ -174,6 +177,7 @@ impl Bot {
             army: api::army::ArmyLocks::default(),
             notifications: notifications::Feed::default(),
             vitals: vitals::Vitals::default(),
+            target_auras: target_auras::TargetAuras::default(),
             paths,
         });
         background::start(&bot);

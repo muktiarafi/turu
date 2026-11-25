@@ -257,6 +257,13 @@ pub static ACTIONS: &[Action] = &[
         Run::Own,
     ),
     action(
+        "ToggleTargetAuras",
+        "Target Auras",
+        "Shows or hides the auras on the monster you attack, and who cast them, over the game.",
+        Display,
+        Run::Own,
+    ),
+    action(
         "ToggleSkipCutscenes",
         "Skip Cutscenes",
         "Skips cutscenes automatically.",
@@ -1253,6 +1260,11 @@ fn run_own(bot: &Arc<Bot>, action: &Action) -> Needs {
         "TogglePlayerHud" => {
             let on = !bot.settings.read().show_player_hud;
             turu_bot::vitals::set_shown(bot, on);
+            bot.log(format!("[HotKeys] {} {}", action.title, on_off(on)));
+        }
+        "ToggleTargetAuras" => {
+            let on = !bot.settings.read().show_target_auras;
+            turu_bot::target_auras::set_shown(bot, on);
             bot.log(format!("[HotKeys] {} {}", action.title, on_off(on)));
         }
         "StopScript" => {

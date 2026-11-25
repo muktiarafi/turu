@@ -87,7 +87,7 @@ pub fn auras(bot: &Bot, subject: Subject) -> BotResult<Vec<Aura>> {
 }
 
 /// VibeSkua `GetMonsterAura(name | id)` (an ID is the monster's map ID).
-fn monster_auras(bot: &Bot, monster: NameOrId) -> BotResult<Vec<Aura>> {
+pub(crate) fn monster_auras(bot: &Bot, monster: NameOrId) -> BotResult<Vec<Aura>> {
     let raw = match monster {
         NameOrId::Name(name) => bot.flash.call("GetMonsterAuraByName", vec![name.into()])?,
         NameOrId::Id(id) => bot.flash.call("GetMonsterAuraByID", vec![id.into()])?,

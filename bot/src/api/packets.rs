@@ -65,6 +65,15 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
             } else if bot.vitals.is_active() {
                 bot.vitals.clear();
             }
+            // The Target Auras HUD: a new room, its players' IDs (the auras name their casters so).
+            if bot.target_auras.is_active() {
+                let branch: Vec<Value> = match data.get("uoBranch") {
+                    Some(Value::Array(players)) => players.clone(),
+                    Some(Value::Object(players)) => players.values().cloned().collect(),
+                    _ => Vec::new(),
+                };
+                bot.target_auras.on_room(&branch);
+            }
             bot.events.emit(BotEvent::MapChanged { map });
         }
         "ct" => on_combat_tick(bot, data),
@@ -77,6 +86,32 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
                 )
             {
                 bot.vitals.on_object(name, fields);
+            }
+            if bot.target_auras.is_active()
+                && let (Some(name), Some(fields)) = (
+                    data.get("unm").and_then(Value::as_str),
+                    data.get("o").and_then(Value::as_object),
+                )
+            {
+                bot.target_auras.on_player(name, fields);
+            }
+        }
+        // A monster's HP and max, its respawn (the Target Auras HUD).
+        "mtls" => {
+            if bot.target_auras.is_active()
+                && let (Some(id), Some(fields)) = (
+                    num(data.get("id")),
+                    data.get("o").and_then(Value::as_object),
+                )
+            {
+                bot.target_auras.on_monster(id, fields);
+            }
+        }
+        // An aura change sent alone (`aura*`: a boss's cleanse), not in a `ct`.
+        "aura+" | "aura++" | "aura-" | "aura--" | "aura*" => {
+            if bot.target_auras.is_active() {
+                bot.target_auras
+                    .on_auras(std::slice::from_ref(data), std::time::Instant::now());
             }
         }
         "sellItem" => {
@@ -234,6 +269,14 @@ fn on_combat_tick(bot: &Arc<Bot>, data: &Value) {
     {
         bot.vitals.on_combat(players);
     }
+    if bot.target_auras.is_active() {
+        if let Some(auras) = data.get("a").and_then(Value::as_array) {
+            bot.target_auras.on_auras(auras, std::time::Instant::now());
+        }
+        if let Some(monsters) = data.get("m").and_then(Value::as_object) {
+            bot.target_auras.on_monsters(monsters);
+        }
+    }
     let username = bot.state.lock().username.clone();
     let me = username.and_then(|name| {
         let players = data.get("p")?.as_object()?;
@@ -379,6 +422,13 @@ pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
             bot.state.lock().intentional_logout = true;
             crate::api::servers::cancel_relogin(bot);
             crate::script::stop(bot);
+        }
+        // An attack you sent (`gar`, room, action ID, `a1>m:1,...`): the Target Auras HUD follows
+        // the monster it hits.
+        "gar" => {
+            if bot.target_auras.is_active() {
+                bot.target_auras.on_attack(part(5));
+            }
         }
         "moveToCell" => {
             // The server tells the others, not you: the Player HUD learns your cell here.

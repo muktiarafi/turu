@@ -177,6 +177,12 @@ pub fn entries() -> Vec<Entry> {
         "A small panel over the game with the HP and MP of everyone in your cell, you first. Also in Combat > Player HUD",
         Field::Bool(|s| &mut s.show_player_hud)
     ));
+    entries.push(entry!(
+        General,
+        "Target Auras",
+        "A small panel over the game with the auras on the monster you attack, who cast each one and the time it has left. Also in Combat > Target Auras",
+        Field::Bool(|s| &mut s.show_target_auras)
+    ));
     if platform.frame_pacing().is_some() {
         entries.push(entry!(
             General,

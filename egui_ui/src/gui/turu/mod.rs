@@ -48,6 +48,7 @@ mod spammer;
 mod stats;
 mod tab_limit;
 mod tab_strip;
+mod target_auras;
 pub mod theme;
 pub use logs::answer_crash_upload_question;
 mod widgets;
@@ -347,6 +348,7 @@ impl TuruUi {
         self.ensure_theme(ctx);
         grid_overlay::show(ctx);
         player_hud::show(ctx);
+        target_auras::show(ctx);
         // Army Control is one per process, open while its egui window is (a Full window stays).
         let army_open = self.army_open;
         let tab = self.active();

@@ -169,6 +169,7 @@ fn timer(weak: Weak<Bot>) {
     let mut last_game_check = Instant::now();
     let mut last_gameplay = Instant::now();
     let mut last_vitals = Instant::now();
+    let mut last_target_auras = Instant::now();
     let mut load = LoadWatch::default();
     // The events when the game and the loading screen were last checked.
     let mut game_mark = None;
@@ -219,6 +220,9 @@ fn timer(weak: Weak<Bot>) {
         };
         if !in_game && was_in_game && bot.vitals.is_active() {
             bot.vitals.clear();
+        }
+        if !in_game && was_in_game && bot.target_auras.is_active() {
+            bot.target_auras.clear();
         }
         if !in_game
             && (was_in_game || bot.scripts.is_running())
@@ -305,6 +309,27 @@ fn timer(weak: Weak<Bot>) {
                 bot.logs
                     .debug
                     .push(format!("Player HUD: reading the room failed: {e}"));
+            }
+        }
+        // The Target Auras HUD, while it is shown and you are in game: packets keep it, the game
+        // is read for what they can't say (names, a target's earlier auras), at most once a second.
+        let auras_shown = in_game && bot.settings.read().show_target_auras;
+        if auras_shown != bot.target_auras.is_active() {
+            if auras_shown {
+                bot.target_auras.start();
+            } else {
+                bot.target_auras.clear();
+            }
+        }
+        if auras_shown
+            && bot.target_auras.refresh_due()
+            && last_target_auras.elapsed() >= Duration::from_secs(1)
+        {
+            last_target_auras = Instant::now();
+            if let Err(e) = bot.target_auras.refresh(&bot) {
+                bot.logs
+                    .debug
+                    .push(format!("Target Auras: reading the game failed: {e}"));
             }
         }
 

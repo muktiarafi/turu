@@ -83,6 +83,12 @@ pub struct AppSettings {
     /// Where it was dragged to: across the room left beside it (0 left, 1 right) and down the
     /// game's height (0 top); `None` on the left, under the game's portrait of you.
     pub player_hud_pos: Option<[f32; 2]>,
+    /// Combat > Target Auras (Turu): the auras on the monster you attack and who cast them, over
+    /// the game.
+    pub show_target_auras: bool,
+    /// Where it was dragged to, as [`AppSettings::player_hud_pos`]; `None` on the right, under
+    /// the game's portrait of your target.
+    pub target_auras_pos: Option<[f32; 2]>,
     // Army Queue
     /// Its "How to Use" guide was dismissed (VibeSkua `ArmyQueueHelpDismissed`).
     pub army_queue_help_dismissed: bool,
@@ -150,6 +156,8 @@ impl Default for AppSettings {
             stats_rate_unit: "/hr".into(),
             show_player_hud: false,
             player_hud_pos: None,
+            show_target_auras: false,
+            target_auras_pos: None,
             army_queue_help_dismissed: false,
             tab_limit: 4,
             side_bar_hidden: false,

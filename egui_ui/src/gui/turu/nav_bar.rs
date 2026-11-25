@@ -697,6 +697,15 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
                 turu_bot::vitals::set_shown(&bot, on);
                 ui.close();
             }
+            // Turu's: the auras on the monster you attack and who cast them (`target_auras`).
+            let mut on = bot.settings.read().show_target_auras;
+            let toggle = ui
+                .add(egui::Checkbox::new(&mut on, "Target Auras"))
+                .on_hover_text("The auras on the monster you attack and who cast each one, over the game");
+            if toggle.changed() {
+                turu_bot::target_auras::set_shown(&bot, on);
+                ui.close();
+            }
         }
         Menu::Diagnostics => {
             if item(ui, "Notification Center") {

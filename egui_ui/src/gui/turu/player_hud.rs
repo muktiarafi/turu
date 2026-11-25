@@ -12,7 +12,7 @@ use std::time::Duration;
 use turu_bot::vitals::{RoomVitals, Vital};
 
 const WIDTH: f32 = 216.0;
-const PAD: f32 = 8.0;
+pub(super) const PAD: f32 = 8.0;
 /// The name column; the bars take what's left of the row but the figures.
 const NAME_WIDTH: f32 = 82.0;
 /// Room for "12.3k" or "Dead".
@@ -21,7 +21,7 @@ const GAP: f32 = 6.0;
 const HP_BAR: f32 = 5.0;
 const MP_BAR: f32 = 3.0;
 /// A player's two lines: the name with HP, then MP.
-const LINE: f32 = 14.0;
+pub(super) const LINE: f32 = 14.0;
 const ROW_GAP: f32 = 5.0;
 const HEADER: f32 = 18.0;
 /// Rows shown before "+N more" (fewer on a short screen, a phone held sideways).
@@ -29,7 +29,7 @@ const MAX_ROWS: usize = 8;
 const MAX_ROWS_SHORT: usize = 5;
 /// Where the game's portrait of you ends, down its height (AQW draws it in the top-left
 /// corner, about 100 of the stage's 550 pixels high).
-const UNDER_PORTRAIT: f32 = 0.2;
+pub(super) const UNDER_PORTRAIT: f32 = 0.2;
 
 pub fn show(ctx: &Context) {
     let bot = crate::turu::bot();
@@ -58,43 +58,22 @@ pub fn show(ctx: &Context) {
         MAX_ROWS
     };
     let size = vec2(WIDTH, height(room.players.len(), max_rows));
-    // Dragged anywhere over the game (a window raises over it as over another window); a
-    // double-click puts it back in the corner. Where it is follows the window's size.
-    let id = Id::new("turu_player_hud");
     let saved = bot.settings.read().player_hud_pos;
-    let mut panel = egui::Area::new(id)
-        .order(Order::Middle)
-        .movable(true)
-        .sense(Sense::click_and_drag())
-        .constrain_to(area);
-    // Where a drag has the panel, until it is saved: egui moves it while the button is down, but
-    // on the frame it comes up the drag is over and the saved spot would put it back.
-    let held_id = id.with("held");
-    let held: Option<Pos2> = ctx.data(|d| d.get_temp(held_id));
-    panel = panel.current_pos(held.unwrap_or_else(|| place(saved, area, size)));
     let mut cut = Vec::new();
-    let shown = panel.show(ctx, |ui| {
-        let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-        cut = draw(ui.painter(), rect, &room, max_rows);
-    });
-    let response = shown.response;
-    if response.dragged() {
-        ctx.data_mut(|d| d.insert_temp(held_id, response.rect.min));
-    }
-    if response.double_clicked() {
-        ctx.data_mut(|d| d.remove::<Pos2>(held_id));
-        bot.settings.write().player_hud_pos = None;
+    let moved = movable(
+        ctx,
+        Id::new("turu_player_hud"),
+        area,
+        size,
+        saved,
+        [0.0, UNDER_PORTRAIT],
+        |painter, rect| {
+            cut = draw(painter, rect, &room, max_rows);
+        },
+    );
+    if let Some(spot) = moved {
+        bot.settings.write().player_hud_pos = spot;
         bot.save_settings();
-    } else if response.drag_stopped() {
-        let at = held.unwrap_or(response.rect.min);
-        ctx.data_mut(|d| d.remove::<Pos2>(held_id));
-        bot.settings.write().player_hud_pos = Some(spot(Rect::from_min_size(at, size), area));
-        bot.save_settings();
-    }
-    if response.dragged() {
-        ctx.set_cursor_icon(CursorIcon::Grabbing);
-    } else if response.hovered() {
-        ctx.set_cursor_icon(CursorIcon::Grab);
     }
     // A name cut short shows whole under the pointer.
     if let Some(pointer) = ctx.pointer_hover_pos()
@@ -120,11 +99,55 @@ fn height(players: usize, max_rows: usize) -> f32 {
     PAD + HEADER + rows_height + more_height + PAD
 }
 
-/// Where the panel goes: the saved spot (see `AppSettings::player_hud_pos`), else on the left
-/// under the game's own portrait of you (its name, HP and MP: the top [`UNDER_PORTRAIT`] of the
-/// game).
-fn place(saved: Option<[f32; 2]>, area: Rect, size: Vec2) -> Pos2 {
-    let [across, down] = saved.unwrap_or([0.0, UNDER_PORTRAIT]);
+/// A panel `size` big over the game (`area`) that can be dragged anywhere (a window raises over it
+/// as over another window), drawn by `draw`. It starts at `saved`, else at `default` (see
+/// [`place`]). A drag's end gives `Some(Some(spot))` to save, a double-click `Some(None)` (back to
+/// `default`).
+pub(super) fn movable(
+    ctx: &Context,
+    id: Id,
+    area: Rect,
+    size: Vec2,
+    saved: Option<[f32; 2]>,
+    default: [f32; 2],
+    draw: impl FnOnce(&Painter, Rect),
+) -> Option<Option<[f32; 2]>> {
+    let mut panel = egui::Area::new(id)
+        .order(Order::Middle)
+        .movable(true)
+        .sense(Sense::click_and_drag())
+        .constrain_to(area);
+    // Where a drag has the panel, until it is saved: egui moves it while the button is down, but
+    // on the frame it comes up the drag is over and the saved spot would put it back.
+    let held_id = id.with("held");
+    let held: Option<Pos2> = ctx.data(|d| d.get_temp(held_id));
+    panel = panel.current_pos(held.unwrap_or_else(|| place(saved.unwrap_or(default), area, size)));
+    let shown = panel.show(ctx, |ui| {
+        let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+        draw(ui.painter(), rect);
+    });
+    let response = shown.response;
+    if response.dragged() {
+        ctx.data_mut(|d| d.insert_temp(held_id, response.rect.min));
+        ctx.set_cursor_icon(CursorIcon::Grabbing);
+    } else if response.hovered() {
+        ctx.set_cursor_icon(CursorIcon::Grab);
+    }
+    if response.double_clicked() {
+        ctx.data_mut(|d| d.remove::<Pos2>(held_id));
+        Some(None)
+    } else if response.drag_stopped() {
+        let at = held.unwrap_or(response.rect.min);
+        ctx.data_mut(|d| d.remove::<Pos2>(held_id));
+        Some(Some(spot(Rect::from_min_size(at, size), area)))
+    } else {
+        None
+    }
+}
+
+/// Where a panel goes for a spot (see `AppSettings::player_hud_pos`): across the room left beside
+/// it (0 left, 1 right) and down the game's height (0 top).
+fn place([across, down]: [f32; 2], area: Rect, size: Vec2) -> Pos2 {
     let room = (area.width() - size.x - 2.0 * PAD).max(0.0);
     let x = area.left() + PAD + room * across.clamp(0.0, 1.0);
     let y = area.top() + area.height() * down.clamp(0.0, 1.0);
@@ -273,7 +296,15 @@ fn row(painter: &Painter, left: f32, right: f32, top: f32, player: &Vital) -> bo
 }
 
 /// A bar `thickness` high centred on `mid`; without a fraction (no max known) only its track.
-fn bar(painter: &Painter, left: f32, right: f32, mid: f32, thickness: f32, fraction: Option<f32>, color: Color32) {
+pub(super) fn bar(
+    painter: &Painter,
+    left: f32,
+    right: f32,
+    mid: f32,
+    thickness: f32,
+    fraction: Option<f32>,
+    color: Color32,
+) {
     if right <= left {
         return;
     }
@@ -287,7 +318,7 @@ fn bar(painter: &Painter, left: f32, right: f32, mid: f32, thickness: f32, fract
 }
 
 /// A figure right-aligned at `right`, in a fixed-width face so it doesn't shift as it changes.
-fn figure(painter: &Painter, right: f32, top: f32, value: &str, color: Color32) {
+pub(super) fn figure(painter: &Painter, right: f32, top: f32, value: &str, color: Color32) {
     let galley = painter.layout_no_wrap(value.to_owned(), FontId::monospace(11.0), color);
     let y = top + (LINE - galley.size().y) / 2.0;
     painter.galley(pos2(right - galley.size().x, y), galley, color);
@@ -295,7 +326,7 @@ fn figure(painter: &Painter, right: f32, top: f32, value: &str, color: Color32) 
 
 /// One line of text cut with "…" at `width`, its left edge (or right, with `Align::Max`) at
 /// `at`; the galley, to draw again.
-fn text(
+pub(super) fn text(
     painter: &Painter,
     at: Pos2,
     value: &str,
@@ -330,7 +361,7 @@ fn fraction(value: i64, max: i64) -> Option<f32> {
 
 /// A figure in at most five characters: 950, 2.4k, 12k, 1.2m (rounded down, so a bar that isn't
 /// full never reads as its max).
-fn short(value: i64) -> String {
+pub(super) fn short(value: i64) -> String {
     let value = value.max(0);
     match value {
         0..=999 => value.to_string(),
