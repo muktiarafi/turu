@@ -1,15 +1,17 @@
-//! `charpic`: an AQW character's Profile Pic, made the way the character page makes it, on Turu's
-//! Ruffle (ruffle-aqw) without a window.
+//! `charpic`: an AQW character's page as pictures, on Turu's Ruffle (ruffle-aqw) without a
+//! window: the character card the page shows, and the Profile Pic the page makes.
 //!
 //! The page (`https://account.aq.com/CharPage?id=<name>`) embeds `characterB.swf` with the
 //! character's gear in its FlashVars. In the SWF, "Profile Pic" opens an editor and "Make Image!"
 //! draws the portrait into a `BitmapData`, encodes it with the SWF's own PNG encoder and hands it
 //! to the page as base64 through `ExternalInterface.call("saveImage", ...)`. This program loads
 //! the page, plays the SWF offscreen with the page's FlashVars, clicks those two buttons and
-//! writes the PNG `saveImage` receives.
+//! writes the PNG `saveImage` receives. Before the clicks, it saves the card itself (name, class,
+//! level, gear, the character in its pose) as drawn, at `--scale` times the page's size.
 //!
 //! ```text
-//! cargo run --release -p turu_charpic -- Questwalker -o questwalker.png [--frame stage.png]
+//! cargo run --release -p turu_charpic -- Questwalker [-o Profile-Questwalker.png]
+//!     [--card CharPage-Questwalker.png] [--scale 2]
 //! ```
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -64,20 +66,32 @@ const SETTLED: Duration = Duration::from_secs(2);
 
 struct Args {
     character: String,
+    /// The Profile Pic.
     out: PathBuf,
-    frame: Option<PathBuf>,
+    /// The character card.
+    card: PathBuf,
+    /// The card's size, in times the page's.
+    scale: f64,
 }
 
 fn parse_args() -> Result<Args> {
-    let usage = "usage: charpic <character name or CharPage URL> [-o out.png] [--frame stage.png]";
+    let usage = "usage: charpic <character name or CharPage URL> [-o profile.png] [--card card.png] \
+                 [--scale 2]";
     let mut character = None;
     let mut out = None;
-    let mut frame = None;
+    let mut card = None;
+    let mut scale = 2.0;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "-o" | "--out" => out = Some(PathBuf::from(args.next().context(usage)?)),
-            "--frame" => frame = Some(PathBuf::from(args.next().context(usage)?)),
+            "--card" | "--frame" => card = Some(PathBuf::from(args.next().context(usage)?)),
+            "--scale" => {
+                scale = args.next().context(usage)?.parse().context(usage)?;
+                if !(0.25..=8.0).contains(&scale) {
+                    bail!("--scale must be between 0.25 and 8");
+                }
+            }
             "-h" | "--help" => {
                 println!("{usage}");
                 std::process::exit(0);
@@ -87,14 +101,18 @@ fn parse_args() -> Result<Args> {
         }
     }
     let character = character.context(usage)?;
-    let out = out.unwrap_or_else(|| {
-        let name = character.rsplit('=').next().unwrap_or(&character);
-        PathBuf::from(format!("Profile-{name}.png"))
-    });
+    let name = character
+        .rsplit('=')
+        .next()
+        .unwrap_or(&character)
+        .to_owned();
+    let out = out.unwrap_or_else(|| PathBuf::from(format!("Profile-{name}.png")));
+    let card = card.unwrap_or_else(|| PathBuf::from(format!("CharPage-{name}.png")));
     Ok(Args {
         character,
         out,
-        frame,
+        card,
+        scale,
     })
 }
 
@@ -119,18 +137,26 @@ fn main() -> Result<()> {
 
     let saved = Rc::new(RefCell::new(None));
     let tasks = Tasks::default();
-    let player = build_player(&page_url, &embed, tasks.clone(), saved.clone())?;
-    let run = Runner { player, tasks };
+    let player = build_player(&page_url, &embed, tasks.clone(), saved.clone(), args.scale)?;
+    let run = Runner {
+        player,
+        tasks,
+        scale: args.scale,
+    };
 
     // The character and the gear it loads one after another.
     run.until(LOAD_TIMEOUT, "the character to load", |run| {
         run.settled_for() >= SETTLED
     })?;
     run.frames(15);
-    if let Some(frame) = &args.frame {
-        run.capture()?.save(frame)?;
-        eprintln!("wrote {}", frame.display());
-    }
+    let card = run.capture()?;
+    card.save(&args.card)?;
+    eprintln!(
+        "wrote {} ({}x{})",
+        args.card.display(),
+        card.width(),
+        card.height()
+    );
 
     run.click(PROFILE_PIC_BUTTON);
     run.frames(30);
@@ -203,7 +229,12 @@ fn build_player(
     embed: &Embed,
     tasks: Tasks,
     saved: Rc<RefCell<Option<String>>>,
+    scale: f64,
 ) -> Result<Arc<Mutex<Player>>> {
+    let size = (
+        (f64::from(STAGE.0) * scale).round() as u32,
+        (f64::from(STAGE.1) * scale).round() as u32,
+    );
     let instance =
         create_wgpu_instance(wgpu::Backends::all(), wgpu::BackendOptions::default(), None);
     let (adapter, device, queue) = tokio::runtime::Handle::current()
@@ -215,7 +246,7 @@ fn build_player(
         ))
         .map_err(|e| anyhow!("no GPU: {e}"))?;
     let descriptors = Arc::new(Descriptors::new(instance, adapter, device, queue));
-    let target = TextureTarget::new(&descriptors.device, STAGE).map_err(|e| anyhow!("{e}"))?;
+    let target = TextureTarget::new(&descriptors.device, size).map_err(|e| anyhow!("{e}"))?;
     let renderer = WgpuRenderBackend::new(descriptors, target).map_err(|e| anyhow!("{e}"))?;
 
     let content = PlayingContent::DirectFile(ContentDescriptor {
@@ -240,7 +271,7 @@ fn build_player(
         .with_ui(NullUiBackend::new())
         .with_external_interface(Box::new(Page { saved }))
         .with_autoplay(true)
-        .with_viewport_dimensions(STAGE.0, STAGE.1, 1.0)
+        .with_viewport_dimensions(size.0, size.1, scale)
         // The SWF's PNG encoder walks every pixel in ActionScript in one go.
         .with_max_execution_duration(ENCODE_TIMEOUT)
         .with_page_url(Some(page_url.to_string()))
@@ -260,6 +291,8 @@ fn build_player(
 struct Runner {
     player: Arc<Mutex<Player>>,
     tasks: Tasks,
+    /// Viewport pixels per stage pixel.
+    scale: f64,
 }
 
 impl Runner {
@@ -304,6 +337,7 @@ impl Runner {
 
     /// Moves the mouse onto `at`, presses and lets go, a frame apart, as a hand would.
     fn click(&self, (x, y): (f64, f64)) {
+        let (x, y) = (x * self.scale, y * self.scale);
         let events = [
             PlayerEvent::MouseMove { x, y },
             PlayerEvent::MouseDown {
