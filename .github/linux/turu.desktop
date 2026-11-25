@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Turu
+GenericName=AdventureQuest Worlds bot client
+Comment=AdventureQuest Worlds bot client
+Exec=turu
+Icon=turu
+Terminal=false
+Categories=Game;
+StartupWMClass=turu

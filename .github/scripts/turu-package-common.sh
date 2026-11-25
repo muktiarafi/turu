@@ -27,6 +27,9 @@ settings, options and logs are kept in Turu's data folder (Windows %APPDATA%\Tur
 ~/Library/Application Support/Turu, Linux ~/.local/share/Turu); the scripts are in its
 `scripts` folder, where Scripts > Load Script starts.
 
+Linux: run ./install-desktop.sh in the unpacked folder to add Turu, with its icon, to the
+application menu (./install-desktop.sh --uninstall removes it).
+
 macOS: the app is not notarized. If macOS blocks the first start, allow it in
 System Settings > Privacy & Security (Open Anyway), or run:
     xattr -dr com.apple.quarantine Turu.app

@@ -232,6 +232,9 @@ jobs:
           else
             cp "$bin/turu" package/
             chmod +x package/turu
+            # The launcher entry and its icon: ./install-desktop.sh adds Turu to the app menu.
+            cp .github/linux/turu.desktop .github/linux/turu.png .github/linux/turu-512.png \
+              .github/linux/install-desktop.sh package/
             tar -czf "turu-$VERSION-${{ matrix.name }}.tar.gz" -C package .
           fi
 

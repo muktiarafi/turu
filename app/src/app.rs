@@ -1184,7 +1184,9 @@ pub(crate) fn window_attributes(event_loop: &ActiveEventLoop) -> WindowAttribute
             self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify,
         };
         use winit::platform::wayland::WindowAttributesExtWayland;
-        window_attributes = window_attributes.with_name("rs.ruffle.Ruffle", "main");
+        // Turu: the app id is `turu`, the name of the launcher entry in the Linux package
+        // (.github/linux/turu.desktop), so the window shows its icon in the taskbar.
+        window_attributes = window_attributes.with_name("turu", "turu");
         if let Some(token) = event_loop.read_token_from_env() {
             startup_notify::reset_activation_token_env();
             window_attributes = window_attributes.with_activation_token(token);
