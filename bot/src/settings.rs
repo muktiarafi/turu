@@ -78,6 +78,11 @@ pub struct AppSettings {
     pub stats_advanced_mode: bool,
     /// The rates' unit: `/hr`, `/min` or `/sec` (VibeSkua `StatsRateUnit`; `stats::RateUnit`).
     pub stats_rate_unit: String,
+    /// Combat > Player HUD (Turu): the HP and MP of the players in your cell, over the game.
+    pub show_player_hud: bool,
+    /// Where it was dragged to: across the room left beside it (0 left, 1 right) and down the
+    /// game's height (0 top); `None` on the left, under the game's portrait of you.
+    pub player_hud_pos: Option<[f32; 2]>,
     // Army Queue
     /// Its "How to Use" guide was dismissed (VibeSkua `ArmyQueueHelpDismissed`).
     pub army_queue_help_dismissed: bool,
@@ -143,6 +148,8 @@ impl Default for AppSettings {
             send_crash_reports: None,
             stats_advanced_mode: false,
             stats_rate_unit: "/hr".into(),
+            show_player_hud: false,
+            player_hud_pos: None,
             army_queue_help_dismissed: false,
             tab_limit: 4,
             side_bar_hidden: false,

@@ -36,6 +36,7 @@ mod notifications;
 mod notify_drop;
 mod packet_filters;
 mod packet_logger;
+mod player_hud;
 mod prompt;
 mod runtime;
 mod scheduler;
@@ -345,6 +346,7 @@ impl TuruUi {
     pub fn show_windows(&mut self, ctx: &Context) {
         self.ensure_theme(ctx);
         grid_overlay::show(ctx);
+        player_hud::show(ctx);
         // Army Control is one per process, open while its egui window is (a Full window stays).
         let army_open = self.army_open;
         let tab = self.active();

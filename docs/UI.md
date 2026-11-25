@@ -56,7 +56,7 @@ next to it).
 drawn with egui's painter at 18 px), then VibeSkua's menus in its order: **Scripts** (Script
 Loader, Search Scripts, Edit Script Options, Scheduler), **Options** (Game, Application, CoreBots,
 HotKeys; no Application Themes: Turu keeps Mugetsu's palette), **Tools & Helpers** (Loader, Grabber, Current Drops, Junk Items,
-Loadouts Manager, Fast Travel), **Combat** (Skills, Stats, Runtime), **Diagnostics** (Notification Center, Logs,
+Loadouts Manager, Fast Travel), **Combat** (Skills, Stats, Runtime, and the Player HUD switch: the HP and MP of the players in your cell in a panel on the game's left under its portrait of you, which can be dragged (a double-click puts it back), `player_hud.rs`), **Diagnostics** (Notification Center, Logs,
 Console, Spammer, Packet Logger, Interceptor), **Plugins** (Butler, Cosmetics; no View Plugins:
 Turu builds its plugins in), **Army** (Accounts, Army Control, Army Queue, New Tab; Turu's: VibeSkua has them
 in its Manager app and its tabbed host). Android has them too (its tabs run in one engine

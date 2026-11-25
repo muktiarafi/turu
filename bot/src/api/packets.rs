@@ -53,9 +53,32 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
                 state.map_name = Some(map.clone());
                 state.last_map = Some(map.clone());
             }
+            // A new room: the Player HUD takes its players from the packet.
+            if bot.settings.read().show_player_hud {
+                let me = bot.state.lock().username.clone();
+                let branch: Vec<Value> = match data.get("uoBranch") {
+                    Some(Value::Array(players)) => players.clone(),
+                    Some(Value::Object(players)) => players.values().cloned().collect(),
+                    _ => Vec::new(),
+                };
+                bot.vitals.on_room(&branch, me.as_deref());
+            } else if bot.vitals.is_active() {
+                bot.vitals.clear();
+            }
             bot.events.emit(BotEvent::MapChanged { map });
         }
         "ct" => on_combat_tick(bot, data),
+        // A player arriving (their whole entry) or their max HP changing with their gear.
+        "uotls" => {
+            if bot.vitals.is_active()
+                && let (Some(name), Some(fields)) = (
+                    data.get("unm").and_then(Value::as_str),
+                    data.get("o").and_then(Value::as_object),
+                )
+            {
+                bot.vitals.on_object(name, fields);
+            }
+        }
         "sellItem" => {
             {
                 let mut state = bot.state.lock();
@@ -206,6 +229,11 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
 
 /// `ct`: our HP at 0 is a death; the counter attack animation / aura is a counter attack.
 fn on_combat_tick(bot: &Arc<Bot>, data: &Value) {
+    if bot.vitals.is_active()
+        && let Some(players) = data.get("p").and_then(Value::as_object)
+    {
+        bot.vitals.on_combat(players);
+    }
     let username = bot.state.lock().username.clone();
     let me = username.and_then(|name| {
         let players = data.get("p")?.as_object()?;
@@ -266,6 +294,9 @@ fn on_str(bot: &Arc<Bot>, data: &Value) {
     let field = |i: usize| data.get(i).map(|v| text(Some(v))).unwrap_or_default();
     match field(0).as_str() {
         "uotls" => {
+            if bot.vitals.is_active() {
+                bot.vitals.on_update(&field(2), &field(3));
+            }
             let is_me = bot
                 .state
                 .lock()
@@ -278,6 +309,12 @@ fn on_str(bot: &Arc<Bot>, data: &Value) {
                 if afk {
                     bot.events.emit(BotEvent::PlayerAfk);
                 }
+            }
+        }
+        // `exitArea`, -1, the player's ID, their name: they left the room.
+        "exitArea" => {
+            if bot.vitals.is_active() {
+                bot.vitals.on_leave(&field(3));
             }
         }
         "loginResponse" => {
@@ -344,6 +381,10 @@ pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
             crate::script::stop(bot);
         }
         "moveToCell" => {
+            // The server tells the others, not you: the Player HUD learns your cell here.
+            if bot.vitals.is_active() {
+                bot.vitals.on_my_cell(part(4));
+            }
             let map = bot.state.lock().map_name.clone().unwrap_or_default();
             bot.events.emit(BotEvent::CellChanged {
                 map,

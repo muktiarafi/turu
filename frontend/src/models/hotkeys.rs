@@ -250,6 +250,13 @@ pub static ACTIONS: &[Action] = &[
         option!(show_fps),
     ),
     action(
+        "TogglePlayerHud",
+        "Player HUD",
+        "Shows or hides the HP and MP of the players in your cell over the game.",
+        Display,
+        Run::Own,
+    ),
+    action(
         "ToggleSkipCutscenes",
         "Skip Cutscenes",
         "Skips cutscenes automatically.",
@@ -1243,6 +1250,11 @@ fn run_own(bot: &Arc<Bot>, action: &Action) -> Needs {
     };
     match action.id {
         "ToggleScript" => return Needs::ToggleScript,
+        "TogglePlayerHud" => {
+            let on = !bot.settings.read().show_player_hud;
+            turu_bot::vitals::set_shown(bot, on);
+            bot.log(format!("[HotKeys] {} {}", action.title, on_off(on)));
+        }
         "StopScript" => {
             if bot.scripts.status().is_active() {
                 turu_bot::script::stop(bot);

@@ -686,6 +686,17 @@ fn menu_contents(ui: &mut Ui, windows: &mut Windows, menu: Menu) {
             if item(ui, "Runtime") {
                 windows.runtime = true;
             }
+            ui.separator();
+            // Turu's: the HP and MP of the players in your cell, over the game (`player_hud`).
+            let bot = crate::turu::bot();
+            let mut on = bot.settings.read().show_player_hud;
+            let toggle = ui
+                .add(egui::Checkbox::new(&mut on, "Player HUD"))
+                .on_hover_text("HP and MP of the players in your cell, over the game");
+            if toggle.changed() {
+                turu_bot::vitals::set_shown(&bot, on);
+                ui.close();
+            }
         }
         Menu::Diagnostics => {
             if item(ui, "Notification Center") {

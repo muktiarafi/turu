@@ -43,6 +43,8 @@ pub const MUTED: Color32 = MUGETSU_MUTED;
 pub const SUCCESS: Color32 = Color32::from_rgb(0x34, 0xD3, 0x99);
 pub const WARNING: Color32 = Color32::from_rgb(0xFB, 0xBF, 0x24);
 pub const DANGER: Color32 = Color32::from_rgb(0xEF, 0x44, 0x44);
+/// Mana (the Player HUD's MP bars): the sky blue of Combat > Stats' "accepted" counts.
+pub const MANA: Color32 = Color32::from_rgb(0x60, 0xA5, 0xFA);
 pub const DANGER_HOVER: Color32 = Color32::from_rgb(0xDC, 0x26, 0x26);
 pub const DANGER_PRESSED: Color32 = Color32::from_rgb(0xB9, 0x1C, 0x1C);
 

@@ -168,6 +168,7 @@ fn timer(weak: Weak<Bot>) {
     let mut last_load_check = Instant::now();
     let mut last_game_check = Instant::now();
     let mut last_gameplay = Instant::now();
+    let mut last_vitals = Instant::now();
     let mut load = LoadWatch::default();
     // The events when the game and the loading screen were last checked.
     let mut game_mark = None;
@@ -216,6 +217,9 @@ fn timer(weak: Weak<Bot>) {
                 state.hand_login,
             )
         };
+        if !in_game && was_in_game && bot.vitals.is_active() {
+            bot.vitals.clear();
+        }
         if !in_game
             && (was_in_game || bot.scripts.is_running())
             && !intentional
@@ -286,6 +290,22 @@ fn timer(weak: Weak<Bot>) {
         }
         if let Some(lever) = &mut lever {
             lever.tick(&bot);
+        }
+        // The Player HUD's room, while it is shown: packets keep it, so the game is read only when
+        // they can't (no room yet, a gap); at most once a second, a failed read too.
+        let hud_shown = bot.settings.read().show_player_hud;
+        if !hud_shown && bot.vitals.is_active() {
+            // Turned off (from any of its switches): stop following the packets.
+            bot.vitals.clear();
+        }
+        if hud_shown && bot.vitals.refresh_due() && last_vitals.elapsed() >= Duration::from_secs(1)
+        {
+            last_vitals = Instant::now();
+            if let Err(e) = bot.vitals.refresh(&bot) {
+                bot.logs
+                    .debug
+                    .push(format!("Player HUD: reading the room failed: {e}"));
+            }
         }
 
         let rest_due =

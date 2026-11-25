@@ -171,6 +171,12 @@ pub fn entries() -> Vec<Entry> {
             Field::ShowFps
         ));
     }
+    entries.push(entry!(
+        General,
+        "Player HUD",
+        "A small panel over the game with the HP and MP of everyone in your cell, you first. Also in Combat > Player HUD",
+        Field::Bool(|s| &mut s.show_player_hud)
+    ));
     if platform.frame_pacing().is_some() {
         entries.push(entry!(
             General,

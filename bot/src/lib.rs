@@ -49,6 +49,7 @@ pub mod stats;
 #[doc(hidden)]
 pub mod testing;
 pub mod updates;
+pub mod vitals;
 pub mod webhooks;
 
 pub use error::{BotError, BotResult};
@@ -130,6 +131,8 @@ pub struct Bot {
     pub army: api::army::ArmyLocks,
     /// Diagnostics > Notification Center: the feed of game and script events.
     pub notifications: notifications::Feed,
+    /// The Player HUD's HP and MP of the players in your room.
+    pub vitals: vitals::Vitals,
     pub paths: paths::Paths,
 }
 
@@ -170,6 +173,7 @@ impl Bot {
             scheduler: scheduler::Scheduler::default(),
             army: api::army::ArmyLocks::default(),
             notifications: notifications::Feed::default(),
+            vitals: vitals::Vitals::default(),
             paths,
         });
         background::start(&bot);

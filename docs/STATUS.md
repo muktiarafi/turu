@@ -1086,6 +1086,25 @@ marked `C#` and listed in `scripts/docs/PORTING.md` (the Nation fixes: "Known ga
 they are unverified in game). Don't remove one to match the C#. What VibeSkua has that Turu lacks
 is in "Known gaps" and `docs/PORTING_GAPS.md`.
 
+- **Player HUD** (2026-11-25, Turu's own: VibeSkua has none; `turu_bot::vitals`,
+  `egui_ui/src/gui/turu/player_hud.rs`): Combat > Player HUD (also Options > Application, and the
+  TogglePlayerHud hotkey) shows the HP and MP of the players in your cell in a small panel in the
+  game's left, under its portrait of you (drag it anywhere: it stays there, a double-click puts it
+  back), you first, then by name, 8 rows (5 on a short screen) and "+N more";
+  under a quarter of their HP a player's bar turns red and says "Low HP". On Android (its menus
+  are native, `models::rail`) the switch is in Options > Application.
+  It follows the packets, without polling the game: `moveToArea`'s `uoBranch` (the room),
+  JSON `uotls` (an arrival's whole entry, max HP and MP changing with gear), string `uotls`
+  (others' cells, resting), `ct` (combat), `exitArea`, and the `moveToCell` you send (the
+  server tells the others your cell, not you). The game (`world.uoTree`, a few fields per
+  player in one `getMany`) is read only when they can't say: switched on in a room already
+  entered, a packet about a player it doesn't know, an arrival without its max, HP over its max,
+  you coming back to life without a cell.
+  Off, every handler stops at one flag. A bar needs the player's max; without one only the
+  figure shows. Saved in `settings.json` (`showPlayerHud`), so new tabs start with it; an open
+  tab takes another tab's change when it next reads its settings. Hidden in Grid View and
+  Headless Mode; not in Turu Mas. The arrival and gear packets were checked against a capture
+  (2026-11-25); `moveToArea`'s `uoBranch` fields weren't, so a branch without a max reads once.
 - **Installing an update waits for every tab** (2026-11-22, `models::client_update`): VibeSkua is
   one process; Turu's tabs are processes of their own (Android's slots, a desktop shell's
   clients) and an update closes them all, so Download & install (and Download & restart) wait
