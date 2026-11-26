@@ -1,10 +1,9 @@
 # Proposal: tests from recorded game sessions
 
 Status: phases 0 and 1 done (2026-11-26): the spike (see "What a do-nothing game shows") and
-the recorder, checked in game (see "As built, phase 1"). Phase 2's scrubber and replay are built
-(2026-11-27, "As built, phase 2 so far"), the replay checked only on tapes its tests record against
-a fake game: phase 2 ends with the first tape recorded in game, committed and replayed in CI.
-Phases 3 to 5 aren't built. Would touch `bot/src/flash.rs` (`Flash::call`), `bot/src/events.rs`
+the recorder, checked in game (see "As built, phase 1"). Phase 2 done (2026-11-27): the scrubber
+and the replay (see "As built, phase 2"), with the first tape recorded in game committed and
+replayed by the tests ("The first tape"). Phases 3 to 5 aren't built. Would touch `bot/src/flash.rs` (`Flash::call`), `bot/src/events.rs`
 (`on_flash_call`), `bot/src/player_packets.rs` (`on_socket`), a new `bot/src/tape/` (format,
 recorder, scrubber), `bot/src/testing.rs` (the replay host and the world fake), `bot/tests/`
 (`replay.rs`, `draft_smoke.rs`, `tapes/`), `docs/HEADLESS.md` (the switch) and a nightly
@@ -283,7 +282,7 @@ script notes, and every `loginInfo.` path in `bot/src` redacted). As designed ab
 - **Not done:** Android and Turu Mas have no way to switch it on yet (no environment there); the
   Diagnostics switch is phase 5.
 
-## As built, phase 2 so far: the scrubber
+## As built, phase 2: the scrubber
 
 `bot/src/tape/scrub.rs` (`tape::scrub`, `tape::scrub_file`), `tape::write`, and the
 `turu-tape` command (`bot/src/bin/turu-tape.rs`: `info <tape>`, `scrub <tape> <scrubbed>`; run
@@ -318,7 +317,7 @@ it with `cargo run --release -p turu_bot --bin turu-tape -- ...`). Tests:
   player in it: the other players' shapes are checked only by the tests, which follow the real
   captures' packets with made-up names.
 
-## As built, phase 2 so far: the replay
+## As built, phase 2: the replay
 
 `bot/src/tape/replay.rs` (`turu_bot::testing::ReplayHost`, `ReplayOptions`, `ReplayReport`,
 `ReplayFailure`). A test makes a bot, `ReplayHost::open(tape, options)`, `attach(&bot)`, loads and
@@ -367,9 +366,33 @@ refused. Each takes 1 to 4 s. As designed above, except:
   compare with (it is in `host/as3`'s `Main.as`).
 - **The options:** `attach` sets the bot's options from the header (`ActionDelay`, ...).
 - **Strict mode** (the default) also refuses a tape with lines missing or cut short.
-- **Not done:** the first tape recorded in game (a quest turn-in loop on a spare account on a
-  quiet server), scrubbed, committed under `bot/tests/tapes/` and replayed in CI; the CI grep of
-  committed tapes for the login packet's fields (Risks). Both need the recording.
+
+## The first tape (phase 2's exit)
+
+`bot/tests/tapes/chute_quest.tape.jsonl.gz` and its script `chute_quest.ts` beside it: quest
+8543 in /chute ("You Chute, You Score"), accepted, its map item (9837) picked up and turned in
+three times, with the plain script API (not CoreBots, so a change to Core doesn't break it). No
+combat: the script thread makes every send. Recorded 2026-11-27 on a spare account on twig with
+a debug build headless: `ARGS=<the account's args file> TURU_TAPE=<file>
+tools/farmrun/run.sh bot/tests/tapes/chute_quest.ts 10`, then `turu-tape scrub` into the folder.
+
+- **The tape:** 547 lines over 13 s, none dropped, 20 KB. The account's name was replaced in 14
+  places and its two IDs renumbered; the password, the name and the email appear 0 times.
+- **Its replay** (`replay::the_chute_quest_tape_replays`): 12 sends matched, no read missing, no
+  other thread's send, in 11 s (`ActionDelay` 800 from the header is real time; the events'
+  delays at a quarter). `the_chute_quest_tape_fails_on_another_quest_id` changes the script's
+  quest to 8544: it fails at the script's third send, the first `acceptQuest`, naming both IDs.
+- **The secrets check** (`replay::committed_tapes_hold_no_secrets`, in CI with the other tests):
+  every tape in `bot/tests/tapes/` is scrubbed, whole, and unchanged by redaction run again, so
+  no password, token, login message, email, address or chat is left in it.
+- **A first attempt failed in game, not in the replay:** the script started a second after the
+  login, while the inventory was still loading, and `map.join` does nothing until the player is
+  loaded (as VibeSkua's `Join`). It stayed in oaklore and every turn-in was refused ("Missing Turn
+  In Item"). The script now waits for `bot.player.loaded` and stops if it isn't in /chute.
+  CoreBots' `Join` waits the same way; a script on the bare API has to.
+- **To record it again** (a change to what the script sends): the same command with the
+  account's args file, then remove the old tape and scrub the new one into its place (`scrub`
+  never writes over a file).
 
 ## Phases
 

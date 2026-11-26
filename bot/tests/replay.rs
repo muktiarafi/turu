@@ -393,3 +393,82 @@ fn an_unscrubbed_tape_is_refused() {
     };
     assert!(ReplayHost::open(&dir.join("raw.tape.jsonl.gz"), options).is_ok());
 }
+
+// ---- Tapes recorded in game (bot/tests/tapes) ----------------------------------------------
+
+/// The committed tapes and their scripts.
+fn tapes_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/tapes")
+}
+
+/// Replays a committed tape to `source` (its script, or a changed copy) at a quarter of its
+/// events' delays.
+fn replay_committed(name: &str, source: &str) -> (Arc<Bot>, Arc<ReplayHost>) {
+    let dir = temp(name);
+    let options = ReplayOptions {
+        delay_scale: 0.25,
+        ..ReplayOptions::default()
+    };
+    replay(
+        &tapes_dir().join(format!("{name}.tape.jsonl.gz")),
+        &dir,
+        source,
+        options,
+    )
+}
+
+fn committed_script(name: &str) -> String {
+    std::fs::read_to_string(tapes_dir().join(format!("{name}.ts"))).unwrap()
+}
+
+/// Quest 8543 in /chute, accepted, its map item picked up and turned in three times, recorded
+/// on a spare account on a quiet server (twig).
+#[test]
+fn the_chute_quest_tape_replays() {
+    let (bot, host) = replay_committed("chute_quest", &committed_script("chute_quest"));
+    let report = host
+        .wait(&bot, Duration::from_secs(90))
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(report.status, ScriptStatus::Loaded, "{report:?}");
+    let log = bot.logs.script.text();
+    assert!(log.contains("Turn-in 3: done"), "{log}");
+}
+
+#[test]
+fn the_chute_quest_tape_fails_on_another_quest_id() {
+    let source = committed_script("chute_quest").replace("QUEST = 8543", "QUEST = 8544");
+    let (bot, host) = replay_committed("chute_quest", &source);
+    let message = host
+        .wait(&bot, Duration::from_secs(90))
+        .expect_err("the replay should fail")
+        .to_string();
+    assert!(message.contains("8543"), "{message}");
+    assert!(message.contains("8544"), "{message}");
+}
+
+/// Every committed tape is scrubbed and holds nothing redaction would still take out: no
+/// password, token, login message, email, address or chat (docs/REPLAY_TESTS_PROPOSAL.md, Risks).
+#[test]
+fn committed_tapes_hold_no_secrets() {
+    let mut tapes = 0;
+    for entry in std::fs::read_dir(tapes_dir()).unwrap() {
+        let path = entry.unwrap().path();
+        if !path.to_string_lossy().ends_with(tape::EXTENSION) {
+            continue;
+        }
+        tapes += 1;
+        let read = tape::read(&path).unwrap();
+        assert!(read.header.scrubbed, "{} isn't scrubbed", path.display());
+        assert!(
+            read.is_complete() && !read.truncated,
+            "{} isn't whole",
+            path.display()
+        );
+        for line in &read.lines {
+            let mut again = line.clone();
+            tape::redact::line(&mut again);
+            assert_eq!(&again, line, "{} keeps a secret", path.display());
+        }
+    }
+    assert!(tapes > 0, "no tapes in {}", tapes_dir().display());
+}

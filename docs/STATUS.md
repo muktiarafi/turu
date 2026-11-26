@@ -1066,8 +1066,10 @@ memory budget (NVIDIA, AMD).
   from a recording. The recorder (phase 1) is built and checked on a 20-minute headless farm
   run: `TURU_TAPE` / `--record-tape` (docs/HEADLESS.md, "Recording a tape"). So is the
   scrubber (`turu-tape scrub`), checked on that run's tape, and the replay
-  (`turu_bot::testing::ReplayHost`, 2026-11-27), checked only on tapes its tests record against a
-  fake game (`bot/tests/replay.rs`): no tape recorded in game is committed or replayed yet.
+  (`turu_bot::testing::ReplayHost`, 2026-11-27, `bot/tests/replay.rs`), with the first tape
+  recorded in game (`bot/tests/tapes/chute_quest`: a quest turned in three times in /chute)
+  replayed by the tests. Phases 3 to 5 (Core flows on tape, the drafts against a world fake)
+  aren't built.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.
