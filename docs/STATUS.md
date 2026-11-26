@@ -1061,6 +1061,9 @@ memory budget (NVIDIA, AMD).
   packets). Nothing is left to port but what is
   skipped on purpose: the Ultras' `TestZone`, `Templates`, the unused `Prototypes`, the generator, and the
   Tools listed in `scripts/docs/PORTING.md`.
+- **Tests from recorded game sessions** are proposed in `docs/REPLAY_TESTS_PROPOSAL.md`: record a
+  real run once, replay it in CI, and run every converted script against a fake world seeded
+  from a recording. Not built.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.
