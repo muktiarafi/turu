@@ -1,4 +1,7 @@
-//! For fake games in tests: answers turu.swf's batched reads (`snapshot`, `getMany`,
+//! For tests. [`ReplayHost`] plays a recorded tape back to a script
+//! (docs/REPLAY_TESTS_PROPOSAL.md, phase 2).
+//!
+//! For fake games: answers turu.swf's batched reads (`snapshot`, `getMany`,
 //! `selectArrayObjectsWhere`, docs/HOST_SWF_PROPOSAL.md M4; `questStates`) from the single reads
 //! a fake already answers, as turu.swf would from the game. A fake's `call` starts with
 //!
@@ -7,6 +10,8 @@
 //!     return Ok(answer);
 //! }
 //! ```
+
+pub use crate::tape::replay::{ReplayFailure, ReplayHost, ReplayOptions, ReplayReport};
 
 use crate::flash::parse_bool;
 use crate::host::FlashArg;

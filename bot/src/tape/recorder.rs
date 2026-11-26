@@ -270,7 +270,7 @@ fn joins_a_map(text: &str) -> bool {
 }
 
 /// A Flash argument as JSON.
-fn arg_json(arg: &FlashArg) -> Value {
+pub(crate) fn arg_json(arg: &FlashArg) -> Value {
     match arg {
         FlashArg::Null => Value::Null,
         FlashArg::Bool(b) => Value::Bool(*b),

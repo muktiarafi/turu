@@ -14,6 +14,7 @@
 
 mod recorder;
 pub mod redact;
+pub mod replay;
 pub mod scrub;
 
 pub use recorder::{Recorder, finish_all};

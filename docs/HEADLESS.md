@@ -371,7 +371,9 @@ reads, the game's `login` call), session tokens (the socket's login, JSON fields
 whispers) are replaced with `<redacted>` as each line is written; player names are kept, so a
 tape is private until it is scrubbed: `cargo run --release -p turu_bot --bin turu-tape -- scrub
 <tape> <new file>` renames every player (the account "Questwalker"), renumbers the account's
-IDs and checks the result; `turu-tape info <tape>` says what a tape holds. A writer thread of its
+IDs and checks the result; `turu-tape info <tape>` says what a tape holds. A scrubbed tape
+plays back to its script in a test, with no game (`turu_bot::testing::ReplayHost`,
+`bot/tests/replay.rs`). A writer thread of its
 own compresses and writes, flushing every second: a killed process leaves a tape readable up to
 its last second, without its `end` line. Lines the writer couldn't keep up with are dropped,
 never waited for, and counted in the `end` line (and as gaps in their numbers). Quitting through

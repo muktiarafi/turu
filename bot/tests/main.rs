@@ -36,6 +36,7 @@ mod loader_grabber;
 mod monitor;
 mod notifications;
 mod player_packets;
+mod replay;
 mod reputation_auras;
 mod runtime;
 mod scheduler;

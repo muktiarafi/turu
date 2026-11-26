@@ -1,8 +1,10 @@
 # Proposal: tests from recorded game sessions
 
 Status: phases 0 and 1 done (2026-11-26): the spike (see "What a do-nothing game shows") and
-the recorder, checked in game (see "As built, phase 1"). Phase 2's scrubber is built (2026-11-27,
-"As built, phase 2 so far"); its replay isn't. Phases 3 to 5 aren't built. Would touch `bot/src/flash.rs` (`Flash::call`), `bot/src/events.rs`
+the recorder, checked in game (see "As built, phase 1"). Phase 2's scrubber and replay are built
+(2026-11-27, "As built, phase 2 so far"), the replay checked only on tapes its tests record against
+a fake game: phase 2 ends with the first tape recorded in game, committed and replayed in CI.
+Phases 3 to 5 aren't built. Would touch `bot/src/flash.rs` (`Flash::call`), `bot/src/events.rs`
 (`on_flash_call`), `bot/src/player_packets.rs` (`on_socket`), a new `bot/src/tape/` (format,
 recorder, scrubber), `bot/src/testing.rs` (the replay host and the world fake), `bot/tests/`
 (`replay.rs`, `draft_smoke.rs`, `tapes/`), `docs/HEADLESS.md` (the switch) and a nightly
@@ -315,8 +317,59 @@ it with `cargo run --release -p turu_bot --bin turu-tape -- ...`). Tests:
   the lines and the end line are the same; a second scrub is identical. That tape had no other
   player in it: the other players' shapes are checked only by the tests, which follow the real
   captures' packets with made-up names.
-- **Not done:** the replay (`ReplayHost`), its strict mode and the first committed tape;
-  `hostInfo` in the header (the replay needs it).
+
+## As built, phase 2 so far: the replay
+
+`bot/src/tape/replay.rs` (`turu_bot::testing::ReplayHost`, `ReplayOptions`, `ReplayReport`,
+`ReplayFailure`). A test makes a bot, `ReplayHost::open(tape, options)`, `attach(&bot)`, loads and
+starts the script, then `wait(&bot, timeout)`: `Ok` with the sends matched, or `Err` with the
+message, the script stopped. Tests: `bot/tests/replay.rs`, which records a quest loop (three
+`ensureAccept`/`ensureComplete`, the fake answering after 80 and 150 ms from threads of its own,
+then a `world.goto` to the account's own name) against a fake game, scrubs it and replays it:
+the same script passes and counts the three turn-in replies the tape delivered, as `pext`s or,
+when the player reported the socket, as its messages; the account's name is the scrubbed one in
+the read and the send alike; the quest ID changed to 4778 fails naming both IDs; a read not on
+the tape fails in strict mode and answers `"null"`, counted, otherwise; a script that stops
+sending is reported stuck, one that ends early as not reaching the end; an unscrubbed tape is
+refused. Each takes 1 to 4 s. As designed above, except:
+
+- **What is a read:** a list of turu.swf's callbacks that change nothing, plus `callGameFunction`
+  of a function named `is…`, `has…` or `can…` or on a short list (`artLoaded`, `getRep`,
+  `getQuestValue`, ...). **Noise** is a list of the callbacks that switch the client's own
+  behaviour (`setLever`, `killLag`, `modEnable`, ...), answered as reads, plus the tape's
+  `noise` table, named by `replay::label` (`world.rest`, `packet:restRequest`). Everything else,
+  `setGameObject` and any callback not on the lists included, is a send: a getter missing from
+  the list fails, naming itself, rather than an action passing unchecked. The lists have run only
+  over the tests' tapes, not a tape from the game: the first recording may move callbacks between
+  them (a background thread's `setGameObject` as a strict send is a guess).
+- **Where reads look:** between two of the script's sends the position walks at the recorded
+  pace (`delay_scale`) and stops before the next send. A read answers the latest answer recorded
+  for the same name and arguments before the position, else the first after it (a tape's first
+  reads come before anything else). When a send matches, the lines before it on the tape are
+  delivered first, then the position moves past it.
+- **The socket's lines aren't matched:** the bot under replay doesn't write the socket (the player
+  did), so `Sent` and `Received` lines are delivered through `on_socket`, like events, and only
+  calls into Flash are matched.
+- **Room numbers aren't normalised:** the scrubber keeps them and the replay's reads come from the
+  same tape, so a send repeats the recorded room.
+- **Other threads' sends** must each match the next send recorded from the same thread name;
+  one that doesn't, or comes after its thread's last, fails the replay. The quest tape has none
+  (its background threads only read), so decision 7 is still open.
+- **The stall check:** starts at the script's first call (not while it compiles). Its next send
+  is due when it came on the tape after the last, unscaled (`ActionDelay` and the script's sleeps
+  aren't scaled), plus `stall` (10 s by default). Past that the replay fails with the awaited send, the ten tape lines
+  before it and the script log's end. A replay that fails returns errors to every later call
+  (the script sees "the app is closing") and `wait` stops the script.
+- **`hostInfo`** comes from the recording's note (or a recorded `hostInfo` call), not the header:
+  the note is written when the recording opens, so a tape that starts at a map has it too. When
+  the tape has it, `attach` asks for it, so `Flash::call` refuses what that host lacked. The
+  version check of decision 5 isn't done: the engine has no constant for turu.swf's version to
+  compare with (it is in `host/as3`'s `Main.as`).
+- **The options:** `attach` sets the bot's options from the header (`ActionDelay`, ...).
+- **Strict mode** (the default) also refuses a tape with lines missing or cut short.
+- **Not done:** the first tape recorded in game (a quest turn-in loop on a spare account on a
+  quiet server), scrubbed, committed under `bot/tests/tapes/` and replayed in CI; the CI grep of
+  committed tapes for the login packet's fields (Risks). Both need the recording.
 
 ## Phases
 

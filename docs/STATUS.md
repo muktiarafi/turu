@@ -1065,7 +1065,9 @@ memory budget (NVIDIA, AMD).
   real run once, replay it in CI, and run every converted script against a fake world seeded
   from a recording. The recorder (phase 1) is built and checked on a 20-minute headless farm
   run: `TURU_TAPE` / `--record-tape` (docs/HEADLESS.md, "Recording a tape"). So is the
-  scrubber (`turu-tape scrub`), checked on that run's tape. Replaying isn't built.
+  scrubber (`turu-tape scrub`), checked on that run's tape, and the replay
+  (`turu_bot::testing::ReplayHost`, 2026-11-27), checked only on tapes its tests record against a
+  fake game (`bot/tests/replay.rs`): no tape recorded in game is committed or replayed yet.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.
@@ -1079,7 +1081,11 @@ memory budget (NVIDIA, AMD).
   (`docs/UI.md` has the full list).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use a speed
   profile (PGO): `tools/pgo/pgo.sh` records one of Turu's own by playing (docs/HEADLESS.md), but
-  none is committed or measured yet, and CI can't record one (it would need a game login). The
+  none is committed, and CI can't record one (it would need a game login). Measured once
+  (2026-11-24, FarmerJoe on Galanoth, a profile from 15 min with a window and 15 headless): no gain
+  that stands out from the run-to-run differences (headless 3% of a core with both; a window's
+  client 49 s of CPU in 6 min plain, 55 with the profile, in different rooms); the binary is 38 MB
+  against 46. Telling a few percent apart needs a fixed workload (one room, the same actions). The
   macOS app is signed ad hoc, not notarized.
 
 ## Differences from VibeSkua
@@ -1110,10 +1116,6 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
   tab takes another tab's change when it next reads its settings. Hidden in Grid View and
   Headless Mode; not in Turu Mas. The arrival and gear packets were checked against a capture
   (2026-11-25); `moveToArea`'s `uoBranch` fields weren't, so a branch without a max reads once.
-- **Installing an update waits for every tab** (2026-11-22, `models::client_update`): VibeSkua is
-  one process; Turu's tabs are processes of their own (Android's slots, a desktop shell's
-  clients) and an update closes them all, so Download & install (and Download & restart) wait
-  while any other tab runs a script or Auto, naming it, as they wait for this tab's script. The
 - **Target Auras** (2026-11-25, Turu's own: VibeSkua has none; `turu_bot::target_auras`,
   `egui_ui/src/gui/turu/target_auras.rs`): Combat > Target Auras (also Options > Application, and
   the ToggleTargetAuras hotkey) shows the auras on the monster you last attacked and **who put
@@ -1143,6 +1145,10 @@ is in "Known gaps" and `docs/PORTING_GAPS.md`.
   `strUsername`, so the room's casters need no read; an arrival's JSON `uotls` wasn't seen, so a
   player who came later is named by a read if it lacks `entID`. Hidden in Grid View and Headless
   Mode; not in Turu Mas.
+- **Installing an update waits for every tab** (2026-11-22, `models::client_update`): VibeSkua is
+  one process; Turu's tabs are processes of their own (Android's slots, a desktop shell's
+  clients) and an update closes them all, so Download & install (and Download & restart) wait
+  while any other tab runs a script or Auto, naming it, as they wait for this tab's script. The
   shell's tab list says only "busy", so Auto counts in other tabs. On Android two tabs can't
   download the update at once either (a lock in `jobs/`): the second is told another tab is.
 - **Game Options asks before Private Rooms goes off, in CoreBots' words** (2026-11-22,
