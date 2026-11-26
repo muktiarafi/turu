@@ -1099,6 +1099,14 @@ marked `C#` and listed in `scripts/docs/PORTING.md` (the Nation fixes: "Known ga
 they are unverified in game). Don't remove one to match the C#. What VibeSkua has that Turu lacks
 is in "Known gaps" and `docs/PORTING_GAPS.md`.
 
+- **A startup script waits for the player to load** (2026-11-27, `startup::auto_login`):
+  VibeSkua starts `--run-script` (and Turu's `--run-playlist`) a second after the player is alive,
+  while its inventory and avatar may still be loading, and `map.join` does nothing until they
+  have: a script on the bare API whose first call was a join stayed in the map it logged into (seen
+  recording the first replay tape: every turn-in after was refused). Turu waits up to 20 s more for
+  the player to load, then starts anyway. CoreBots scripts already waited in `SetOptions`, so they
+  start no later than before.
+
 - **Player HUD** (2026-11-25, Turu's own: VibeSkua has none; `turu_bot::vitals`,
   `egui_ui/src/gui/turu/player_hud.rs`): Combat > Player HUD (also Options > Application, and the
   TogglePlayerHud hotkey) shows the HP and MP of the players in your cell in a small panel in the

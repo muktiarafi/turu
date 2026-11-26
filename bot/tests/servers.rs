@@ -256,6 +256,7 @@ impl FakeGame {
                 "null".into()
             }
             "isKicked" => (get("mcLogin.warning.visible") == "true").to_string(),
+            "callGameFunction0" if a0 == "world.myAvatar.pMC.artLoaded" => get(&a0),
             "resetConnectionState" => {
                 self.leave_world();
                 "null".into()
@@ -543,6 +544,56 @@ fn startup_logs_in_once_the_game_has_loaded() {
             .unwrap()
             .as_deref(),
         Some("Alt")
+    );
+}
+
+/// `--run-script` starts the script once the player has finished loading (its inventory and
+/// avatar), not as soon as it is alive: `map.join` does nothing before then.
+#[test]
+fn startup_starts_the_script_once_the_player_has_loaded() {
+    let game = FakeGame::new();
+    game.leave_world();
+    let bot = new_bot(&game);
+    let dir = std::env::temp_dir().join(format!("turu-test-startup-load-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = dir.join("main.ts");
+    std::fs::write(
+        &script,
+        "import { bot } from \"turu\";\nexport default function main(): void { bot.log(`loaded: ${bot.player.loaded}`); }\n",
+    )
+    .unwrap();
+    turu_bot::startup::configure(
+        &bot,
+        turu_bot::startup::Startup {
+            username: Some("Alt".into()),
+            password: Some("pw".into()),
+            server: Some("Artix".into()),
+            script: Some(script),
+            run_script: true,
+            options_storage: Some("startup-load".into()),
+            ..Default::default()
+        },
+    );
+    bot.on_flash_call("loaded", vec![]);
+    assert!(wait_until(Duration::from_secs(10), || game
+        .logged_in
+        .load(Ordering::SeqCst)));
+    // Logged in and alive, but the inventory hasn't come.
+    std::thread::sleep(Duration::from_millis(2000));
+    assert!(!bot.scripts.is_running(), "{}", bot.logs.script.text());
+    assert!(!bot.logs.script.text().contains("loaded:"));
+
+    game.set("world.myAvatar.items.length", "6");
+    game.set("world.mapLoadInProgress", "false");
+    game.set("world.myAvatar.pMC.artLoaded", "true");
+    assert!(
+        wait_until(Duration::from_secs(5), || bot
+            .logs
+            .script
+            .text()
+            .contains("loaded: true")),
+        "{}",
+        bot.logs.script.text()
     );
 }
 

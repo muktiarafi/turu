@@ -407,7 +407,7 @@ new recording after large changes (a profile covers only the code it saw). Muget
 | `--headless` | No window. |
 | `--user <name>`, `--password <password>` | Log in once the game has loaded (password better in `TURU_PASSWORD`). |
 | `--server <name>` | The server to log in on (default Twilly), and the one relogins go back to for this run (Relogin Server; not saved). |
-| `--run-script <path>` / `--load-script <path>` | Start the script after the login / only load it. |
+| `--run-script <path>` / `--load-script <path>` | Start the script after the login, once the player has loaded (up to 20 s) / only load it. |
 | `--run-playlist <file>` / `--load-playlist <file>` | The same for a playlist (wins over a script). |
 | `--client=<address>` | Run one tab without a window and draw it for a shell at `<address>` (needs `TURU_SHELL_TOKEN`; docs/TAB_PROCESSES_PROPOSAL.md, M2). Quits when the shell closes. |
 | `--shell` | A window that runs each tab in a `--client` process and shows the one selected (or all, in Grid View); the first tab gets the other flags but `--api`, `--monitor` and `--report-to`. The shell runs the web monitor and Report To over every tab; each client gets a control API of its own on a free local port, and the shell's `--api` serves the same routes over the tabs, passing each request on to the tab's (`/tabs` lists them; a tab whose client is starting again answers `game_not_running`). A dead client is started again (docs/TAB_PROCESSES_PROPOSAL.md, M5). `TURU_SHELL_TEST=<file>` scripts it for tests. Every start of Turu's window is the shell (M6), Army > Accounts' "In its own window" ones included; not `--headless`. |

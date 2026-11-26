@@ -119,7 +119,7 @@ pub(crate) fn on_game_loaded(bot: &Bot) {
 }
 
 /// VibeSkua `SkuaStartupHandler.Login`: `EnsureRelogin(server)`, up to 20 s for the player,
-/// then after 1 s starts the script.
+/// then (Turu) up to 20 s for it to finish loading, then after 1 s starts the script.
 pub(crate) fn auto_login(bot: &Arc<Bot>) {
     let Some(startup) = bot.startup.lock().take() else {
         return;
@@ -143,6 +143,18 @@ pub(crate) fn auto_login(bot: &Arc<Bot>) {
     if !player::playing(bot).unwrap_or(false) {
         bot.log("Couldn't log in.");
         return;
+    }
+    // Turu: VibeSkua starts the script once the player is alive, while the inventory and the
+    // avatar may still be loading; `map.join` (VibeSkua's `Join` too) does nothing until they
+    // have, so a script that joins first stayed where it logged in. CoreBots' `SetOptions` waits
+    // for this; a script on the bare API didn't. Up to 20 s, then it starts anyway.
+    let mut waited = 0;
+    while !player::loaded(bot).unwrap_or(false) && waited < 80 {
+        std::thread::sleep(Duration::from_millis(250));
+        waited += 1;
+    }
+    if !player::loaded(bot).unwrap_or(false) {
+        bot.log("The player hadn't finished loading after 20 s: starting anyway.");
     }
     std::thread::sleep(Duration::from_secs(1));
     if startup.run_playlist && startup.playlist.is_some() {
