@@ -1,5 +1,5 @@
-//! What a tape never holds: passwords, session tokens, the socket's login, and chat (other
-//! people's words). Taken out as each line is written, wherever it shows: a call's arguments
+//! What a tape never holds: passwords, session tokens, the account's email and IP address, the
+//! socket's login, and chat (other people's words). Taken out as each line is written, wherever it shows: a call's arguments
 //! or answer, an event, a socket message (docs/REPLAY_TESTS_PROPOSAL.md, "Secrets and names").
 //! Player names stay: the scrubber (phase 2) replaces them before a tape becomes a fixture.
 
@@ -101,7 +101,7 @@ fn call(name: &str, args: &mut [Value], answer: &mut Option<String>) {
 }
 
 /// A game path whose value is a secret: under `loginInfo` (all but the username), or ending in a
-/// password or token field (`objLogin.sToken`).
+/// password, token, email or IP address field (`objLogin.sToken`).
 pub fn is_secret_path(path: &str) -> bool {
     if let Some(field) = path.strip_prefix("loginInfo.") {
         return field != "strUsername";
@@ -110,15 +110,23 @@ pub fn is_secret_path(path: &str) -> bool {
     is_secret_key(last)
 }
 
-/// A field name that holds a secret: `strPassword`, `sToken`, `pword`, ...
-fn is_secret_key(key: &str) -> bool {
+/// A field name that holds a secret: `strPassword`, `sToken`, `pword`, `strEmail`, `strIP` (the
+/// account's address, in `initUserData`; not `ip0`, ..., quest progress).
+pub(crate) fn is_secret_key(key: &str) -> bool {
     let key = key.to_ascii_lowercase();
-    key.ends_with("password") || key.ends_with("token") || key.ends_with("pword") || key == "pass"
+    key.ends_with("password")
+        || key.ends_with("token")
+        || key.ends_with("pword")
+        || key == "pass"
+        || key.ends_with("email")
+        || key == "strip"
+        || key == "ip"
+        || key.ends_with("ipaddress")
 }
 
 /// A JSON value: its strings are redacted as text, its secret fields replaced. True when it
 /// changed.
-fn value(v: &mut Value) -> bool {
+pub(crate) fn value(v: &mut Value) -> bool {
     match v {
         Value::String(s) => text(s),
         Value::Array(items) => items
@@ -148,8 +156,8 @@ pub fn text(s: &mut String) -> bool {
     } else if is_chat(s) {
         *s = REDACTED_CHAT.into();
     } else if (s.starts_with('{') || s.starts_with('['))
-        // Most answers are JSON (monsters, quests, the avatar): only one that names a secret field
-        // is parsed, which keeps the writer's cost down (a farm run writes ~40 MB of it an hour).
+        // Most answers are JSON (monsters, quests, the avatar): only one that may name a secret
+        // field is parsed, which keeps the writer's cost down (a farm run writes ~40 MB of it an hour).
         && names_a_secret(s)
         && let Ok(mut json) = serde_json::from_str::<Value>(s)
         && value(&mut json)
@@ -161,10 +169,10 @@ pub fn text(s: &mut String) -> bool {
     true
 }
 
-/// Whether `s` may hold a field [`is_secret_key`] takes: it has "pass", "token" or "pword" in
-/// it, in any case.
+/// Whether `s` may hold a field [`is_secret_key`] takes: it has "pass", "token", "pword",
+/// "email", "strip" or `"ip"` in it, in any case.
 fn names_a_secret(s: &str) -> bool {
-    const HINTS: &[&[u8]] = &[b"pass", b"token", b"pword"];
+    const HINTS: &[&[u8]] = &[b"pass", b"token", b"pword", b"email", b"strip", b"\"ip\""];
     HINTS.iter().any(|hint| {
         s.as_bytes()
             .windows(hint.len())
@@ -267,6 +275,22 @@ mod tests {
         let v: Value = serde_json::from_str(&s).unwrap();
         assert_eq!(v["sToken"], REDACTED);
         assert_eq!(v["servers"][0]["sName"], "Yorumi");
+    }
+
+    #[test]
+    fn the_accounts_email_and_address_are_redacted() {
+        let mut s = json!({"cmd": "initUserData", "data": {
+            "strUsername": "Questwalker", "strEmail": "questwalker@example.com",
+            "strIP": "192.0.2.7", "ip0": 5, "ip1": 0,
+        }})
+        .to_string();
+        assert!(text(&mut s));
+        let v: Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["data"]["strEmail"], REDACTED);
+        assert_eq!(v["data"]["strIP"], REDACTED);
+        assert_eq!(v["data"]["ip0"], 5);
+        assert_eq!(v["data"]["strUsername"], "Questwalker");
+        assert!(is_secret_path("world.myAvatar.objData.strEmail"));
     }
 
     #[test]

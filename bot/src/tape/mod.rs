@@ -14,8 +14,10 @@
 
 mod recorder;
 pub mod redact;
+pub mod scrub;
 
 pub use recorder::{Recorder, finish_all};
+pub use scrub::{scrub, scrub_file};
 
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
@@ -210,6 +212,28 @@ pub fn read(path: &Path) -> io::Result<Tape> {
         missing,
         truncated,
     })
+}
+
+/// Writes `tape` to a new file at `path` (never over one), as a recording would have: the header,
+/// the lines in order, the end line if it has one.
+pub fn write(path: &Path, tape: &Tape) -> io::Result<()> {
+    use std::io::Write;
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    let mut out = flate2::write::GzEncoder::new(
+        std::io::BufWriter::new(file),
+        flate2::Compression::default(),
+    );
+    recorder::write_json(&mut out, &tape.header)?;
+    for line in &tape.lines {
+        recorder::write_json(&mut out, line)?;
+    }
+    if let Some(end) = &tape.end {
+        recorder::write_json(&mut out, end)?;
+    }
+    out.finish()?.flush()
 }
 
 /// Where a bot's recorder is kept: [`crate::flash::Flash`] holds it, as most lines are its calls.

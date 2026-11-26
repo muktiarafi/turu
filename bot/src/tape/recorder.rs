@@ -405,7 +405,7 @@ fn write_loop(rx: Receiver<Msg>, file: File, header: Header, shared: &Shared) {
     }
 }
 
-fn write_json(out: &mut impl Write, value: &impl serde::Serialize) -> io::Result<()> {
+pub(super) fn write_json(out: &mut impl Write, value: &impl serde::Serialize) -> io::Result<()> {
     serde_json::to_writer(&mut *out, value).map_err(io::Error::other)?;
     out.write_all(b"\n")
 }

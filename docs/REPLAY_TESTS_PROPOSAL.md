@@ -1,7 +1,8 @@
 # Proposal: tests from recorded game sessions
 
 Status: phases 0 and 1 done (2026-11-26): the spike (see "What a do-nothing game shows") and
-the recorder, checked in game (see "As built, phase 1"). Phases 2 to 5 aren't built. Would touch `bot/src/flash.rs` (`Flash::call`), `bot/src/events.rs`
+the recorder, checked in game (see "As built, phase 1"). Phase 2's scrubber is built (2026-11-27,
+"As built, phase 2 so far"); its replay isn't. Phases 3 to 5 aren't built. Would touch `bot/src/flash.rs` (`Flash::call`), `bot/src/events.rs`
 (`on_flash_call`), `bot/src/player_packets.rs` (`on_socket`), a new `bot/src/tape/` (format,
 recorder, scrubber), `bot/src/testing.rs` (the replay host and the world fake), `bot/tests/`
 (`replay.rs`, `draft_smoke.rs`, `tapes/`), `docs/HEADLESS.md` (the switch) and a nightly
@@ -272,10 +273,50 @@ script notes, and every `loginInfo.` path in `bot/src` redacted). As designed ab
     4.5 s for the 20 minutes in a debug build (redaction and JSON 2.3 s, gzip 2.2 s), 0.2 s in a
     release build, so it costs nothing to speak of. Redaction parses only JSON that names a
     password, token or `pword` field (parsing every JSON answer would have taken 1.1 s more).
-  - **Not checked:** a window's shell with tabs, a relogin on tape (`TURU_TAPE_FROM_START`), and
-    the scrubber's input (phase 2).
+  - **Not checked:** a window's shell with tabs, and a relogin on tape (`TURU_TAPE_FROM_START`).
+  - **Found later** (phase 2): `initUserData` carries the account's email and IP address
+    (`strEmail`, `strIP`), which this tape kept. Redaction now takes fields named like an email
+    or an address (`strIP`, `ip`; not `ip0`..., quest progress), and the scrubber does the
+    redaction again, so tapes recorded before are covered.
 - **Not done:** Android and Turu Mas have no way to switch it on yet (no environment there); the
   Diagnostics switch is phase 5.
+
+## As built, phase 2 so far: the scrubber
+
+`bot/src/tape/scrub.rs` (`tape::scrub`, `tape::scrub_file`), `tape::write`, and the
+`turu-tape` command (`bot/src/bin/turu-tape.rs`: `info <tape>`, `scrub <tape> <scrubbed>`; run
+it with `cargo run --release -p turu_bot --bin turu-tape -- ...`). Tests:
+`bot/tests/tape_scrub.rs`. As designed above, except:
+
+- **Who is found:** the account from its reads (`loginInfo.strUsername`, `sfc.myUserName`,
+  `objData.strUsername`) or `initUserData`; other players from the places the real captures
+  name them: `strUsername`, `uoName` and `unm` fields anywhere (`uotls`, `uoBranch`,
+  `initUserDatas`, `houseData`), `ct`'s `p` keys, `world.areaUsers` and `world.uoTree`, string
+  `uotls` and `exitArea` packets, SmartFox's `<n><![CDATA[...]]></n>` (`joinOK`, `uER`), and the
+  options' `customName` and `customGuild`. A name only some other packet carries (a friends list,
+  a guild's members) isn't found: none was in the captures.
+- **How it is replaced:** the account becomes "Questwalker", the others "Player2", "Player3", ...
+  in order of first appearance, everywhere in the tape (calls' arguments and answers, events,
+  packets, notes, the options), in the case each place had (`ct`'s keys are lowercase), at word
+  boundaries so a short name doesn't rename an item that starts with it. A player named like a
+  word of the game's ("Dragon") renames that word where it stands alone too.
+- **Numbers:** `UserID` and `CharID` (fields named so, and reads of them) are renumbered from
+  100000001, wherever the number shows. The room's player numbers (`uid`, `entID`, `p:<uid>`) and
+  room numbers stay, unlike the design above: they last a session and name no one, and they show
+  in too many places (sends, answers, packets) to renumber without risking the tape's
+  consistency.
+- **Personal fields:** `sCountry` becomes "XX", `iAge` 0, `dCreated` a fixed date; `strEmail` and
+  `strIP` are redacted (above).
+- **Checked:** `scrub_file` writes a new file (never over one), reads it back, and removes it if
+  any name, number, email or address it replaced is still there. Scrubbing twice gives the same
+  tape.
+- **Checked on the farm tape** (2026-11-27): 86,478 lines in 3.6 s (release). Afterwards the
+  account's name (16,635 places before), email, address, `UserID` and `CharID` appear 0 times;
+  the lines and the end line are the same; a second scrub is identical. That tape had no other
+  player in it: the other players' shapes are checked only by the tests, which follow the real
+  captures' packets with made-up names.
+- **Not done:** the replay (`ReplayHost`), its strict mode and the first committed tape;
+  `hostInfo` in the header (the replay needs it).
 
 ## Phases
 

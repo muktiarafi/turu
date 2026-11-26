@@ -47,6 +47,7 @@ mod skill_sets;
 mod spammer_interceptor;
 mod stats_rates;
 mod tape;
+mod tape_scrub;
 mod target_auras;
 
 #[test]

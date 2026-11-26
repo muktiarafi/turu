@@ -1064,8 +1064,8 @@ memory budget (NVIDIA, AMD).
 - **Tests from recorded game sessions** are proposed in `docs/REPLAY_TESTS_PROPOSAL.md`: record a
   real run once, replay it in CI, and run every converted script against a fake world seeded
   from a recording. The recorder (phase 1) is built and checked on a 20-minute headless farm
-  run: `TURU_TAPE` / `--record-tape` (docs/HEADLESS.md, "Recording a tape"). Replaying isn't
-  built.
+  run: `TURU_TAPE` / `--record-tape` (docs/HEADLESS.md, "Recording a tape"). So is the
+  scrubber (`turu-tape scrub`), checked on that run's tape. Replaying isn't built.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.
