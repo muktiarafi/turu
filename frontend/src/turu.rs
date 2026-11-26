@@ -220,11 +220,13 @@ pub fn remove_tab(tab: TabId) -> Option<Arc<Bot>> {
     Some(removed)
 }
 
-/// Marks every tab's account offline for the other clients' Butler: the app quits.
+/// Marks every tab's account offline for the other clients' Butler: the app quits. Every app
+/// exit goes through here, so the tapes being recorded are finished too (their end line).
 pub fn close_butlers() {
     for (_, bot) in tabs() {
         turu_bot::butler::close(&bot);
     }
+    turu_bot::tape::finish_all();
 }
 
 /// Whether hidden tabs' games are slowed ([`set_active_tab`]); see [`set_hidden_tabs_slowed`].
@@ -1153,6 +1155,8 @@ pub fn host_swf_url() -> anyhow::Result<String> {
 ///   their stdin a pipe from the launcher: see `turu_bot::army`).
 /// * `--api` (or `--api=<address>`, default `127.0.0.1:9091`): the control API (see
 ///   `turu_bot::control_api`), started by [`start_api`].
+/// * `--record-tape <file or folder>`: record what passes between the bot and the game
+///   (`turu_bot::tape`), as `TURU_TAPE`.
 pub fn take_startup_args(args: &mut Vec<OsString>) {
     let Flags {
         mut startup,
@@ -1164,7 +1168,14 @@ pub fn take_startup_args(args: &mut Vec<OsString>) {
         api,
         monitor,
         report_to,
+        record_tape,
     } = parse_startup_args(args);
+    // A window's shell passes it on to its first tab's client and doesn't record itself (the app
+    // calls `turu_bot::tape::disable_startup` there).
+    if let Some(path) = record_tape {
+        let from_start = std::env::var("TURU_TAPE_FROM_START").is_ok_and(|v| !v.is_empty() && v != "0");
+        turu_bot::tape::set_startup_path(path.into(), from_start);
+    }
     if exit_with_parent {
         LAUNCHED_BY_ARMY.store(true, Ordering::Relaxed);
         turu_bot::army::exit_with_parent(|| {
@@ -1778,6 +1789,8 @@ struct Flags {
     monitor: Option<String>,
     /// `--report-to`'s URL.
     report_to: Option<String>,
+    /// `--record-tape`'s file or folder (docs/REPLAY_TESTS_PROPOSAL.md).
+    record_tape: Option<String>,
 }
 
 /// Removes Turu's flags from `args` and returns them.
@@ -1834,6 +1847,7 @@ fn parse_startup_args(args: &mut Vec<OsString>) -> Flags {
             // Likewise: `--monitor` alone takes Options > Application's port.
             "--monitor" => flags.monitor = Some(inline.unwrap_or_default()),
             "--report-to" => flags.report_to = value(),
+            "--record-tape" => flags.record_tape = value().filter(|p| !p.is_empty()),
             _ => rest.push(arg),
         }
     }

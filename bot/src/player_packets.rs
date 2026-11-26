@@ -105,9 +105,14 @@ impl Bot {
     /// [`crate::host::FlashHost::player_packets`]). Called on the player's thread while it's
     /// locked: no Flash calls, no blocking, as [`Bot::on_flash_call`].
     pub fn on_socket(self: &Arc<Self>, socket: u64, direction: Direction, data: &[u8]) {
+        let tape = self.flash.tape.get();
         for message in self.socket_buffers.messages(socket, direction, data) {
             match direction {
                 Direction::Sent => {
+                    if let Some(tape) = &tape {
+                        // A sent message never opens the recording.
+                        tape.socket(socket, true, &message);
+                    }
                     if let Some(packet) = sent_packet(&message) {
                         crate::events::player_packet_sent(self, packet);
                     }
@@ -116,6 +121,11 @@ impl Bot {
                     // The server compresses its longer messages (`Z`, zlib in Base64): a
                     // monster's drops, `moveToArea`, `getQuests`, ...; the client unpacks them.
                     let message = crate::capture::unpack(&message).unwrap_or(message);
+                    if let Some(tape) = &tape
+                        && tape.socket(socket, false, &message)
+                    {
+                        crate::tape::note_host_info(tape, &self.flash);
+                    }
                     if let Some(pext) = extension_packet(&message) {
                         crate::events::player_extension_packet(self, pext);
                     }

@@ -23,10 +23,12 @@ pub struct Flash {
     errors: Mutex<RepeatLog>,
     control: Arc<ScriptControl>,
     perf: Arc<PerfStats>,
+    /// The tape being recorded, if any (docs/REPLAY_TESTS_PROPOSAL.md).
+    pub tape: crate::tape::Slot,
 }
 
 /// turu.swf's `hostInfo()` (docs/HOST_SWF_PROPOSAL.md).
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, serde::Serialize)]
 pub struct HostInfo {
     /// `turu`.
     pub name: String,
@@ -58,6 +60,7 @@ impl Flash {
             errors: Mutex::default(),
             control,
             perf: Arc::default(),
+            tape: Default::default(),
         }
     }
 
@@ -154,12 +157,24 @@ impl Flash {
             Some(FlashArg::String(path)) if crate::perf::takes_path(name) => Some(path.clone()),
             _ => None,
         };
+        // The arguments are kept only while a tape records; its line's place is taken now.
+        let tape = self
+            .tape
+            .get()
+            .and_then(|tape| Some((tape.begin_call()?, args.clone(), tape)));
         let asked = Instant::now();
         let result = host.call_timed(name, args);
         let (run, reply) = match &result {
             Ok((reply, run)) => (*run, Some(reply.len())),
             Err(_) => (None, None),
         };
+        if let Some((ticket, args, tape)) = tape {
+            let answer = result
+                .as_ref()
+                .map(|(reply, _)| reply.as_str())
+                .map_err(ToString::to_string);
+            tape.call(ticket, name, &args, answer, run);
+        }
         self.perf
             .record_call(name, path.as_deref(), asked.elapsed(), run, reply);
         let result = result.map(|(reply, _)| reply).map_err(BotError::from);

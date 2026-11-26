@@ -639,6 +639,7 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
                 .file_name()
                 .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
             bot.log(format!("Started script {name}"));
+            note_tape_start(&bot, &path, silent);
             bot.monitor.event(
                 crate::monitor::EventKind::ScriptStarted,
                 format!("Started {name}"),
@@ -662,6 +663,44 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
             e.to_string()
         })?;
     Ok(())
+}
+
+/// On the tape being recorded: which script started, where it is under the scripts folder (not
+/// the whole path, which names the user's home), and the values of its options.
+fn note_tape_start(bot: &Bot, path: &Path, silent: bool) {
+    let Some(tape) = bot.flash.tape.get() else {
+        return;
+    };
+    let scripts = bot.paths.scripts_dir();
+    // Else under a folder named `scripts` (the repo's checkout, `--run-script scripts/...`), else
+    // only its name.
+    let under_a_scripts_folder = || {
+        let parts: Vec<_> = path.components().collect();
+        let at = parts.iter().rposition(|c| c.as_os_str() == "scripts")?;
+        Some(parts[at + 1..].iter().collect::<PathBuf>())
+    };
+    let shown = path
+        .strip_prefix(&scripts)
+        .ok()
+        .map(Path::to_path_buf)
+        .or_else(under_a_scripts_folder)
+        .or_else(|| path.file_name().map(PathBuf::from))
+        .map_or_else(String::new, |p| p.to_string_lossy().replace('\\', "/"));
+    let options = match bot.scripts.options() {
+        ScriptOptionsState::Loaded(options) => {
+            let mut json = options.to_json();
+            // Its `file` is a whole path.
+            if let Some(fields) = json.as_object_mut() {
+                fields.remove("file");
+            }
+            json
+        }
+        _ => serde_json::Value::Null,
+    };
+    tape.note(
+        "scriptStarted",
+        serde_json::json!({ "script": shown, "silent": silent, "options": options }),
+    );
 }
 
 /// "Stop Script": the script's next bot call (or any running JS) stops it.
@@ -740,6 +779,13 @@ fn finish(
     result: Result<(), runtime::RunError>,
 ) {
     let finished = result.is_ok();
+    if let Some(tape) = bot.flash.tape.get() {
+        let error = result.as_ref().err().map(|e| format!("{e:?}"));
+        tape.note(
+            "scriptStopped",
+            serde_json::json!({ "finished": finished, "error": error }),
+        );
+    }
     bot.skills.stop();
     // VibeSkua `ScriptCombat.ScriptStopped` (the counter handler itself stays on).
     bot.combat.set_stop_attacking(false);

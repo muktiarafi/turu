@@ -356,6 +356,8 @@ fn tip_quality(player: &mut ruffle_core::Player) -> turu_frontend::graphics_tips
 fn exit_now(code: i32) -> ! {
     #[cfg(windows)]
     crate::windows::wait_for_crash_report();
+    // Turu: the tape being recorded gets its end line (docs/REPLAY_TESTS_PROPOSAL.md).
+    turu_bot::tape::finish_all();
     std::process::exit(code);
 }
 

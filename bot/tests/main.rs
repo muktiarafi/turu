@@ -46,6 +46,7 @@ mod settings_merge;
 mod skill_sets;
 mod spammer_interceptor;
 mod stats_rates;
+mod tape;
 mod target_auras;
 
 #[test]

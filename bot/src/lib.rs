@@ -46,6 +46,7 @@ pub mod spammer;
 pub mod startup;
 pub mod state;
 pub mod stats;
+pub mod tape;
 pub mod target_auras;
 #[doc(hidden)]
 pub mod testing;
@@ -180,6 +181,11 @@ impl Bot {
             target_auras: target_auras::TargetAuras::default(),
             paths,
         });
+        if let Some((target, from_start)) = tape::startup_target()
+            && let Err(e) = bot.start_tape(&target, from_start)
+        {
+            tracing::warn!("Couldn't start the tape at {}: {e}", target.display());
+        }
         background::start(&bot);
         webhooks::start(&bot);
         monitor::start(&bot);
@@ -201,7 +207,40 @@ impl Bot {
     /// Handles a call made by `turu.swf` (`ExternalInterface.call`). Called on the player's
     /// thread while the player is locked: it must not call into Flash or block.
     pub fn on_flash_call(self: &Arc<Self>, name: &str, args: Vec<serde_json::Value>) {
+        if let Some(tape) = self.flash.tape.get()
+            && tape.event(name, &args)
+        {
+            tape::note_host_info(&tape, &self.flash);
+        }
         events::on_flash_call(self, name, args);
+    }
+
+    /// Starts recording a tape to `target` (a file, or a folder for a new file), replacing a
+    /// recording already running (which is finished). Recording begins when the player joins a
+    /// map, or at once with `from_start`. Returns the file it writes.
+    pub fn start_tape(
+        &self,
+        target: &std::path::Path,
+        from_start: bool,
+    ) -> std::io::Result<std::path::PathBuf> {
+        let options = serde_json::to_value(&*self.options.read()).unwrap_or_default();
+        let recorder = tape::Recorder::start(target, from_start, options)?;
+        let path = recorder.path().to_owned();
+        tracing::info!("Recording a tape to {}", path.display());
+        if from_start {
+            tape::note_host_info(&recorder, &self.flash);
+        }
+        if let Some(old) = self.flash.tape.set(Some(recorder)) {
+            old.stop();
+        }
+        Ok(path)
+    }
+
+    /// Stops the tape being recorded, if any, and returns its file.
+    pub fn stop_tape(&self) -> Option<std::path::PathBuf> {
+        let recorder = self.flash.tape.set(None)?;
+        recorder.stop();
+        Some(recorder.path().to_owned())
     }
 
     /// `bot.log(...)`: a line in the script log. In the app's log (`ruffle.log`, the terminal) it

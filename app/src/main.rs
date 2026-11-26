@@ -538,6 +538,11 @@ fn main() -> Result<(), Error> {
     // Turu: the startup flags (downloading the scripts they name), crash reports (after the panic
     // hook above, so Sentry's runs first), the control API (`--api`), the web monitor, the client
     // update checks and `TURU_PERF_LOG`, now that their messages can be logged.
+    // Turu: a window's shell plays no game, so its bots record no tape (`TURU_TAPE`,
+    // `--record-tape`): its tabs' clients do. Before `configure_startup`, which makes the first bot.
+    if turu::client_of().is_none() && (turu::shell() || shell::runs_as_shell()) {
+        turu_bot::tape::disable_startup();
+    }
     turu::configure_startup();
     crash_uploads::start();
     // A process tabs' shell serves `--api` over its tabs' own (`shell::run`); its clients, which
@@ -610,6 +615,8 @@ fn main() -> Result<(), Error> {
         // A crash on another thread right now gets its report written first.
         #[cfg(windows)]
         windows::wait_for_crash_report();
+        // Turu: a tab's client ends here without `close_butlers`; its tape gets its end line.
+        turu_bot::tape::finish_all();
         std::process::exit(0);
     }
 

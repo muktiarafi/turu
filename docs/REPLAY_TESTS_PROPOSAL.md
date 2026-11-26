@@ -1,7 +1,7 @@
 # Proposal: tests from recorded game sessions
 
-Status: proposed, not built (2026-11-26). Phase 0's spike is done (see "What a do-nothing game
-shows"); nothing else is. Would touch `bot/src/flash.rs` (`Flash::call`), `bot/src/events.rs`
+Status: phases 0 and 1 done (2026-11-26): the spike (see "What a do-nothing game shows") and
+the recorder, checked in game (see "As built, phase 1"). Phases 2 to 5 aren't built. Would touch `bot/src/flash.rs` (`Flash::call`), `bot/src/events.rs`
 (`on_flash_call`), `bot/src/player_packets.rs` (`on_socket`), a new `bot/src/tape/` (format,
 recorder, scrubber), `bot/src/testing.rs` (the replay host and the world fake), `bot/tests/`
 (`replay.rs`, `draft_smoke.rs`, `tapes/`), `docs/HEADLESS.md` (the switch) and a nightly
@@ -214,6 +214,68 @@ the C# helps (see the open decisions).
 
 At about 12 s a draft it is too slow for every pull request. It runs nightly over all drafts,
 and on pull requests over only the scripts and Core files they change.
+
+## As built, phase 1
+
+`bot/src/tape/` (`mod.rs`: the format, `read`, the slot; `recorder.rs`; `redact.rs`), hooked in
+`Flash::call_host`, `Bot::on_flash_call` and `Bot::on_socket`, with notes from
+`script::start_with` and `finish`; `Bot::start_tape` / `stop_tape`; `TURU_TAPE`,
+`TURU_TAPE_FROM_START` and `--record-tape` (`frontend/src/turu.rs`; the shell passes it to its
+first tab's client, and doesn't record itself); `close_butlers`, which every exit goes through,
+finishes the tapes. Tests: `bot/tests/tape.rs` (with a fake game: when recording starts, the
+socket, every secret above and chat absent from the file, a tape cut short, file names, the
+script notes, and every `loginInfo.` path in `bot/src` redacted). As designed above, except:
+
+- **Order:** each line's `n` is taken when its event begins (a call's when it is made), and
+  `read` sorts by it, so a call comes before the packets it caused although its line is
+  written after its answer. Dropped lines leave gaps in `n` (`Tape::missing`).
+- **The header** holds the format, the engine's version, the start time, `fromWorld`, the bot's
+  options and a `scrubbed` flag (false). `hostInfo` isn't in it: its call is on the tape when
+  the client asks (a recording from the start), and phase 2 needs it from the header for tapes
+  that start at a map, so it moves there then.
+- **The script's options** are in its `scriptStarted` note (their values as the control API
+  shows them, without the file's path), not the header: a tape can hold several runs. The script
+  is named by its path under the scripts folder, else under any folder named `scripts` (the
+  repo's checkout), else by its file name: never the whole path.
+- **Redaction** also covers a JSON answer's or `pext`'s fields named like a password or token
+  (`sToken`, `strPassword`; not `TokID` or `iTokens`), whatever the path, and sets of a secret
+  path. Chat is replaced whole, `pext`s included, so a chat `pext` replays as text that isn't
+  JSON.
+- **Calls in flight at the stop:** a stop waits up to 0.5 s for calls already made to be
+  answered; the `end` line lists the rest (`unanswered`), whose numbers aren't gaps.
+- **`hostInfo`** is a note when the recording opens (from what the client kept when it loaded,
+  without asking the game), and at once for a recording from the start.
+- **The version** is the build's (`TURU_VERSION` in releases, `updates::current_version`).
+- **Where it records:** a window's shell records nothing (`tape::disable_startup`, in the app
+  before the first bot is made); its tabs' clients do, inheriting `TURU_TAPE` (only the first
+  gets `--record-tape`). A client's own exits (`client::exit_now`, the end of `main`) finish the
+  tape, as `close_butlers` does for the others.
+- **Checked for real** (2026-11-26): a debug build headless with no login, `TURU_TAPE` a folder
+  and `TURU_TAPE_FROM_START=1`, stopped with SIGTERM after about 40 s at the login screen: 22 KB,
+  1,777 lines (1,702 of them the background timer's `isNull`s), no gaps, every caller named
+  (`ScriptInterface`, `Butler Broadcast`, `Turu Startup`), no `end` line as expected.
+- **Checked in game** (2026-11-26, phase 1's exit): FarmerJoe DoAll headless on a spare account
+  on a quiet server (twig), debug build, 20 minutes recording (run A) and 20 without (run B),
+  each ended by `POST /script/stop` with `--exit-on-script-stop`.
+  - **The tape:** 86,478 lines, 0 dropped, no gaps, the `end` line written. 3.1 MB compressed
+    (about 9 MB an hour), 39 MB of JSON before compression. Calls are 95% of the lines and
+    almost all the bytes: `getMonsters` (8.4 MB), `snapshot` (5.2 MB), `world.myAvatar.dataLeaf`
+    (5.0 MB), quest trees. By thread: Script Thread 45k, Skill Timer 26k, ScriptInterface 6k,
+    Butler Broadcast 4k. `hostInfo` was noted (version 11, 68 callbacks).
+  - **Secrets:** the account's password appears 0 times in the decompressed tape. No field named
+    like a password or token is left. 35 chat lines were replaced. The username is there (3,855
+    `loginInfo.strUsername` reads), for the scrubber.
+  - **Cost:** the player's thread was unchanged: 77 ms/s and 0.79 ms per call with the tape, 76
+    and 0.64 without. The 0.15 ms is within run-to-run differences: run A joined 14 maps and
+    run B 8, as DoAll did different things. The process used 156 s of CPU with the tape and 116 s
+    without, the same workload caveat. The writer's own work on that tape, timed offline:
+    4.5 s for the 20 minutes in a debug build (redaction and JSON 2.3 s, gzip 2.2 s), 0.2 s in a
+    release build, so it costs nothing to speak of. Redaction parses only JSON that names a
+    password, token or `pword` field (parsing every JSON answer would have taken 1.1 s more).
+  - **Not checked:** a window's shell with tabs, a relogin on tape (`TURU_TAPE_FROM_START`), and
+    the scrubber's input (phase 2).
+- **Not done:** Android and Turu Mas have no way to switch it on yet (no environment there); the
+  Diagnostics switch is phase 5.
 
 ## Phases
 

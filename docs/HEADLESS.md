@@ -357,6 +357,30 @@ also works on a run still going or on any Turu log, reports:
 
 It also writes the samples to `<log>.csv`.
 
+**Recording a tape** (docs/REPLAY_TESTS_PROPOSAL.md): `TURU_TAPE=<file or folder>` (or
+`--record-tape <file or folder>`) records what passes between the bot and the game: each call into
+Flash with its answer, each call from `turu.swf` and each message of the game's socket, with
+the time and the calling thread, plus a note when a script starts (its path under the scripts
+folder and its options' values) and stops. It goes to a gzip-compressed JSON Lines file,
+`*.tape.jsonl.gz` (`turu_bot::tape::read` reads one). A folder gets a new file per client
+(`turu-<time>-<pid>.tape.jsonl.gz`); an existing file is never written over (the name gets `-2`,
+`-3`, ...), so give tabs and Army clients a folder. Recording starts when the player first joins a
+map; `TURU_TAPE_FROM_START=1` records from the start, for a relogin. Passwords (`loginInfo`
+reads, the game's `login` call), session tokens (the socket's login, JSON fields named like
+`sToken`) and chat (sent, received, whispers) are replaced with `<redacted>` as each line is
+written; player names are kept, so a tape is private until it is scrubbed. A writer thread of its
+own compresses and writes, flushing every second: a killed process leaves a tape readable up to
+its last second, without its `end` line. Lines the writer couldn't keep up with are dropped,
+never waited for, and counted in the `end` line (and as gaps in their numbers). Quitting through
+Turu finishes the file: `--exit-on-script-stop` (or `POST /script/stop` with it), an update,
+closing the window. A signal (`systemctl stop`, Ctrl+C) doesn't: the tape then ends at its last
+flush. Use a quiet server and a spare account: a tape holds the account's name and everything it
+saw. FarmerJoe DoAll writes about 9 MB of tape an hour (70 lines a second); the writer's work
+is negligible in a release build. The redaction was checked on one 20-minute farm run (the
+password and token absent); before sharing a tape made with another account or other content,
+search the decompressed tape for that account's password (`gunzip -c <tape> | grep -cF
+'<password>'` says 0).
+
 **A speed profile (PGO)** of Turu's own: `tools/pgo/pgo.sh all [script...]` builds a `dist` binary
 that counts what runs (`gen`), logs in from `turu-args.txt` as farmrun does and plays each script
 for `MINUTES` (20) with a window and headless (`record`, `MODES`), merges the counts (`merge`,
@@ -387,6 +411,7 @@ new recording after large changes (a profile covers only the code it saw). Muget
 | `--api[=<address>]` | The control API, default `127.0.0.1:9091`. |
 | `--monitor[=<address>]` | The web monitor; without an address, Options > Application's port. |
 | `--report-to <url>` | Report to another machine's web monitor. |
+| `--record-tape <file or folder>` | Record a tape (as `TURU_TAPE`; see "Recording a tape"). With `--shell`, its first tab's client records. |
 
 | Variable | What |
 |---|---|
@@ -404,6 +429,8 @@ new recording after large changes (a profile covers only the code it saw). Muget
 | `TURU_RETAIN_URL` | Without a window, with `TURU_PERF_LOG`: what keeps the `LoaderInfo`s of movies whose URL contains this alive, every 5th memory reading. |
 | `TURU_CACHE_CENSUS` | With a window and `TURU_PERF_LOG`: every window, a `cache census:` line: the live cacheAsBitmap textures, how many of them objects on the stage and orphans hold, and the classes holding the most. |
 | `TURU_PACKET_LOG` | Set: every packet the client sends goes to the log too (`turu::packet` lines), as Diagnostics > Logger does with a window. `tools/farmrun/summarize.py` then shows which packets came before each "Please slow down". |
+| `TURU_TAPE` | A file or folder: every client records a tape there ("Recording a tape"). |
+| `TURU_TAPE_FROM_START` | `1`: tapes record from the start, the login included (redacted), not from the first map. |
 | `TURU_HTTP_CACHE` | `0`: don't keep the game's files on disk (`<data>/cache/gamefiles`); every one is downloaded again. |
 | `TURU_HTTP_CACHE_MB` | How large that folder may grow (default 1024); the files used longest ago go first. |
 | `TURU_PERF_LOG_ROWS` | How many calls each of those lists (default 12). |
