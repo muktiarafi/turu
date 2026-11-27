@@ -11,10 +11,14 @@ import android.util.Log
 import io.sentry.Attachment
 import io.sentry.Breadcrumb
 import io.sentry.Sentry
+import io.sentry.SentryEvent
 import io.sentry.SentryLevel
 import io.sentry.android.core.SentryAndroid
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
+import java.io.RandomAccessFile
+import java.util.Date
 
 /**
  * Crash reports sent to Turu's developers through Sentry, once the user said yes (the question
@@ -184,6 +188,8 @@ object CrashUploads {
             options.isEnableNdk = true
             options.isTombstoneEnabled = true
             options.isAttachRawTombstone = true
+            // Each of the app's processes reads Android's exit record as it starts: one report per exit.
+            options.setBeforeSend { event, _ -> if (firstToSend(context, event)) event else null }
         }
         // Turu's Sentry project takes both apps' reports: this tells them apart.
         app.client?.let { Sentry.setTag("client", it) }
@@ -192,6 +198,51 @@ object CrashUploads {
         started = true
         Log.i(TAG, "Crash reports: on")
     }
+
+    /**
+     * Whether this process is the first to send `event`, when it's one of Sentry's reports read
+     * from Android's exit record (a tombstone, an ANR); any other event is sent. Sentry reads the
+     * record in every process as it starts, and remembers the last one sent in its cache folder,
+     * which the app's processes share; but it writes that only once the report is stored, so
+     * processes starting together (Turu's tabs, started again after a crash) each sent the same
+     * tombstone: one crash came 14 times (TURU-ANDROID-7, a tab's process on 0.4.0-beta.3). Here
+     * the exit's time is claimed under a lock every process takes, and only the first sends it.
+     */
+    @Synchronized
+    private fun firstToSend(context: Context, event: SentryEvent): Boolean {
+        val mechanism = event.exceptions?.firstNotNullOfOrNull { it.mechanism?.type } ?: return true
+        val kind = EXIT_MECHANISMS[mechanism] ?: return true
+        val at = event.timestamp?.time ?: return true
+        val key = "$kind $at"
+        return try {
+            RandomAccessFile(File(context.filesDir, "sentry-exits.txt"), "rw").use { file ->
+                file.channel.lock().use {
+                    val sent = generateSequence { file.readLine() }.toMutableList()
+                    if (key in sent) {
+                        Log.i(TAG, "Crash reports: $kind of ${Date(at)} sent by another process already")
+                        return false
+                    }
+                    sent.add(key)
+                    file.setLength(0)
+                    file.writeBytes(sent.takeLast(KEEP_EXITS).joinToString("\n", postfix = "\n"))
+                    true
+                }
+            }
+        } catch (e: IOException) {
+            Log.w(TAG, "Couldn't check whether another process sent a report", e)
+            true
+        }
+    }
+
+    /** Sentry's mechanisms for the reports it reads from Android's exit record, by kind. */
+    private val EXIT_MECHANISMS = mapOf(
+        "Tombstone" to "tombstone",
+        "TombstoneMerged" to "tombstone",
+        "AppExitInfo" to "anr",
+    )
+
+    /** The exits remembered as sent (Android keeps a few per app). */
+    private const val KEEP_EXITS = 64
 
     /** "main" for the app's own process, else the part after its ':' ("c1" for `…turu:c1`). */
     private fun processTag(name: String): String = name.substringAfter(':', "main")

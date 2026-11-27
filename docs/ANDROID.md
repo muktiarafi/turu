@@ -426,7 +426,12 @@ Sentry (`io.sentry:sentry-android`, auto-init off in the manifest):
 * Native and Java crashes are caught as they happen (Sentry's NDK handler), so a phone that
   keeps its tombstones to itself (the Redmi 10's MIUI) still reports, and merged with the
   tombstone where Android gives one (Android 12+, raw tombstone attached). ANRs come from
-  Android's exit records. Reports are sent at the next start.
+  Android's exit records. Reports are sent at the next start. Every process reads those records
+  as it starts (process tabs: the shell and each tab), and Sentry's own "last sent" marker is
+  written only once a report is stored, so processes starting together sent the same tombstone
+  (one crash came 14 times, TURU-ANDROID-7): `beforeSend` claims each tombstone and ANR by its
+  exit's time in `files/sentry-exits.txt`, under a lock every process takes, and only the first
+  sends it (logcat: "sent by another process already").
 * A Rust panic's message goes with the native crash (`TuruService.panicked`, from the panic
   hook: a breadcrumb and the `panic` extra).
 * Exits Sentry doesn't catch (low memory, a kill by the system or a battery saver) are sent as
