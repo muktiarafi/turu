@@ -210,7 +210,7 @@ impl Bot {
         if let Some(tape) = self.flash.tape.get()
             && tape.event(name, &args)
         {
-            tape::note_host_info(&tape, &self.flash);
+            tape::note_opening(&tape, self);
         }
         events::on_flash_call(self, name, args);
     }
@@ -228,7 +228,7 @@ impl Bot {
         let path = recorder.path().to_owned();
         tracing::info!("Recording a tape to {}", path.display());
         if from_start {
-            tape::note_host_info(&recorder, &self.flash);
+            tape::note_opening(&recorder, self);
         }
         if let Some(old) = self.flash.tape.set(Some(recorder)) {
             old.stop();

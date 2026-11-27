@@ -115,6 +115,13 @@ fn root(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
                 bot.log(format!("[CBO Migration] Renamed \"{old}\" → \"{new}\""));
             })
             .map_err(|e| BotError::Other(format!("couldn't read {}: {e}", path.display())))?;
+            // A file the tape doesn't see: a replay writes it back (`tape::replay`).
+            if let Some(tape) = bot.flash.tape.get() {
+                tape.note(
+                    "cbo",
+                    serde_json::json!({ "username": username, "lines": lines }),
+                );
+            }
             ok(lines)
         }
         "stop" => {

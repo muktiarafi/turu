@@ -456,3 +456,42 @@ fn a_script_under_a_scripts_folder_is_named_from_there() {
         .expect("scriptStarted");
     assert_eq!(started["script"], "farm/Gold.ts");
 }
+
+/// The server list comes over HTTP, which a tape doesn't see: the list held when the recording
+/// opens, and each one fetched while it records, are noted for a replay to hand back.
+#[test]
+fn server_lists_are_noted() {
+    let dir = temp("servers");
+    let bot = bot(false);
+    let list = |count: i64| {
+        serde_json::from_value::<Vec<turu_bot::models::Server>>(json!([
+            {"sName": "Twig", "sIP": "1.1.1.1", "iPort": 5588, "bOnline": 1, "iCount": count, "iMax": 1000}
+        ]))
+        .unwrap()
+    };
+    bot.servers.set_fetcher(move || Ok(list(430)));
+    turu_bot::api::servers::get_servers(&bot, true);
+    let path = bot
+        .start_tape(&dir.join("run.tape.jsonl.gz"), false)
+        .unwrap();
+    // Opens at the map join: the list held then.
+    bot.on_flash_call("pext", pext("moveToArea"));
+    bot.servers.set_fetcher(move || Ok(list(428)));
+    turu_bot::api::servers::get_servers(&bot, true);
+    bot.stop_tape();
+
+    let counts: Vec<i64> = tape::read(&path)
+        .unwrap()
+        .lines
+        .iter()
+        .filter_map(|l| match l {
+            Line::Note { what, detail, .. } if what == "servers" => {
+                // The game's names, the address kept (not redacted as an account's).
+                assert_eq!(detail["servers"][0]["sIP"], "1.1.1.1");
+                detail["servers"][0]["iCount"].as_i64()
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(counts, [430, 428]);
+}

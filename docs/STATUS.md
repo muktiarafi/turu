@@ -922,8 +922,12 @@ memory budget (NVIDIA, AMD).
   while it's busy and "!" while it waits for you. Not built: VibeSkua's hidden title and nav bars in
   the tiles (Turu's bar stays, for the active tab) and a hover state for tiles.
 
-- **Relogin is unverified in game:** the tests run it against a fake login screen. Expect fixes
-  in timings and in how `turu.swf` answers (`getActiveModalMessage`, `clickServer`).
+- **A script's relogin is checked in game** (2026-11-27, phase 3 of
+  docs/REPLAY_TESTS_PROPOSAL.md): `bot.servers.relogin("Twig")` from the world, headless, on tape
+  (`bot/tests/tapes/relogin`, replayed by `replay::the_relogin_tape_replays`). It failed in game
+  until relogins waited for the login screen (see "Differences from VibeSkua"). The auto-relogin
+  after a disconnect, the server-full and modal paths, and a window's client are still checked
+  only against a fake login screen.
 - **Android (phases 4 and 5, `docs/ANDROID.md`):** the game on screen (Vulkan) with Turu's nav
   bar and bot windows (the desktop's, by touch), keys, the soft keyboard and sound (muted in the
   background, as a hidden desktop tab; Notify Drop's beep still sounds); a foreground service
@@ -1017,21 +1021,30 @@ memory budget (NVIDIA, AMD).
   Army Control and the monitor show); the control API's `/script/options` and `/scheduler/options` and the web
   monitor's Script Options tab read and set them (`docs/SCRIPT_OPTIONS_PROPOSAL.md`). The monitor tab was
   checked against a mock server only, not a live client.
-- **CoreStory is unverified in game:** its test only checks that `preLoad` finds the quests of a
-  story function. `killQuest`, `mapItemQuest` and the unlock-recovery loop of `questProgression`
-  need a story run.
-- **The merge template is unverified in game:** its tests run it against a fake shop (picking the
-  items, handing a requirement the shop doesn't sell to `findIngredients`); buying and the nested
-  merges need a real merge run (SynderesMerge is the smallest).
-- **Enhancement is unverified in game:** CoreAdvanced's `enhanceItem`, `enhanceEquipped`,
-  `smartEnhance`, `gearStore` and `rankUpClass` follow C#, and their tests run them against fake
-  enhancement shops (which shop, which enhancement, the `enhanceItemShop` packet, skipping what's
-  done, locked specials). Check in game the real shops' item names: C# picks a special by its
-  name and, on a tie, the first plain "... Cape/Helm/Weapon" entry would win. C#'s odd spots are
-  kept (Forge = 1 takes the Awe-shop path since the specials were renumbered). Items carry
+- **CoreStory's `mapItemQuest` and `killQuest` are checked in game** (2026-11-27, phase 3 of
+  docs/REPLAY_TESTS_PROPOSAL.md): the first two Dark Dungeon quests (three map items, then eight
+  drops from Dungeon Minions), with `preLoad` and `questProgression`, on tape
+  (`bot/tests/tapes/core_story`, replayed by `replay::the_core_story_tape_replays` in about two
+  minutes). The unlock-recovery loop of `questProgression` relogs, and CoreBots' `relogin` falls
+  back to Twilly as in C#: tapes keep off it (each quest runs only when unlocked), so it is
+  unchecked. It ran once by mistake on a quest that wasn't unlocked: it relogged 8 times, on Twilly
+  after Twig failed (the relogin bug since fixed).
+- **The merge template is checked in game on one item** (2026-11-27, phase 3 of
+  docs/REPLAY_TESTS_PROPOSAL.md): SynderesMerge buying only "NO BOTS Armor", its missing souvenir
+  handed to `findIngredients` and farmed through a registered quest, then the buy, on tape
+  (`bot/tests/tapes/merge_buy`, replayed by `replay::the_merge_tape_replays`). Nested merges (a
+  requirement bought from the same shop) and the buy modes other than one item still run only
+  against a fake shop.
+- **Enhancement is checked in game for `enhanceEquipped` only** (2026-11-27, phase 3 of
+  docs/REPLAY_TESTS_PROPOSAL.md): Lucky on a level-16 free character's class gear through the
+  real shops (Healer 1 to 14, the Battle Oracle hood, staff and wings to 16, 13 and 15), on tape
+  (`bot/tests/tapes/enhance_equipped`, replayed by `replay::the_enhancement_tape_replays`).
+  `enhanceItem`, `smartEnhance`, `gearStore`, the specials (cape, helm, weapon: C# picks a special
+  by its name and, on a tie, the first plain "... Cape/Helm/Weapon" entry would win) and
+  `rankUpClass` (Icestorm Arena) still run only against fake enhancement shops. C#'s odd spots
+  are kept (Forge = 1 takes the Awe-shop path since the specials were renumbered). Items carry
   `enhancementPatternId` and `procId` now (`EnhPatternID`, `ProcID`); the weapon proc and the
-  applied enhancement ID are read from `world.invTree` as C# does. `rankUpClass` (Icestorm
-  Arena) needs a real run.
+  applied enhancement ID are read from `world.invTree` as C# does.
 - **CoreDailies is unverified in game:** its tests check `checkDailyv2` (daily done, max
   stacks, the drop list) against a fake game. The dailies themselves, the friendship packets and
   `bot.player.webBadges` (a request to account.aq.com's character page, for `Core.hasWebBadge`)
@@ -1099,6 +1112,12 @@ marked `C#` and listed in `scripts/docs/PORTING.md` (the Nation fixes: "Known ga
 they are unverified in game). Don't remove one to match the C#. What VibeSkua has that Turu lacks
 is in "Known gaps" and `docs/PORTING_GAPS.md`.
 
+- **A relogin waits for the login screen before it logs in** (2026-11-27,
+  `servers::log_out_and_in`): VibeSkua's `Relogin` calls `login` right after
+  `gotoAndPlay("Login")`, which takes effect on the client's next frame (half a second later
+  headless, at 2 frames a second); a `login` before it was lost, the server list never came and the
+  relogin timed out (in game: every scripted relogin from the world failed, and CoreBots' `relogin`
+  then fell back to Twilly). Turu waits up to 5 s for `mcLogin` to show.
 - **A startup script waits for the player to load** (2026-11-27, `startup::auto_login`):
   VibeSkua starts `--run-script` (and Turu's `--run-playlist`) a second after the player is alive,
   while its inventory and avatar may still be loading, and `map.join` does nothing until they

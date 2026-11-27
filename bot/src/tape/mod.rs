@@ -283,12 +283,35 @@ pub(crate) fn startup_target() -> Option<(PathBuf, bool)> {
     Some((PathBuf::from(path), from_start))
 }
 
-/// On `tape`: what `turu.swf` said of itself (`hostInfo`), so a replay can check it plays the
-/// tape to the same host. Asks nothing of the game (the answer kept when the client loaded): safe
-/// on the player's thread.
-pub(crate) fn note_host_info(tape: &Recorder, flash: &crate::flash::Flash) {
-    let info = flash.host_info().map_or(Value::Null, |info| {
+/// On `tape`, as it opens: what `turu.swf` said of itself (`hostInfo`), so a replay can check it
+/// plays the tape to the same host, and the server list the bot holds (fetched over HTTP, which
+/// the tape doesn't see), for a replay's relogins. Asks nothing of the game (the answers kept
+/// before): safe on the player's thread.
+pub(crate) fn note_opening(tape: &Recorder, bot: &crate::Bot) {
+    let info = bot.flash.host_info().map_or(Value::Null, |info| {
         serde_json::to_value(&*info).unwrap_or_default()
     });
     tape.note("hostInfo", info);
+    let servers = bot.servers.cached();
+    if !servers.is_empty() {
+        note_servers(tape, Ok(&servers));
+    }
+}
+
+/// On `tape`: the server list the bot fetched (or why it couldn't), which a replay hands back
+/// instead of fetching ([`replay::ReplayHost::attach`]).
+pub(crate) fn note_servers(tape: &Recorder, servers: Result<&[crate::models::Server], &str>) {
+    let detail = match servers {
+        // In the game's names (`sIP`): redaction takes fields named `ip` (an account's address),
+        // and a server's isn't one.
+        Ok(servers) => {
+            let servers: Vec<Value> = servers
+                .iter()
+                .filter_map(|s| serde_json::from_str(&s.to_game_json()).ok())
+                .collect();
+            serde_json::json!({ "servers": servers })
+        }
+        Err(e) => serde_json::json!({ "error": e }),
+    };
+    tape.note("servers", detail);
 }

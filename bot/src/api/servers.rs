@@ -179,7 +179,11 @@ pub fn get_servers(bot: &Bot, force: bool) -> Vec<Server> {
         }
     }
     let fetcher = bot.servers.fetcher.lock().clone();
-    match fetcher() {
+    let fetched = fetcher();
+    if let Some(tape) = bot.flash.tape.get() {
+        crate::tape::note_servers(&tape, fetched.as_deref().map_err(String::as_str));
+    }
+    match fetched {
         Ok(servers) if !servers.is_empty() => {
             *bot.servers.cached.lock() = servers.clone();
             servers
@@ -719,7 +723,17 @@ fn log_out_and_in(ctx: &Ctx) -> BotResult<()> {
     bot.events.emit(BotEvent::Logout);
     disconnect_for_relogin(bot);
     bot.state.lock().stats.relogins += 1;
+    // Turu: VibeSkua logs in at once, but `gotoAndPlay("Login")` takes effect on the client's
+    // next frame (half a second later headless, at 2 frames a second) and a `login` before it is
+    // lost: the server list never came and the relogin timed out (in game, 2026-11-27; with 1 s
+    // between them it worked). Wait for the login screen, up to 5 s.
+    ctx.wait_for(|| Ok(login_screen_shown(bot)), 50)?;
     login_for_relogin(bot)
+}
+
+/// The login screen is up (`mcLogin` shown): a `login` now is taken.
+fn login_screen_shown(bot: &Bot) -> bool {
+    bot.flash.get_or("mcLogin.visible", false).unwrap_or(false)
 }
 
 /// Waits for the world after a relogin's connect and logs how it went.

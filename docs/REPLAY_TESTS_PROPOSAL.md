@@ -3,7 +3,9 @@
 Status: phases 0 and 1 done (2026-11-26): the spike (see "What a do-nothing game shows") and
 the recorder, checked in game (see "As built, phase 1"). Phase 2 done (2026-11-27): the scrubber
 and the replay (see "As built, phase 2"), with the first tape recorded in game committed and
-replayed by the tests ("The first tape"). Phases 3 to 5 aren't built. Would touch `bot/src/flash.rs` (`Flash::call`), `bot/src/events.rs`
+replayed by the tests ("The first tape"). Phase 3 done (2026-11-27, "Phase 3"): a merge buy,
+enhancement, bank moves, relogin, CoreStory and a kill farm on tape, each replayed by the tests.
+Phases 4 and 5 aren't built. Would touch `bot/src/flash.rs` (`Flash::call`), `bot/src/events.rs`
 (`on_flash_call`), `bot/src/player_packets.rs` (`on_socket`), a new `bot/src/tape/` (format,
 recorder, scrubber), `bot/src/testing.rs` (the replay host and the world fake), `bot/tests/`
 (`replay.rs`, `draft_smoke.rs`, `tapes/`), `docs/HEADLESS.md` (the switch) and a nightly
@@ -352,8 +354,8 @@ refused. Each takes 1 to 4 s. As designed above, except:
 - **Room numbers aren't normalised:** the scrubber keeps them and the replay's reads come from the
   same tape, so a send repeats the recorded room.
 - **Other threads' sends** must each match the next send recorded from the same thread name;
-  one that doesn't, or comes after its thread's last, fails the replay. The quest tape has none
-  (its background threads only read), so decision 7 is still open.
+  one that doesn't, or comes after its thread's last, fails the replay, but for the skill
+  timer's, which are unchecked (decision 7, settled in phase 3).
 - **The stall check:** starts at the script's first call (not while it compiles). Its next send
   is due when it came on the tape after the last, unscaled (`ActionDelay` and the script's sleeps
   aren't scaled), plus `stall` (10 s by default). Past that the replay fails with the awaited send, the ten tape lines
@@ -393,6 +395,92 @@ tools/farmrun/run.sh bot/tests/tapes/chute_quest.ts 10`, then `turu-tape scrub` 
 - **To record it again** (a change to what the script sends): the same command with the
   account's args file, then remove the old tape and scrub the new one into its place (`scrub`
   never writes over a file).
+
+## Phase 3
+
+Each tape's script is beside it in `bot/tests/tapes/` and recorded as the first one was
+(`tools/farmrun/run.sh` with the spare account's args file and `TURU_TAPE`, on twig, then
+`turu-tape scrub`). `replay::replays_to_its_end` replays one to its script and checks its log.
+
+| Tape | What it does | In game | Replays in |
+|---|---|---|---|
+| `enhance_equipped` | `Core.setOptions`, CoreAdvanced `enhanceEquipped(Lucky)` on the class gear | Healer 1 to 14, hood 12 to 16, staff 9 to 13, wings 11 to 15 | 10 s |
+| `bank_moves` | `Core.setOptions`, `Core.toBank` and `Core.unbank` of a resource | there and back | 12 s |
+| `relogin` | `bot.servers.relogin("Twig")` from the world | failed, then fixed (below) | 2 s |
+| `merge_buy` | the level-100 account: `Core.setOptions`, SynderesMerge's `buyAllMerge("NO BOTS Armor")`: the missing souvenir farmed through registered quest 4247, then the buy | bought (gold 93,481,788 to 93,481,663: the quest's reward nearly covers the 1,000) | 49 s |
+| `kill_farm` | a level-100 account: `Core.setOptions`, `Core.huntMonster` for 3 more Bone Dust (battleunderb), CoreBots' drop handling | 1,163 to 1,171 | 46 s |
+| `core_story` | `Core.setOptions`, CoreStory `mapItemQuest(3538)` then `killQuest(3539)` (Dark Dungeon), each only when unlocked | both done: 3 map items, 8 drops | 116 s |
+
+**What the tapes found:**
+
+- **Every scripted relogin from the world failed in game** ("Server list screen failed to
+  load"). The tape showed `login` called 0 ms after `gotoAndPlay("Login")`, with the headless
+  client at 2 frames a second; an experiment (disconnect, wait, log in) failed with no wait and
+  worked with 1 s. Relogins now wait for the login screen (`servers::log_out_and_in`, STATUS.md
+  "Differences from VibeSkua"), checked in game twice and by a fake whose `login` is lost before
+  the Login frame (`servers::relogin_logs_in_once_the_login_screen_shows`).
+- **That bug sent a CoreStory run to Twilly.** Quest 1219 couldn't be accepted (it needs an
+  earlier quest's item); CoreStory's recovery called `Core.relogin`, which tried Twig, failed on the
+  bug above, and fell back to CoreBots' fixed list (`["Twilly", "Twig", "Safiria"]`), then kept
+  preferring the last server: 8 relogins on Twilly before farmrun's 8 minutes ran out. With
+  relogins working it would have stayed on Twig, but the fallback still names Twilly first. The
+  owner chose to keep CoreBots as C# has it and keep tapes off it: a read-only probe found which
+  quests the account could take (3538 and, after it, 3539), the tape's script runs each only when
+  unlocked and not done, and the recording ran with a watchdog that kills the client on any
+  relogin attempt (none came). `questProgression`'s recovery stays unchecked.
+- **The replay needed four changes for real tapes:**
+  - **The script's own reads in order.** Between two of its sends the script is deterministic, so
+    a script-thread read takes the next answer the script itself recorded for that read in the
+    segment, then the last again; other threads keep the paced position. Without it a read just
+    after `world.toggleBank` saw the bank window shut and `bank.load()` sent a `loadBank` the tape
+    hadn't.
+  - **JSON text compared by content.** The app is built with `serde_json`'s `preserve_order`
+    (Ruffle's dependencies) and the engine's tests without, so an item the engine writes for
+    `inventoryHasSpaceFor` has its keys in another order in each.
+  - **Whole redacted arguments match anything:** `<redacted chat>` and `<redacted login>` as well
+    as `<redacted>` (CoreBots' `setOptions` sends a packet the chat rule takes).
+  - **The server list off the tape.** The bot fetches it over HTTP, which a tape doesn't see, so a
+    replay fetched it live (a different player count each time: a flaky test). A recording now
+    notes the list it holds when it opens and each one it fetches (`servers` notes, in the game's
+    names so redaction keeps the address), and the replay answers the fetch from them; with none,
+    the fetch fails and the engine reads the game's list from the tape. A replay never fetches.
+- **The replay test helper** makes a committed script's imports of `scripts/` absolute (it loads
+  the script from a folder of its own) and sets a made-up login for relogins, as `--user` and
+  `--password` did in game.
+
+- **Decision 7, settled on the CoreStory tape:** the skill timer's sends are unchecked
+  (`ReplayOptions::unchecked_threads`, by default "Skill Timer"), only answered and counted
+  (`ReplayReport::unchecked_sends`; the test asserts there were some). Strict order failed at once:
+  at 48 s the tape cast skill 1 where the replay chose skill 4, as the timer casts whichever skill
+  is off cooldown at its own pace. Other background threads stay strict (on these tapes they sent
+  only a frame-rate set and the exit's `gotoAndPlay`).
+- **Decision 2, first evidence:** a replay runs at the recorded pace but for the events' delays
+  (`ActionDelay`, the hunt's sleeps and waits are real time), so the CoreStory tape takes about
+  as long as it was recorded (116 s for 2.1 min). Its test has a nextest override
+  (`.config/nextest.toml`) so it isn't ended at 2 minutes. A virtual clock would make combat tapes
+  fast; whether it is worth touching every wait is still open.
+
+- **The kill farm** used a second account the owner gave for it (level 100, on twig), with the
+  same relogin watchdog (it didn't fire). A first try on Dungeon Minions dropped nothing (their
+  drops are quest items), so it farms Bone Dust as CoreFarms does. CoreBots' `setOptions` changed
+  the account in passing, as it does for any script: it banked an AC item ("Grimskull's Favor",
+  `bankACMisc`) and turned the social options off and back on; the script left the Bone Dust in
+  the inventory (it unbanks it first).
+- **The CoreBots Options file off the tape.** That account has one, and `setOptions` acts on it
+  (Incognito Mode turns the social options off); the replay bot had none and took another path.
+  The engine's `coreBotsOptions` now notes what it read (a `cbo` note: the account and its lines,
+  settings only), and `ReplayHost::attach` writes the first one into the bot's data folder, or
+  removes the file when the recording had none. It replaces the file there: replay to a test bot.
+
+- **The merge buy** came after a read-only probe of shop 332: of its ten items only "NO BOTS Armor"
+  (one souvenir, 1,000 gold) is cheap and open to a free account. The registered quest's turn-ins
+  come from a thread of their own and matched strictly. It replayed on the first try.
+
+Phase 3's "Done when" holds: every tape replays in CI, and STATUS.md's merge, enhancement,
+relogin and CoreStory entries point at theirs (the bank and the kill farm had none). What the
+tapes leave unchecked is listed in those entries: nested merges and the other buy modes, the
+other enhancement calls, the auto-relogin after a disconnect, `questProgression`'s recovery. STATUS.md's relogin, enhancement and CoreStory
+entries point at their tapes; the bank has no entry of its own.
 
 ## Phases
 
@@ -434,9 +522,8 @@ a time with no further engine work. Phase 4 can start after the first phase 3 ta
    A tape has both, so the comparison can run offline over every tape. Decide there whether it
    replaces the in-game shadow switch or comes before it.
 
-7. **How strict to be about background threads in combat.** Matching per thread keeps each
-   thread's order. Whether the skill timer's sends need checking at all, or only their count
-   within a band, is decided on the first combat tape.
+7. **How strict to be about background threads in combat.** Settled on the first combat tape
+   (phase 3): the skill timer's sends are unchecked, counted; other threads keep their order.
 
 ## Risks
 

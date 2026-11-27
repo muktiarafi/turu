@@ -155,7 +155,14 @@ struct FakeGame {
     stuck_connects: std::sync::atomic::AtomicUsize,
     /// Servers whose click shows "Server is Full!" instead of connecting.
     full: Mutex<HashSet<String>>,
+    /// When `gotoAndPlay("Login")` was called: the Login frame shows `LOGIN_FRAME` later, as
+    /// the client's next frame (headless, 2 a second), and a `login` before then is lost.
+    login_frame_at: Mutex<Option<Instant>>,
+    /// `login`s that came before the Login frame showed.
+    lost_logins: std::sync::atomic::AtomicUsize,
 }
+
+const LOGIN_FRAME: Duration = Duration::from_millis(300);
 
 const LIST: &str = r#"[{"sName":"Artix","sIP":"1.1.1.1","iPort":5588,"bOnline":1,"iCount":5,"iMax":1000},
     {"sName":"Twilly","sIP":"2.2.2.2","iPort":5588,"bOnline":1,"iCount":5,"iMax":1000}]"#;
@@ -180,6 +187,7 @@ impl FakeGame {
     }
 
     fn enter_world(&self) {
+        *self.login_frame_at.lock() = None;
         self.logged_in.store(true, Ordering::SeqCst);
         self.set("world", "{}");
         self.set("world.myAvatar", "{}");
@@ -237,6 +245,13 @@ impl FlashHost for FakeGame {
 }
 
 impl FakeGame {
+    /// The client was sent to the Login frame and hasn't drawn it yet.
+    fn login_frame_pending(&self) -> bool {
+        self.login_frame_at
+            .lock()
+            .is_some_and(|at| at.elapsed() < LOGIN_FRAME)
+    }
+
     fn answer(&self, name: &str, args: Vec<FlashArg>) -> Result<String, HostError> {
         let a0 = arg(&args, 0);
         let get = |path: &str| {
@@ -249,6 +264,9 @@ impl FakeGame {
         Ok(match name {
             "isLoggedIn" => self.logged_in.load(Ordering::SeqCst).to_string(),
             "isNull" => (!self.values.lock().contains_key(&a0)).to_string(),
+            "getGameObject" if a0 == "mcLogin.visible" && self.login_frame_pending() => {
+                "null".into()
+            }
             "getGameObject" | "getGameObjectS" => get(&a0),
             "getActiveModalMessage" => get("modal"),
             "killLoginModals" => {
@@ -282,6 +300,13 @@ impl FakeGame {
             }
             "callGameFunction" => {
                 match a0.as_str() {
+                    "login" if self.login_frame_pending() => {
+                        self.lost_logins.fetch_add(1, Ordering::SeqCst);
+                    }
+                    "gotoAndPlay" if arg(&args, 1) == "Login" => {
+                        *self.login_frame_at.lock() = Some(Instant::now());
+                        self.set("mcLogin.visible", "true");
+                    }
                     "login" => {
                         self.set("mcLogin.visible", "true");
                         self.set("mcLogin.sl.iList", "{}");
@@ -500,6 +525,19 @@ fn scripted_relogin_picks_the_named_server_and_restores_auto_relogin() {
         turu_bot::api::dispatch(&bot, "servers.cachedServers", &[]).unwrap()[1]["name"],
         "Twilly"
     );
+}
+
+/// A relogin from the world waits for the Login frame before it logs in: a `login` before the
+/// frame shows is lost, and the server list never comes (seen in game, headless at 2 frames a
+/// second).
+#[test]
+fn relogin_logs_in_once_the_login_screen_shows() {
+    let game = FakeGame::new();
+    let bot = new_bot(&game);
+    let relogged = turu_bot::api::dispatch(&bot, "servers.relogin", &[json!("Twilly")]).unwrap();
+    assert_eq!(relogged, json!(true));
+    assert_eq!(game.lost_logins.load(Ordering::SeqCst), 0);
+    assert!(game.game_functions().contains(&"login".to_owned()));
 }
 
 #[test]

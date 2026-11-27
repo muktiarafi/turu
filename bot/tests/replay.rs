@@ -204,6 +204,9 @@ fn replay(
     options: ReplayOptions,
 ) -> (Arc<Bot>, Arc<ReplayHost>) {
     let bot = new_bot();
+    // A recorded run logged in with `--user`/`--password`, which relogins use: a made-up one
+    // stands in (the tape's login arguments are redacted and match anything).
+    turu_bot::api::servers::set_login_info(&bot, "Questwalker", "not-a-password");
     let host = ReplayHost::open(tape, options).unwrap();
     host.attach(&bot);
     let path = dir.join("replayed.ts");
@@ -404,10 +407,19 @@ fn tapes_dir() -> PathBuf {
 /// Replays a committed tape to `source` (its script, or a changed copy) at a quarter of its
 /// events' delays.
 fn replay_committed(name: &str, source: &str) -> (Arc<Bot>, Arc<ReplayHost>) {
+    replay_committed_with(name, source, ReplayOptions::default())
+}
+
+/// [`replay_committed`] with `options` (a tape's noise), at a quarter of its events' delays.
+fn replay_committed_with(
+    name: &str,
+    source: &str,
+    options: ReplayOptions,
+) -> (Arc<Bot>, Arc<ReplayHost>) {
     let dir = temp(name);
     let options = ReplayOptions {
         delay_scale: 0.25,
-        ..ReplayOptions::default()
+        ..options
     };
     replay(
         &tapes_dir().join(format!("{name}.tape.jsonl.gz")),
@@ -417,8 +429,16 @@ fn replay_committed(name: &str, source: &str) -> (Arc<Bot>, Arc<ReplayHost>) {
     )
 }
 
+/// A committed tape's script, its imports of the repo's scripts made absolute (the replay loads
+/// it from a folder of its own).
 fn committed_script(name: &str) -> String {
-    std::fs::read_to_string(tapes_dir().join(format!("{name}.ts"))).unwrap()
+    let scripts = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../scripts")
+        .canonicalize()
+        .unwrap();
+    std::fs::read_to_string(tapes_dir().join(format!("{name}.ts")))
+        .unwrap()
+        .replace("\"../../../scripts/", &format!("\"{}/", scripts.display()))
 }
 
 /// Quest 8543 in /chute, accepted, its map item picked up and turned in three times, recorded
@@ -432,6 +452,115 @@ fn the_chute_quest_tape_replays() {
     assert_eq!(report.status, ScriptStatus::Loaded, "{report:?}");
     let log = bot.logs.script.text();
     assert!(log.contains("Turn-in 3: done"), "{log}");
+}
+
+/// Replays a committed tape to its own script: it must reach the tape's end with `logged` in the
+/// script log.
+fn replays_to_its_end(name: &str, logged: &[&str]) {
+    replays_to_its_end_with(name, logged, ReplayOptions::default());
+}
+
+fn replays_to_its_end_with(
+    name: &str,
+    logged: &[&str],
+    options: ReplayOptions,
+) -> turu_bot::testing::ReplayReport {
+    let (bot, host) = replay_committed_with(name, &committed_script(name), options);
+    // Replays run at the recorded pace but for the events' delays: a combat tape takes about as
+    // long as it was recorded (decision 2, a virtual clock, would make it instant).
+    let report = host
+        .wait(&bot, Duration::from_secs(200))
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(report.status, ScriptStatus::Loaded, "{report:?}");
+    let log = bot.logs.script.text();
+    for line in logged {
+        assert!(log.contains(line), "{line} isn't in the log:\n{log}");
+    }
+    report
+}
+
+/// CoreAdvanced's `enhanceEquipped`, Lucky, on a level-16 character's class gear: the real
+/// enhancement shops' items and the `enhanceItemShop` packets.
+#[test]
+fn the_enhancement_tape_replays() {
+    replays_to_its_end(
+        "enhance_equipped",
+        &[
+            "Before: Healer 1, Battle Oracle Hood 12, Battle Oracle Battlestaff 9, Battle Oracle Wings 11",
+            "After: Healer 14, Battle Oracle Hood 16, Battle Oracle Battlestaff 13, Battle Oracle Wings 15",
+        ],
+    );
+}
+
+/// CoreBots' `toBank` and `unbank` on a resource, there and back.
+#[test]
+fn the_bank_tape_replays() {
+    replays_to_its_end(
+        "bank_moves",
+        &[
+            "Banked: in the bank true, in the inventory false",
+            "Unbanked: in the bank false, in the inventory true",
+        ],
+    );
+}
+
+/// The engine's relogin back onto the quiet server it logged into: the login screen, the login
+/// (its arguments redacted, matching anything), the server list and the connect.
+#[test]
+fn the_relogin_tape_replays() {
+    replays_to_its_end(
+        "relogin",
+        &[
+            "Before: logged in true, map battleon",
+            "Relogin done: logged in true, map battleon",
+        ],
+    );
+}
+
+/// CoreStory's `mapItemQuest` then `killQuest` (the first two Dark Dungeon quests): the first
+/// tape with combat.
+#[test]
+fn the_core_story_tape_replays() {
+    let report = replays_to_its_end_with(
+        "core_story",
+        &[
+            "Quest 3538: unlocked true, done false",
+            "Quest 3539: unlocked true, done false",
+            "After: 3538 true, 3539 true",
+        ],
+        ReplayOptions::default(),
+    );
+    // The skill timer cast (unchecked: which skill, and when, follows its cooldowns' timing).
+    assert!(report.unchecked_sends > 0, "{report:?}");
+}
+
+/// A kill farm with drops on a high-level character: CoreBots' `huntMonster` for three more
+/// Bone Dust, its drop handling picking them up.
+#[test]
+fn the_kill_farm_tape_replays() {
+    let report = replays_to_its_end_with(
+        "kill_farm",
+        &[
+            "Start: level 100, Bone Dust 1163",
+            "Farmed: Bone Dust 1163 to 1171",
+        ],
+        ReplayOptions::default(),
+    );
+    assert!(report.unchecked_sends > 0, "{report:?}");
+}
+
+/// The merge template on SynderesMerge, buying only "NO BOTS Armor": the missing souvenir handed
+/// to `findIngredients`, farmed through a registered quest, then the buy.
+#[test]
+fn the_merge_tape_replays() {
+    replays_to_its_end(
+        "merge_buy",
+        &[
+            "Before: NO BOTS Armor false, gold 93481788",
+            "Bought 1 NO BOTS Armor",
+            "After: NO BOTS Armor true, gold 93481663",
+        ],
+    );
 }
 
 #[test]

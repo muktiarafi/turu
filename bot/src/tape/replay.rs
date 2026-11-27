@@ -182,6 +182,11 @@ pub struct ReplayOptions {
     /// Plays a tape the scrubber hasn't renamed the players in (a test's own recording). Never
     /// for a committed tape.
     pub allow_unscrubbed: bool,
+    /// Threads whose sends aren't checked, only answered and counted
+    /// ([`ReplayReport::unchecked_sends`]): the skill timer by default, which casts whichever
+    /// skill is off cooldown at its own pace, so which casts come and in what order depends on
+    /// timing (decision 7, settled on the first combat tape).
+    pub unchecked_threads: Vec<String>,
 }
 
 impl Default for ReplayOptions {
@@ -193,6 +198,7 @@ impl Default for ReplayOptions {
             script_thread: "Script Thread".into(),
             stall: Duration::from_secs(10),
             allow_unscrubbed: false,
+            unchecked_threads: vec!["Skill Timer".into()],
         }
     }
 }
@@ -204,6 +210,8 @@ pub struct ReplayReport {
     pub sends: usize,
     /// Other threads' sends matched.
     pub background_sends: usize,
+    /// Sends from [`ReplayOptions::unchecked_threads`].
+    pub unchecked_sends: usize,
     /// Reads the tape had no answer for (each once), answered `"null"`: always empty in strict
     /// mode.
     pub missing_reads: Vec<String>,
@@ -235,6 +243,8 @@ pub struct ReplayHost {
     script_sends: Vec<usize>,
     /// Every other thread's sends.
     thread_sends: HashMap<String, Vec<usize>>,
+    /// The unchecked threads' sends, by thread and callback name.
+    unchecked: HashMap<(String, String), Vec<usize>>,
     /// When the script thread first called on the tape.
     first_script_t: u64,
     /// The tape has the socket's messages (the player reported them).
@@ -258,7 +268,12 @@ struct State {
     anchor: (Instant, u64),
     /// The script has made its first call: the stall check starts then, not while it compiles.
     script_began: bool,
+    /// Where the script's current segment starts: just after its last matched send.
+    segment: usize,
+    /// How many of its own recorded answers in the segment the script has read, by [`key`].
+    consumed: HashMap<String, usize>,
     background_sends: usize,
+    unchecked_sends: usize,
     missing_reads: Vec<String>,
     failure: Option<String>,
 }
@@ -294,6 +309,7 @@ impl ReplayHost {
         let mut script_sends = Vec::new();
         let mut thread_sends: HashMap<String, Vec<usize>> = HashMap::new();
         let mut socket = false;
+        let mut unchecked: HashMap<(String, String), Vec<usize>> = HashMap::new();
         for (i, line) in tape.lines.iter().enumerate() {
             match line {
                 Line::Call {
@@ -302,7 +318,13 @@ impl ReplayHost {
                     Kind::Read | Kind::Noise => answers.entry(key(name, args)).or_default().push(i),
                     Kind::Send => {
                         let thread = thread.as_deref().unwrap_or_default();
-                        if thread == options.script_thread {
+                        if options.unchecked_threads.iter().any(|t| t == thread) {
+                            answers.entry(key(name, args)).or_default().push(i);
+                            unchecked
+                                .entry((thread.to_owned(), name.clone()))
+                                .or_default()
+                                .push(i);
+                        } else if thread == options.script_thread {
                             script_sends.push(i);
                         } else {
                             thread_sends.entry(thread.to_owned()).or_default().push(i);
@@ -330,7 +352,10 @@ impl ReplayHost {
                 thread_next: HashMap::new(),
                 anchor: (Instant::now(), start_t),
                 script_began: false,
+                segment: 0,
+                consumed: HashMap::new(),
                 background_sends: 0,
+                unchecked_sends: 0,
                 missing_reads: Vec::new(),
                 failure: None,
             }),
@@ -339,6 +364,7 @@ impl ReplayHost {
             answers,
             script_sends,
             thread_sends,
+            unchecked,
             first_script_t,
             socket,
             delivering: Mutex::new(()),
@@ -361,6 +387,8 @@ impl ReplayHost {
         }
         *self.bot.lock() = Arc::downgrade(bot);
         bot.set_host(Some(self.clone()));
+        bot.servers.set_fetcher(self.server_lists());
+        self.write_cbo(bot);
         if self.host_info().is_some() {
             bot.flash.ask_host_info();
         }
@@ -401,6 +429,76 @@ impl ReplayHost {
         }
     }
 
+    /// Writes the CoreBots Options file the recorded script read (its first `cbo` note) into the
+    /// bot's data folder, for the account the tape names: the script reads it from disk, which
+    /// the tape doesn't see. Replaces the file there: replay to a test bot, not your own.
+    fn write_cbo(&self, bot: &Bot) {
+        let Some((username, lines)) = self.tape.lines.iter().find_map(|line| match line {
+            Line::Note { what, detail, .. } if what == "cbo" => Some((
+                detail["username"].as_str()?.to_owned(),
+                detail["lines"].as_array().cloned(),
+            )),
+            _ => None,
+        }) else {
+            return;
+        };
+        let path = bot.paths.cbo_file(&username);
+        let done = match lines {
+            Some(lines) => {
+                let text: String = lines
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(|l| format!("{l}\n"))
+                    .collect();
+                path.parent()
+                    .map_or(Ok(()), std::fs::create_dir_all)
+                    .and_then(|()| std::fs::write(&path, text))
+            }
+            // The recorded account had none.
+            None => match std::fs::remove_file(&path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+                _ => Ok(()),
+            },
+        };
+        if let Err(e) = done {
+            self.fail(format!("couldn't write {}: {e}", path.display()));
+        }
+    }
+
+    /// The bot's server-list fetch (HTTP, which the tape doesn't see) answered from the tape's
+    /// `servers` notes, in order, the last again once they run out: the list held when the
+    /// recording opened, then each one fetched while it recorded. With none on the tape it fails,
+    /// so the engine reads the game's own list (`serialCmd.servers`, which is on the tape). A
+    /// replay never fetches.
+    fn server_lists(
+        &self,
+    ) -> impl Fn() -> Result<Vec<crate::models::Server>, String> + Send + Sync + 'static {
+        let lists: Vec<Result<Vec<crate::models::Server>, String>> = self
+            .tape
+            .lines
+            .iter()
+            .filter_map(|line| match line {
+                Line::Note { what, detail, .. } if what == "servers" => {
+                    Some(match detail.get("servers") {
+                        Some(list) => {
+                            serde_json::from_value(list.clone()).map_err(|e| e.to_string())
+                        }
+                        None => Err(detail["error"].as_str().unwrap_or("failed").to_owned()),
+                    })
+                }
+                _ => None,
+            })
+            .collect();
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        move || {
+            let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            match lists.get(i.min(lists.len().saturating_sub(1))) {
+                Some(list) => list.clone(),
+                None => Err("no server list on the tape".into()),
+            }
+        }
+    }
+
     /// Waits for the script to end, at most `timeout`, then checks it reached the tape's end.
     /// Stops the script on a failure.
     pub fn wait(&self, bot: &Arc<Bot>, timeout: Duration) -> Result<ReplayReport, ReplayFailure> {
@@ -438,6 +536,7 @@ impl ReplayHost {
         Ok(ReplayReport {
             sends: state.next_send,
             background_sends: state.background_sends,
+            unchecked_sends: state.unchecked_sends,
             missing_reads: state.missing_reads.clone(),
             status: bot.scripts.status(),
         })
@@ -579,8 +678,11 @@ impl ReplayHost {
     /// first after it.
     fn read(&self, name: &str, args: &[Value]) -> Result<String, HostError> {
         let key = key(name, args);
-        let at = self.state.lock().pos;
+        let script = std::thread::current().name() == Some(self.options.script_thread.as_str());
+        let mut state = self.state.lock();
+        let at = state.pos;
         let Some(lines) = self.answers.get(&key) else {
+            drop(state);
             if name == "hostInfo"
                 && let Some(info) = self.host_info()
             {
@@ -588,6 +690,10 @@ impl ReplayHost {
             }
             return self.missing(name, args, key);
         };
+        if script && let Some(i) = self.own_answer(&mut state, &key, lines) {
+            return answer_of(&self.tape.lines[i]);
+        }
+        drop(state);
         let before = lines.partition_point(|&i| i < at);
         let i = if before > 0 {
             lines[before - 1]
@@ -595,6 +701,27 @@ impl ReplayHost {
             lines[0]
         };
         answer_of(&self.tape.lines[i])
+    }
+
+    /// The script's answer from its own reads in the current segment: between two of its sends
+    /// the script is deterministic, so its reads are answered in the order it made them on the
+    /// tape (a read just after a send sees what the send changed at once, such as the bank window
+    /// `world.toggleBank` opens), then the last of them again. `None` when it made none there.
+    fn own_answer(&self, state: &mut State, key: &str, lines: &[usize]) -> Option<usize> {
+        let from = lines.partition_point(|&i| i < state.segment);
+        let own: Vec<usize> = lines[from..]
+            .iter()
+            .copied()
+            .take_while(|&i| i < state.limit)
+            .filter(|&i| {
+                matches!(&self.tape.lines[i], Line::Call { thread: Some(t), .. }
+                    if *t == self.options.script_thread)
+            })
+            .collect();
+        let consumed = state.consumed.entry(key.to_owned()).or_default();
+        let i = *own.get(*consumed).or(own.last())?;
+        *consumed = (*consumed + 1).min(own.len());
+        Some(i)
     }
 
     fn missing(&self, name: &str, args: &[Value], key: String) -> Result<String, HostError> {
@@ -621,6 +748,9 @@ impl ReplayHost {
     /// A send: checked against the next one recorded from its thread.
     fn send(&self, name: &str, args: &[Value]) -> Result<String, HostError> {
         let thread = std::thread::current().name().unwrap_or_default().to_owned();
+        if self.options.unchecked_threads.contains(&thread) {
+            return self.unchecked_send(&thread, name, args);
+        }
         let _order = self.delivering.lock();
         let mut state = self.state.lock();
         if thread != self.options.script_thread {
@@ -649,6 +779,8 @@ impl ReplayHost {
                 let lines = self.pass(&mut state, i);
                 state.pos = i + 1;
                 state.next_send += 1;
+                state.segment = i + 1;
+                state.consumed.clear();
                 state.limit = self
                     .script_sends
                     .get(state.next_send)
@@ -675,6 +807,32 @@ impl ReplayHost {
                 state.failure.get_or_insert(message);
                 Err(HostError::Closed)
             }
+        }
+    }
+
+    /// A send from an unchecked thread: the answer recorded for the same call, else the last one
+    /// recorded for the callback from that thread, else nothing.
+    fn unchecked_send(
+        &self,
+        thread: &str,
+        name: &str,
+        args: &[Value],
+    ) -> Result<String, HostError> {
+        let at = {
+            let mut state = self.state.lock();
+            state.unchecked_sends += 1;
+            state.pos
+        };
+        let latest = |lines: &[usize]| {
+            let before = lines.partition_point(|&i| i < at);
+            lines[before.saturating_sub(1).min(lines.len() - 1)]
+        };
+        if let Some(lines) = self.answers.get(&key(name, args)) {
+            return answer_of(&self.tape.lines[latest(lines)]);
+        }
+        match self.unchecked.get(&(thread.to_owned(), name.to_owned())) {
+            Some(lines) => answer_of(&self.tape.lines[latest(lines)]),
+            None => Ok(String::new()),
         }
     }
 
@@ -720,9 +878,45 @@ impl FlashHost for ReplayHost {
     }
 }
 
-/// A call's key among the recorded answers: its name and arguments.
+/// A call's key among the recorded answers: its name and arguments, JSON text in them by
+/// content ([`canonical`]).
 fn key(name: &str, args: &[Value]) -> String {
-    format!("{name}{}", Value::from(args.to_vec()))
+    format!("{name}{}", Value::from(canonical(args)))
+}
+
+/// `args` with each argument that is JSON text (an item handed to `inventoryHasSpaceFor`)
+/// written again in one key order. The app is built with `serde_json`'s `preserve_order`
+/// (Ruffle's dependencies turn it on) and the engine's tests without, so the engine writes the
+/// same object with its keys in another order in each.
+fn canonical(args: &[Value]) -> Vec<Value> {
+    args.iter()
+        .map(|arg| match arg {
+            Value::String(text) if text.trim_start().starts_with(['{', '[']) => {
+                match serde_json::from_str::<Value>(text) {
+                    Ok(parsed) => Value::String(sorted(&parsed).to_string()),
+                    Err(_) => arg.clone(),
+                }
+            }
+            other => other.clone(),
+        })
+        .collect()
+}
+
+/// `value` with every object's keys in sorted order, whatever `serde_json` keeps.
+fn sorted(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            Value::Object(
+                keys.into_iter()
+                    .map(|k| (k.clone(), sorted(&map[k])))
+                    .collect(),
+            )
+        }
+        Value::Array(items) => Value::Array(items.iter().map(sorted).collect()),
+        other => other.clone(),
+    }
 }
 
 fn line_t(line: &Line) -> u64 {
@@ -747,7 +941,8 @@ fn answer_of(line: &Line) -> Result<String, HostError> {
     }
 }
 
-/// Whether `name(args)` is the send recorded on `line`. A redacted argument matches anything.
+/// Whether `name(args)` is the send recorded on `line`. A redacted argument (a secret, a login
+/// message, chat) matches anything.
 fn same_send(line: &Line, name: &str, args: &[Value]) -> bool {
     let Line::Call {
         name: recorded,
@@ -759,10 +954,18 @@ fn same_send(line: &Line, name: &str, args: &[Value]) -> bool {
     };
     recorded == name
         && recorded_args.len() == args.len()
-        && recorded_args
+        && canonical(recorded_args)
             .iter()
-            .zip(args)
-            .all(|(want, have)| want == have || want == super::redact::REDACTED)
+            .zip(canonical(args))
+            .all(|(want, have)| *want == have || is_redacted(want))
+}
+
+/// A value redaction replaced: it matches anything in its place.
+fn is_redacted(value: &Value) -> bool {
+    use super::redact::{REDACTED, REDACTED_CHAT, REDACTED_LOGIN};
+    value
+        .as_str()
+        .is_some_and(|v| [REDACTED, REDACTED_CHAT, REDACTED_LOGIN].contains(&v))
 }
 
 fn mismatch(thread: &str, expected: Option<&Line>, name: &str, args: &[Value]) -> String {
@@ -875,6 +1078,32 @@ mod tests {
         );
         // An unknown callback is a send: it fails loudly if it was a getter.
         assert_eq!(kind("somethingNew", &[]), Kind::Send);
+    }
+
+    #[test]
+    fn json_text_arguments_match_in_any_key_order() {
+        let a = [
+            json!(r#"{"ItemID":1,"sName":"Gear","x":{"b":1,"a":2}}"#),
+            json!(1),
+        ];
+        let b = [
+            json!(r#"{"x":{"a":2,"b":1},"sName":"Gear","ItemID":1}"#),
+            json!(1),
+        ];
+        assert_eq!(
+            key("inventoryHasSpaceFor", &a),
+            key("inventoryHasSpaceFor", &b)
+        );
+        let c = [
+            json!(r#"{"ItemID":2,"sName":"Gear","x":{"b":1,"a":2}}"#),
+            json!(1),
+        ];
+        assert_ne!(
+            key("inventoryHasSpaceFor", &a),
+            key("inventoryHasSpaceFor", &c)
+        );
+        // Text that only looks like JSON stays as it is.
+        assert_eq!(canonical(&[json!("{not json")]), [json!("{not json")]);
     }
 
     #[test]

@@ -124,7 +124,7 @@ impl Bot {
                     if let Some(tape) = &tape
                         && tape.socket(socket, false, &message)
                     {
-                        crate::tape::note_host_info(tape, &self.flash);
+                        crate::tape::note_opening(tape, self);
                     }
                     if let Some(pext) = extension_packet(&message) {
                         crate::events::player_extension_packet(self, pext);
