@@ -196,10 +196,14 @@ same time: one downloads the scripts while the others wait for it.
 
 **The web monitor:** turn on Enable Web Monitor in the shared `settings.json` (Options >
 Application > Monitor, or `"monitorEnabled": true`). The first instance to start serves it on
-that port; the others report to it, with the data folder's push key, and take over when it
-stops. Or give one instance `--monitor=127.0.0.1:9021` (it serves whatever the setting says,
-and the others with the setting on report to it). An instance given `--report-to` reports where
+that port; the others report to it, with the data folder's push key, and one takes over as soon
+as it stops. Or give one instance `--monitor=127.0.0.1:9021` (it serves whatever the setting
+says, and the others with the setting on report to it). Start that one first: started while
+another instance serves, it serves too but the others keep reporting to the first until that one
+stops (on the same port it can't serve until then). An instance given `--report-to` reports where
 it says; without `TURU_MONITOR_PUSH_KEY` it uses the data folder's `monitor-push-key`.
+The data folder must be on a local disk or a volume of one host: the election is a file lock
+(`jobs/monitor.lock`), which network shares (NFS, SMB) may not keep.
 
 The reporters all show under the machine's name, one row per client (each run reports with
 an id of its own, so sharing the name and settings is fine). The machine gets one CPU and memory

@@ -5,10 +5,11 @@
 //! * [`run_once`]: a periodic job (script updates, skill sets) done by whichever process comes
 //!   first, once per interval: under a file lock, with the time it was last done in a file beside it.
 //! * [`Held`]: a lock a process keeps while it runs a single-instance service (the web monitor);
-//!   the system lets it go when the process ends, and another takes it ([`try_hold`]).
+//!   the system lets it go when the process ends, and another takes it ([`try_hold`], or [`hold`]
+//!   waiting for it).
 //!
-//! Locks are `File::try_lock` (an advisory lock on an open file, per open file: two opens in one
-//! process exclude each other too), in the data folder's `jobs/`.
+//! Locks are `File::try_lock` / `File::lock` (an advisory lock on an open file, per open file: two
+//! opens in one process exclude each other too), in the data folder's `jobs/`.
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
@@ -25,18 +26,36 @@ pub struct Held {
     _file: File,
 }
 
-/// Takes `name`'s lock if no process holds it.
-pub fn try_hold(dir: &Path, name: &str) -> std::io::Result<Option<Held>> {
+fn lock_file(dir: &Path, name: &str) -> std::io::Result<File> {
     std::fs::create_dir_all(dir)?;
-    let file = OpenOptions::new()
+    OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
-        .open(dir.join(format!("{name}.lock")))?;
+        .open(dir.join(format!("{name}.lock")))
+}
+
+/// Takes `name`'s lock if no process holds it.
+pub fn try_hold(dir: &Path, name: &str) -> std::io::Result<Option<Held>> {
+    let file = lock_file(dir, name)?;
     match file.try_lock() {
         Ok(()) => Ok(Some(Held { _file: file })),
         Err(TryLockError::WouldBlock) => Ok(None),
         Err(TryLockError::Error(e)) => Err(e),
+    }
+}
+
+/// Takes `name`'s lock, waiting as long as another process holds it: the system hands it over the
+/// moment that process lets it go or ends, with nothing polled. Blocks the thread.
+pub fn hold(dir: &Path, name: &str) -> std::io::Result<Held> {
+    let file = lock_file(dir, name)?;
+    loop {
+        match file.lock() {
+            Ok(()) => return Ok(Held { _file: file }),
+            // A signal (SIGTERM's handler) cut the wait short: wait again.
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
     }
 }
 
@@ -177,6 +196,22 @@ mod tests {
         assert!(try_hold(dir.path(), "monitor").unwrap().is_none());
         drop(held);
         assert!(try_hold(dir.path(), "monitor").unwrap().is_some());
+    }
+
+    #[test]
+    fn a_blocking_hold_gets_the_lock_once_let_go() {
+        let dir = tempfile::tempdir().unwrap();
+        let held = try_hold(dir.path(), "monitor").unwrap().unwrap();
+        let waiting = {
+            let dir = dir.path().to_owned();
+            std::thread::spawn(move || hold(&dir, "monitor").unwrap())
+        };
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(!waiting.is_finished());
+        drop(held);
+        let taken = waiting.join().unwrap();
+        assert!(try_hold(dir.path(), "monitor").unwrap().is_none());
+        drop(taken);
     }
 
     #[test]

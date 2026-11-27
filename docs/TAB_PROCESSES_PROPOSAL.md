@@ -495,8 +495,8 @@ and after a restart both slots had stopped and the app ran its engine itself.
     `jobs/`, with the time they were done beside it; a shell's tab skips them when another did
     them in the last 10 minutes. On the desktop the shell does them (its clients leave them to it).
   * **The web monitor, Report To, client update checks and `monitor.json`**: one slot, the first to
-    take `jobs/monitor.lock` (`turu::start_monitor_election`, tried every 3 s); the system lets the
-    lock go when that process ends, and another slot takes it. That slot polls the others all along
+    take `jobs/monitor.lock` (`turu::start_monitor_election`; the others wait on it); the system lets
+    the lock go when that process ends, and a waiting slot takes it at once. That slot polls the others all along
     (their addresses from `slots/c<N>.api.json`, which each slot rewrites when it starts: the
     shell's list goes stale once the shell is gone) and follows Options changed in theirs
     (`turu::follow_settings_file`, the desktop shell's too). On the desktop the shell runs them.

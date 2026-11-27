@@ -1776,8 +1776,8 @@ fn runs_monitor() -> bool {
 
 /// Among tabs in processes of their own with no shell that stays (Android's slots): the first to
 /// take the monitor's lock runs the web monitor, Report To and the update checks, and keeps them
-/// until its process ends; the system then lets the lock go, and another tab takes it (tried every
-/// 3 s). That tab polls the others all along and follows Options changed in theirs.
+/// until its process ends; the system then lets the lock go, and a tab waiting for it takes it at
+/// once. That tab polls the others all along and follows Options changed in theirs.
 pub fn start_monitor_election() {
     // Turu: only the tab that wins runs the update checks; the others show what it found.
     turu_bot::updates::share_through(bot().paths.root.join("update-available.json"));
@@ -1785,25 +1785,17 @@ pub fn start_monitor_election() {
         .name("Turu Monitor Election".into())
         .spawn(|| {
             let dir = turu_bot::shared_job::dir(&bot().paths.root);
-            loop {
-                match turu_bot::shared_job::try_hold(&dir, "monitor") {
-                    Ok(Some(held)) => {
-                        *MONITOR_LOCK.lock().unwrap_or_else(|e| e.into_inner()) = Some(held);
-                        tracing::info!("This tab runs the web monitor and the update checks");
-                        monitor_hub().set_saving(true);
-                        install_peers();
-                        start_monitor();
-                        start_client_updates();
-                        follow_settings_file(false);
-                        return;
-                    }
-                    Ok(None) => {}
-                    Err(e) => {
-                        tracing::warn!("The monitor's lock: {e}");
-                        return;
-                    }
+            match turu_bot::shared_job::hold(&dir, "monitor") {
+                Ok(held) => {
+                    *MONITOR_LOCK.lock().unwrap_or_else(|e| e.into_inner()) = Some(held);
+                    tracing::info!("This tab runs the web monitor and the update checks");
+                    monitor_hub().set_saving(true);
+                    install_peers();
+                    start_monitor();
+                    start_client_updates();
+                    follow_settings_file(false);
                 }
-                std::thread::sleep(Duration::from_secs(3));
+                Err(e) => tracing::warn!("The monitor's lock: {e}"),
             }
         });
     if let Err(e) = spawned {
@@ -1814,10 +1806,10 @@ pub fn start_monitor_election() {
 /// Turu: several windowless Turus on one data folder (one per account on a server) with Options >
 /// Application's Enable Web Monitor on: one serves the web monitor, the one holding the monitor's
 /// lock, and the others report to it ([`monitor_settings`]), so nobody has to turn it off in all
-/// but one or copy a push key. When that one ends another takes the lock (tried every 3 s) and
-/// serves. A process given `--monitor` serves whatever happens (it takes the lock when it's free,
-/// so the others step down); one given `--report-to` reports where it says. Called by
-/// `--headless` before [`start_monitor`].
+/// but one or copy a push key. When that one ends, one waiting for the lock takes it at once and
+/// serves. A process given `--monitor` serves whatever happens, and waits for the lock like the
+/// others when another holds it: once it has it, the others report to it. One given `--report-to`
+/// reports where it says. Called by `--headless` before [`start_monitor`].
 pub fn start_headless_monitor_election() {
     let bot = bot();
     let flag = MONITOR_FLAG.lock().unwrap_or_else(|e| e.into_inner()).is_some();
@@ -1825,34 +1817,57 @@ pub fn start_headless_monitor_election() {
         return;
     }
     let dir = turu_bot::shared_job::dir(&bot.paths.root);
-    let take = move || match turu_bot::shared_job::try_hold(&dir, "monitor") {
+    // Tried here first, so the first `start_monitor` already knows.
+    match turu_bot::shared_job::try_hold(&dir, "monitor") {
         Ok(Some(held)) => {
             *MONITOR_LOCK.lock().unwrap_or_else(|e| e.into_inner()) = Some(held);
-            true
+            return;
         }
-        Ok(None) => false,
+        Ok(None) => {}
         Err(e) => {
             tracing::warn!("The monitor's lock: {e}");
-            false
+            return;
         }
-    };
-    // Tried here first, so the first `start_monitor` already knows.
-    if take() || flag {
-        return;
     }
-    tracing::info!("Another Turu on this data folder serves the web monitor: reporting to it");
+    if flag {
+        tracing::info!("Another Turu on this data folder holds the web monitor's lock: serving anyway (--monitor)");
+    } else {
+        tracing::info!("Another Turu on this data folder serves the web monitor: reporting to it");
+        follow_elected_monitor();
+    }
     let spawned = std::thread::Builder::new()
         .name("Turu Monitor Election".into())
-        .spawn(move || {
+        .spawn(move || match turu_bot::shared_job::hold(&dir, "monitor") {
+            Ok(held) => {
+                *MONITOR_LOCK.lock().unwrap_or_else(|e| e.into_inner()) = Some(held);
+                tracing::info!("This Turu serves the web monitor now");
+                // `--monitor` may serve already: `start_monitor` leaves a running server as it is,
+                // so the others are told where it is here.
+                let serving = monitor_lock().server.as_ref().map(|server| server.addr().port());
+                if let Some(port) = serving {
+                    write_monitor_address(port);
+                }
+                start_monitor();
+            }
+            Err(e) => tracing::warn!("The monitor's lock: {e}"),
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("Couldn't start the monitor's election: {e}");
+    }
+}
+
+/// While another Turu serves the web monitor, reports to wherever it says it serves: it may start
+/// after this one, or another may take over (checked every 3 s, until this one holds the lock).
+fn follow_elected_monitor() {
+    let spawned = std::thread::Builder::new()
+        .name("Turu Monitor Follow".into())
+        .spawn(|| {
             let mut reporting_to = elected_monitor_url();
             loop {
                 std::thread::sleep(Duration::from_secs(3));
-                if take() {
-                    tracing::info!("This Turu serves the web monitor now");
-                    start_monitor();
+                if MONITOR_LOCK.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
                     return;
                 }
-                // The one serving started after this one, or another took over.
                 let url = elected_monitor_url();
                 if url != reporting_to {
                     reporting_to = url;
@@ -1861,7 +1876,7 @@ pub fn start_headless_monitor_election() {
             }
         });
     if let Err(e) = spawned {
-        tracing::warn!("Couldn't start the monitor's election: {e}");
+        tracing::warn!("Couldn't follow the elected web monitor: {e}");
     }
 }
 

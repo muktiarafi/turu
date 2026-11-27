@@ -965,7 +965,9 @@ memory budget (NVIDIA, AMD).
   turns (`script-update`'s lock), new keys are written whole and linked into place so all agree
   (`control_api::saved_token`), Report To without a push key uses the folder's, and with Enable
   Web Monitor on the first serves it and the others report to it (`jobs/monitor-address.json`,
-  same host only), one taking over when it ends (`start_headless_monitor_election`).
+  same host only), one taking over the moment it ends (`start_headless_monitor_election`: the
+  others wait on `jobs/monitor.lock`; a `--monitor` started second waits too, and serves the
+  others once it has it).
   In game it runs at a hidden tab's 2 FPS (`state.hidden_tab`, set in `app/src/headless.rs`;
   the login screen keeps full speed), and its player has no mouse (`set_mouse_in_stage(false)`).
   Ruffle starts with the mouse on the stage, and every update (about 50 a second, for timers and
