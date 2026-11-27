@@ -51,9 +51,12 @@ jobs:
           DRAFT_EVERY: "1"
           DRAFT_SECS: "60"
           DRAFT_REAL_SECS: "10"
-          DRAFT_JOBS: "8"
           DRAFT_FILTER: ${{ inputs.filter }}
-        run: cargo nextest run --locked --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture
+        # One draft per core: optimized, a draft is mostly busy, so more at once only slows each
+        # one, and the real-time cap then stops some before their budget.
+        run: |
+          export DRAFT_JOBS=$(nproc)
+          cargo nextest run --locked --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture
 
       - name: Keep the report
         if: always()

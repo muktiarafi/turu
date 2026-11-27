@@ -378,10 +378,11 @@ jobs:
           RUN: ${{ steps.changed.outputs.run }}
           DRAFT_SECS: "60"
           DRAFT_REAL_SECS: "10"
-          DRAFT_JOBS: "8"
         run: |
           # RUN is DRAFT_FILTER=<paths> or DRAFT_EVERY=16 (tools/drafts/changed.sh).
           export "${RUN?}"
+          # One draft per core (drafts-nightly.yml).
+          export DRAFT_JOBS=$(nproc)
           cargo nextest run --locked --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture
 
       - name: Keep the report

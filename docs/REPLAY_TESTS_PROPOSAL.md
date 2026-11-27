@@ -584,7 +584,7 @@ turned in (853), 323 purchases (80), no failure but the known gap.
 **The run:** each draft with a `main` (Core files are libraries) on a bot of its own, `ActionDelay`
 0, started silently, on a virtual clock for `DRAFT_SECS` (60) of play and at most
 `DRAFT_REAL_SECS` (10) of real time ("Decision 2: the virtual clock"; the first full run, below,
-was 8 s on the real clock); `DRAFT_JOBS` (6, 8 nightly) at once. It fails when a
+was 8 s on the real clock); `DRAFT_JOBS` (6; one per core in CI) at once. It fails when a
 draft throws or can't start; it passes when one ends or is still running at its budget. The report
 (`target/draft-smoke.txt`) gives each draft's outcome, its last three log lines and its last
 twelve calls at the budget (before Stop runs its handlers). `DRAFT_FILTER` takes a comma-separated
@@ -724,6 +724,12 @@ budget, so "running" either way: `ThirdErrand`, cut at 37 s every time (`CoreDar
 stores the gear on every pass, as the C# does, and each pass reads the inventory several times), and
 `CraggleRockREP` and `CragsGemMerge` (53,000 calls of `getMonsters` and `factions` polling; 4.6 s
 alone, cut with 12 at once).
+
+The first nightly run with the profile (GitHub's runner, 8 drafts at once on 4 cores, 8 minutes
+with the build) passed with no error, but the cap stopped 8 drafts, `other/LoreBowl` among them at
+the very 30.3 s it ends at locally (416 finished, 417 locally). Optimized, a draft is mostly busy
+rather than waiting, so more drafts than cores only slows each one: the workflows now run one per
+core (`DRAFT_JOBS=$(nproc)`).
 
 **Pull requests:** CI's "Changed drafts" job (`ci.yml`) runs the drafts a pull request's scripts
 change. `tools/drafts/changed.sh <base>` compares the scripts submodule's commit on the base branch
