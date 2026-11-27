@@ -626,8 +626,34 @@ finished, 889 still running. Going further found three failures:
 
 **What it can't catch:** a draft that runs but is wrong (integer division, the wrong quest ID),
 anything past its budget, and code behind the fake's gaps (a shop's real requirements, gold, AC
-and membership, shops no merge script lists, monsters of maps no script names, monsters found by
-cell only): decision 4 or a tape of that flow covers those.
+and membership, shops no merge script lists, monsters of maps no script names or numbers, monsters
+found by cell only, a monster's real name where a script reads it): decision 4 or a tape of that
+flow covers those.
+
+**Monsters by map ID.** Many scripts hunt or fight a monster by its number in the map, not its
+name: 169 `Core.huntMonsterMapID("neotower", 12, ...)` calls, and the Lone Wolf ultras' classes
+(`mapName = "lavarockshore"` with `firstTargetMapId = 1`, `secondTargetMapId = 2`). The fake numbers
+a map's monsters from 1 in the order the catalog found their names, so such a monster existed only
+when other scripts happened to name enough of that map's. `monster_catalog` now makes each map as
+long as the highest map ID a script uses there, the extra monsters named "Stand-in <n>" (these
+scripts never read the name), and reads the scripts in sorted order so the numbering doesn't depend
+on the file system. Files with map IDs and no `mapName` are printed as gap lines
+(`ultraslw/extras/CLWSkillsTest.ts`, `ultrasv3/individualultras/11UltraGramielv3.ts`). 22 more
+maps have monsters (975).
+
+Full run (2026-11-27), compared draft by draft: four outcomes changed, all further. `ArmyKasuko_LW`
+kills its two targets, turns in its daily and publishes COMPLETE; `hollowborn/.../VindicatorCrest.ts`
+gets its crest from monsters 12, 17 and 28 of `neotower` and ends; `CarolingMerge` and
+`LuckdragonMerge` farm the ingredients they gave up on ("Failed to acquire") until their budget;
+`ArmyPrismatasGoldFarm_LW` fights its Elemental Binding cycle. Kills 8,504 (8,289 before), no
+error. `TowerOfDoom` stays a known gap: it reads the name of the monster in cell r10 to name its
+drop ("<name> Defeated"), and a stand-in's name would farm a drop that doesn't exist.
+
+With 600 s of play every Lone Wolf ultra now ends but `ArmyPrismatasGoldFarm_LW`, the first draft
+that waits on its partners' fight signals: having reached 100 Elemental Binding it helps until
+every player has sent its ready signal (`allPlayersSignaled`). Each player sends that one for its
+own goal, so partners copying the draft's own `SIGNAL` lines would answer it; other signals are
+one seat's (player 4's Mystify, an owner's clear), where a copy would claim what no partner did.
 
 **Pull requests:** CI's "Changed drafts" job (`ci.yml`) runs the drafts a pull request's scripts
 change. `tools/drafts/changed.sh <base>` compares the scripts submodule's commit on the base branch

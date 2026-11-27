@@ -201,7 +201,13 @@ fn drafts() -> Vec<PathBuf> {
 /// `killMonster("map", "cell", "pad", "Monster"`, `killQuest(id, "map", "Monster"` or a list.
 /// Monster names never reach the game's calls (a kill goes by ID), so the fake world can't learn
 /// them from a tape (docs/REPLAY_TESTS_PROPOSAL.md, phase 4).
-fn monster_catalog() -> std::collections::HashMap<String, Vec<String>> {
+///
+/// Then each map is made as long as the highest map ID a script hunts or fights there by
+/// (the fake numbers a map's monsters from 1, in this order): `huntMonsterMapID("map", 2, ...`,
+/// and a class's `mapName = "map"` beside its `...MapId = 2` constants (the Lone Wolf ultras). A
+/// monster only an ID names gets a stand-in name, which those scripts never read. Also the files
+/// with map IDs and no map, as gap lines.
+fn monster_catalog() -> (std::collections::HashMap<String, Vec<String>>, Vec<String>) {
     let calls = regex::Regex::new(
         r#"(?:huntMonster\(\s*"([^"]+)",\s*"([^"]+)"|killMonster\(\s*"([^"]+)",\s*"[^"]*",\s*"[^"]*",\s*"([^"]+)"|killQuest\(\s*\d+,\s*"([^"]+)",\s*(\[[^\]]*\]|"[^"]+"))"#,
     )
@@ -236,7 +242,58 @@ fn monster_catalog() -> std::collections::HashMap<String, Vec<String>> {
             }
         }
     }
-    catalog
+    let (needed, gaps) = monster_map_ids();
+    for (map, highest) in needed {
+        let list = catalog.entry(map).or_default();
+        while list.len() < highest {
+            list.push(format!("Stand-in {}", list.len() + 1));
+        }
+    }
+    (catalog, gaps)
+}
+
+/// The highest monster map ID scripts use in each map (see [`monster_catalog`]), and the files
+/// with map IDs and no `mapName`.
+fn monster_map_ids() -> (std::collections::BTreeMap<String, usize>, Vec<String>) {
+    let hunt = regex::Regex::new(r#"huntMonsterMapID\(\s*["'`]([^"'`]+)["'`],\s*(\d+)"#).unwrap();
+    let map_name = regex::Regex::new(r#"mapName\s*=\s*["'`]([^"'`]+)["'`]"#).unwrap();
+    let map_id = regex::Regex::new(r"\w*MapId\s*=\s*(\d+)\s*;").unwrap();
+    let mut needed: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut gaps = Vec::new();
+    let mut need = |map: &str, id: usize| {
+        let map = map.split('-').next().unwrap_or_default().to_lowercase();
+        let highest = needed.entry(map).or_default();
+        *highest = (*highest).max(id);
+    };
+    for file in all_scripts() {
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        for c in hunt.captures_iter(&text) {
+            if let Ok(id) = c[2].parse() {
+                need(&c[1], id);
+            }
+        }
+        // 0 is "none" (a target not picked yet).
+        let ids: Vec<usize> = map_id
+            .captures_iter(&text)
+            .filter_map(|c| c[1].parse().ok())
+            .filter(|&id| id > 0)
+            .collect();
+        let Some(&highest) = ids.iter().max() else {
+            continue;
+        };
+        match map_name.captures(&text) {
+            Some(c) => need(&c[1], highest),
+            None => gaps.push(
+                file.strip_prefix(repo().join("scripts"))
+                    .unwrap_or(&file)
+                    .display()
+                    .to_string(),
+            ),
+        }
+    }
+    (needed, gaps)
 }
 
 /// Each merge shop's stock, by shop ID, from its merge script: the shop it names
@@ -317,6 +374,8 @@ fn all_scripts() -> Vec<PathBuf> {
     }
     let mut files = Vec::new();
     walk(&repo().join("scripts"), &mut files);
+    // In order: the catalogs number a map's monsters as they find them, and fights go by number.
+    files.sort();
     files
 }
 
@@ -567,10 +626,12 @@ fn draft_smoke_sample() {
     let outcomes = Arc::new(Mutex::new(Vec::new()));
     let world = Arc::new(world);
     let (shops, shop_gaps) = shop_catalog();
-    let catalog = Arc::new(Catalogs {
-        monsters: monster_catalog(),
-        shops,
-    });
+    let (monsters, monster_gaps) = monster_catalog();
+    let catalog = Arc::new(Catalogs { monsters, shops });
+    // A script that fights by map ID in a map it doesn't name (`mapName`): its IDs go unused.
+    for gap in &monster_gaps {
+        println!("monster catalog gap: map IDs and no mapName in {gap}");
+    }
     println!(
         "monster catalog: {} maps; shop catalog: {} shops",
         catalog.monsters.len(),

@@ -132,8 +132,11 @@ A script that changes what it sends needs its tape recorded again: remove the ol
    setup into their fights, and three finish. What stops them now is mostly the account (a
    SpellCrafting rank, classes it doesn't own). Left: the fight signals between players
    (`hasArmySignal`), each ultra's own; only worth it for an ultra whose fight code needs testing.
-4. **Monsters no script names** (TowerOfDoom's floors find theirs by cell). A generic monster when
-   the catalog has none is cheap but is guessing; only for drafts that need it.
+4. ~~Monsters by map ID.~~ Done (proposal, "Monsters by map ID"): each map is as long as the
+   highest map ID a script hunts or fights there by (`huntMonsterMapID`, the ultras' `...MapId`
+   constants). Left: `TowerOfDoom`, which reads the name of the monster it finds by cell (a known
+   gap); the Void bosses' bank move the fake never completes (they retry `loadBank` for Void
+   Essence); and `ArmyPrismatasGoldFarm_LW`'s "everyone ready" signal past 60 s.
 5. **Correctness (decision 4).** The smoke run catches throws, not wrong behaviour. Comparing a
    draft's sends with VibeSkua's for the same script needs a packet log from VibeSkua on Windows.
 6. **Smaller:** phase 5 (Diagnostics > Record Session, scrubbing on save); moving the few
@@ -152,7 +155,9 @@ A script that changes what it sends needs its tape recorded again: remove the ol
 - **CoreBots' Twilly fallback stays as in C#**; tapes keep off it (above).
 - **Turn-ins in the fake always succeed**: scripts wait for their items themselves; a strict check
   would only strand quests the fake can't supply.
-- **Monster names come from the scripts**, not tapes: they never cross the Flash boundary.
+- **Monster names come from the scripts**, not tapes: they never cross the Flash boundary. So do
+  monster map IDs (a map holds monsters up to the highest a script uses there); a monster only an
+  ID names is "Stand-in <n>".
 
 ## Traps
 
