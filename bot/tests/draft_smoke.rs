@@ -34,8 +34,8 @@ const MARK: &str = "not yet read through by hand";
 /// list can't go stale. A script fix goes in `muktiarafi/turu-scripts` instead.
 const KNOWN_FAKE_GAPS: &[(&str, &str)] = &[(
     "story/TowerOfDoom.ts",
-    "it looks up the monster in cell r10 of the map it joined; the fake keeps the seed tape's \
-     monsters when a script joins another map",
+    "it finds each floor's monster by its cell (r10), never by name, so the monster catalog \
+     (built from scripts that name them) has none for towerofdoom2 to 10; floor 1 passes",
 )];
 
 fn env_or<T: std::str::FromStr>(name: &str, default: T) -> T {
@@ -80,6 +80,62 @@ fn drafts() -> Vec<PathBuf> {
     out
 }
 
+/// Each map's monsters, by name, from the scripts' own calls: `huntMonster("map", "Monster"`,
+/// `killMonster("map", "cell", "pad", "Monster"`, `killQuest(id, "map", "Monster"` or a list.
+/// Monster names never reach the game's calls (a kill goes by ID), so the fake world can't learn
+/// them from a tape (docs/REPLAY_TESTS_PROPOSAL.md, phase 4).
+fn monster_catalog() -> std::collections::HashMap<String, Vec<String>> {
+    let calls = regex::Regex::new(
+        r#"(?:huntMonster\(\s*"([^"]+)",\s*"([^"]+)"|killMonster\(\s*"([^"]+)",\s*"[^"]*",\s*"[^"]*",\s*"([^"]+)"|killQuest\(\s*\d+,\s*"([^"]+)",\s*(\[[^\]]*\]|"[^"]+"))"#,
+    )
+    .unwrap();
+    let quoted = regex::Regex::new(r#""([^"]+)""#).unwrap();
+    let mut catalog: std::collections::HashMap<String, Vec<String>> = Default::default();
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if !path.ends_with("node_modules") {
+                    walk(&path, out);
+                }
+            } else if path.extension().is_some_and(|e| e == "ts") {
+                out.push(path);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    walk(&repo().join("scripts"), &mut files);
+    for file in files {
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        for c in calls.captures_iter(&text) {
+            let (map, names): (&str, Vec<String>) = if let (Some(m), Some(n)) = (c.get(1), c.get(2))
+            {
+                (m.as_str(), vec![n.as_str().to_owned()])
+            } else if let (Some(m), Some(n)) = (c.get(3), c.get(4)) {
+                (m.as_str(), vec![n.as_str().to_owned()])
+            } else if let (Some(m), Some(n)) = (c.get(5), c.get(6)) {
+                let names = quoted
+                    .captures_iter(n.as_str())
+                    .map(|q| q[1].to_owned())
+                    .collect();
+                (m.as_str(), names)
+            } else {
+                continue;
+            };
+            let map = map.split('-').next().unwrap_or_default().to_lowercase();
+            let list = catalog.entry(map).or_default();
+            for name in names {
+                if name != "*" && !list.iter().any(|n: &String| n.eq_ignore_ascii_case(&name)) {
+                    list.push(name);
+                }
+            }
+        }
+    }
+    catalog
+}
+
 /// How one draft went.
 #[derive(Debug)]
 struct Outcome {
@@ -92,6 +148,10 @@ struct Outcome {
     secs: f64,
     /// How far it got on its (virtual) clock.
     clock_secs: f64,
+    /// What it got done, by the engine's counters: kills, quests accepted, quests turned in.
+    kills: u64,
+    accepted: u64,
+    completed: u64,
     last_log: String,
     /// The last calls into the fake.
     recent: Vec<String>,
@@ -99,7 +159,13 @@ struct Outcome {
     clock: String,
 }
 
-fn run_one(world: &tape::Tape, path: &Path, budget: Duration, real_cap: Duration) -> Outcome {
+fn run_one(
+    world: &tape::Tape,
+    catalog: &std::collections::HashMap<String, Vec<String>>,
+    path: &Path,
+    budget: Duration,
+    real_cap: Duration,
+) -> Outcome {
     let script = path
         .strip_prefix(repo().join("scripts"))
         .unwrap_or(path)
@@ -110,11 +176,15 @@ fn run_one(world: &tape::Tape, path: &Path, budget: Duration, real_cap: Duration
         *bot.options.write() = options;
     }
     bot.options.write().action_delay = 0;
-    let fake = Arc::new(WorldFake::from_tape(world));
+    let fake = Arc::new(WorldFake::from_tape(world).with_monsters(catalog.clone()));
+    fake.attach(&bot);
     // A virtual clock (decision 2): the draft's sleeps and waits take no real time, so its
     // budget is virtual and it gets as far as that many seconds of play would take it.
     bot.control.set_virtual();
     bot.set_host(Some(fake.clone()));
+    // Never the network: a draft that reaches a relogin would fetch AQW's server list.
+    bot.servers
+        .set_fetcher(|| Err("a draft run doesn't fetch the server list".into()));
     bot.scripts.load(path);
     let started = Instant::now();
     let clock_start = bot.control.now();
@@ -126,6 +196,9 @@ fn run_one(world: &tape::Tape, path: &Path, budget: Duration, real_cap: Duration
             calls: 0,
             secs: 0.0,
             clock_secs: 0.0,
+            kills: 0,
+            accepted: 0,
+            completed: 0,
             last_log: String::new(),
             recent: Vec::new(),
             clock: String::new(),
@@ -171,6 +244,9 @@ fn run_one(world: &tape::Tape, path: &Path, budget: Duration, real_cap: Duration
         None if bot.scripts.status() == ScriptStatus::Error => ("error", "status Error".into()),
         None => ("finished", String::new()),
     };
+    // One lock: three `bot.state.lock()` in the literal below would deadlock (each guard lives to
+    // the end of the expression).
+    let stats = bot.state.lock().stats.clone();
     Outcome {
         script,
         kind,
@@ -178,6 +254,9 @@ fn run_one(world: &tape::Tape, path: &Path, budget: Duration, real_cap: Duration
         calls: fake.calls(),
         secs: started.elapsed().as_secs_f64(),
         clock_secs: bot.control.now().since(clock_start).as_secs_f64(),
+        kills: stats.kills,
+        accepted: stats.quests_accepted,
+        completed: stats.quests_completed,
         last_log: {
             let mut meaningful: Vec<&str> = lines
                 .iter()
@@ -232,15 +311,22 @@ fn draft_smoke_sample() {
     let queue = Arc::new(Mutex::new(picked));
     let outcomes = Arc::new(Mutex::new(Vec::new()));
     let world = Arc::new(world);
+    let catalog = Arc::new(monster_catalog());
+    println!("monster catalog: {} maps", catalog.len());
     let workers: Vec<_> = (0..jobs)
         .map(|_| {
-            let (queue, outcomes, world) = (queue.clone(), outcomes.clone(), world.clone());
+            let (queue, outcomes, world, catalog) = (
+                queue.clone(),
+                outcomes.clone(),
+                world.clone(),
+                catalog.clone(),
+            );
             std::thread::spawn(move || {
                 loop {
                     // Not in the `while let`: its lock would last the whole body.
                     let next = queue.lock().pop();
                     let Some(path) = next else { break };
-                    let outcome = run_one(&world, &path, budget, real_cap);
+                    let outcome = run_one(&world, &catalog, &path, budget, real_cap);
                     println!(
                         "{:9} {:6.1}s real {:6.1}s clock {:6} calls  {}",
                         outcome.kind,
@@ -269,6 +355,17 @@ fn draft_smoke_sample() {
             outcome.detail = format!("{} (a known gap in the fake: {why})", outcome.detail);
         }
     }
+    let did = |f: fn(&Outcome) -> u64| outcomes.iter().map(f).sum::<u64>();
+    let with = |f: fn(&Outcome) -> u64| outcomes.iter().filter(|o| f(o) > 0).count();
+    report.push_str(&format!(
+        "progress: {} kills ({} drafts), {} quests accepted ({}), {} turned in ({})\n",
+        did(|o| o.kills),
+        with(|o| o.kills),
+        did(|o| o.accepted),
+        with(|o| o.accepted),
+        did(|o| o.completed),
+        with(|o| o.completed),
+    ));
     for kind in ["error", "not started", "known", "finished", "running"] {
         let these: Vec<&Outcome> = outcomes.iter().filter(|o| o.kind == kind).collect();
         report.push_str(&format!("{kind}: {}\n", these.len()));

@@ -12,11 +12,17 @@
 //! own code. Each rule is there because a draft needed it; the answers come from the tape, not
 //! from guessing.
 
+mod sim;
+
+use crate::Bot;
+use crate::control::ClockTime;
 use crate::host::{FlashArg, FlashHost, HostError};
 use crate::tape::{Line, Tape};
 use parking_lot::Mutex;
-use serde_json::Value;
+use serde_json::{Value, json};
+use sim::{Combat, Monster, Wanted};
 use std::collections::HashMap;
+use std::sync::{Arc, Weak};
 
 /// A fake world (see the module's documentation).
 pub struct WorldFake {
@@ -37,6 +43,20 @@ pub struct WorldFake {
     in_progress: Mutex<std::collections::HashSet<i64>>,
     /// The last calls made, for a report.
     recent: Mutex<std::collections::VecDeque<String>>,
+    /// Each map's monsters by name (lower-case map names), from the scripts ([`Self::with_monsters`]).
+    catalog: HashMap<String, Vec<String>>,
+    /// The monsters where you are, and your target.
+    combat: Mutex<Combat>,
+    /// Items scripts asked for, to drop on a kill.
+    wanted: Mutex<Vec<Wanted>>,
+    /// Quest slots' values set by turn-ins (`world.getQuestValue`).
+    slot_values: Mutex<HashMap<i64, i64>>,
+    /// The bot it plays for ([`Self::attach`]): its clock, and where packets go.
+    bot: Mutex<Weak<Bot>>,
+    /// Packets to deliver once the call is answered, with no lock of the fake held.
+    pending: Mutex<Vec<(String, Vec<Value>)>>,
+    /// Large values' JSON text by path, until the path changes ([`Self::text`]).
+    texts: Mutex<HashMap<String, String>>,
 }
 
 impl WorldFake {
@@ -86,6 +106,21 @@ impl WorldFake {
             answers.insert(key(name, args), answer.clone());
             by_name.insert(loose_key(name, args), answer.clone());
         }
+        // The monsters of the map the tape was in, as the game listed them last.
+        let seed: Vec<Monster> = answers
+            .iter()
+            .filter(|(k, _)| k.starts_with("getMonsters"))
+            .filter_map(|(_, answer)| serde_json::from_str::<Vec<Value>>(answer).ok())
+            .max_by_key(Vec::len)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|m| {
+                Some(Monster::new(
+                    sim::num(&m["MonMapID"])?,
+                    m["strMonName"].as_str()?,
+                ))
+            })
+            .collect();
         Self {
             paths,
             nulls,
@@ -95,7 +130,212 @@ impl WorldFake {
             calls: Mutex::default(),
             in_progress: Mutex::default(),
             recent: Mutex::default(),
+            catalog: HashMap::new(),
+            combat: Mutex::new(Combat {
+                monsters: seed,
+                target: None,
+            }),
+            wanted: Mutex::default(),
+            slot_values: Mutex::default(),
+            bot: Mutex::new(Weak::new()),
+            pending: Mutex::default(),
+            texts: Mutex::default(),
         }
+    }
+
+    /// Each map's monsters by name, for the maps a script joins (the tape's map keeps its own).
+    /// Map names are matched without case or room number.
+    pub fn with_monsters(mut self, catalog: HashMap<String, Vec<String>>) -> Self {
+        self.catalog = catalog
+            .into_iter()
+            .map(|(map, names)| (map.to_lowercase(), names))
+            .collect();
+        self
+    }
+
+    /// Plays for `bot`: packets (kills, drops, turn-ins) go to it, and monsters come back by its
+    /// clock. Without it the fake still answers, sending nothing.
+    pub fn attach(&self, bot: &Arc<Bot>) {
+        *self.bot.lock() = Arc::downgrade(bot);
+    }
+
+    fn now(&self) -> Option<ClockTime> {
+        self.bot.lock().upgrade().map(|b| b.control.now())
+    }
+
+    fn queue(&self, event: (String, Vec<Value>)) {
+        self.pending.lock().push(event);
+    }
+
+    /// The cell you're in.
+    fn cell(&self) -> String {
+        self.get("world.strFrame")
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_else(|| "Enter".into())
+    }
+
+    /// The monsters' answer: all of them, or only the living (`availableMonsters`); they stand in
+    /// your cell, so a script's cell always has its monster.
+    fn monsters(&self, alive_only: bool) -> String {
+        let cell = self.cell();
+        let now = self.now();
+        let mut combat = self.combat.lock();
+        combat.respawn(now);
+        let list: Vec<Value> = combat
+            .monsters
+            .iter()
+            .filter(|m| !alive_only || m.alive())
+            .map(|m| m.json(&cell))
+            .collect();
+        Value::Array(list).to_string()
+    }
+
+    fn target(&self) -> Value {
+        let cell = self.cell();
+        let combat = self.combat.lock();
+        combat.target().map_or_else(|| json!({}), |m| m.json(&cell))
+    }
+
+    /// A hit on the target (`useSkill`): on a kill, the game's packets and the drops.
+    fn hit(&self) {
+        let now = self.now();
+        let killed = self.combat.lock().hit(now);
+        let Some(id) = killed else { return };
+        self.queue(sim::pext(json!({
+            "cmd": "addGoldExp", "typ": "m", "id": id, "intGold": 10, "intExp": 10,
+        })));
+        self.queue(sim::pext(json!({
+            "cmd": "ct", "m": { id.to_string(): { "intState": 0, "intHP": 0 } },
+        })));
+        self.drop_wanted();
+        self.give_quest_items();
+    }
+
+    /// Notes an item a script asked a container for, to drop on a kill.
+    fn want(&self, path: &str, filter: &std::collections::BTreeMap<String, FlashArg>) {
+        let temp = match path {
+            "world.myAvatar.tempitems" => true,
+            "world.myAvatar.items" | "world.bankinfo.items" | "world.myAvatar.houseitems" => false,
+            _ => return,
+        };
+        let id = match filter.get("ItemID") {
+            Some(FlashArg::Number(n)) => Some(*n as i64),
+            Some(FlashArg::String(s)) => s.trim().parse().ok(),
+            _ => None,
+        };
+        let name = match filter.get("sName") {
+            Some(FlashArg::String(s)) => Some(s.clone()),
+            _ => None,
+        };
+        if id.is_none() && name.is_none() {
+            return;
+        }
+        let wanted = Wanted {
+            id,
+            name,
+            temp,
+            asked: self.now().unwrap_or_default(),
+        };
+        let mut list = self.wanted.lock();
+        list.retain(|w| !w.same(&wanted));
+        list.push(wanted);
+        let excess = list.len().saturating_sub(20);
+        list.drain(..excess);
+    }
+
+    /// One of each item asked for lately, into the container it was asked of.
+    fn drop_wanted(&self) {
+        let now = self.now();
+        let wanted: Vec<Wanted> = self
+            .wanted
+            .lock()
+            .iter()
+            .filter(|w| w.fresh(now))
+            .cloned()
+            .collect();
+        for w in wanted {
+            let name = w
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("Item {}", w.id.unwrap_or_default()));
+            let id = w.id.unwrap_or_else(|| sim::id_for(&name));
+            self.give(id, &name, 1, w.temp);
+        }
+    }
+
+    /// One more of each item the quests in progress still need (a kill, a map item).
+    fn give_quest_items(&self) {
+        let quests: Vec<i64> = self.in_progress.lock().iter().copied().collect();
+        for quest in quests {
+            let Some(entry) = self.get(&format!("world.questTree.{quest}")) else {
+                continue;
+            };
+            for req in sim::requirements(&entry) {
+                if self.held(req.id, req.temp) < req.quantity {
+                    self.give(req.id, &req.name, 1, req.temp);
+                }
+            }
+        }
+    }
+
+    fn container(temp: bool) -> &'static str {
+        if temp {
+            "world.myAvatar.tempitems"
+        } else {
+            "world.myAvatar.items"
+        }
+    }
+
+    fn held(&self, id: i64, temp: bool) -> i64 {
+        match self.get(Self::container(temp)) {
+            Some(Value::Array(items)) => sim::quantity(&items, id),
+            _ => 0,
+        }
+    }
+
+    /// Adds an item to a container, as the game's `addItems` does.
+    fn give(&self, id: i64, name: &str, quantity: i64, temp: bool) {
+        let path = Self::container(temp);
+        let mut items = match self.get(path) {
+            Some(Value::Array(items)) => items,
+            _ => Vec::new(),
+        };
+        sim::add_item(&mut items, id, name, quantity, temp);
+        self.set(path, Value::Array(items));
+        self.queue(sim::pext(json!({
+            "cmd": "addItems",
+            "items": { id.to_string(): { "ItemID": id, "sName": name, "iQty": quantity, "bTemp": temp } },
+        })));
+    }
+
+    /// A turn-in: it always goes through (scripts wait for their items themselves). The quest's
+    /// slot gets its value (done), its temporary items go, and the server's `ccqr` comes.
+    fn turn_in(&self, quest: i64) {
+        self.in_progress.lock().remove(&quest);
+        let room = self.get("world.curRoom").unwrap_or(json!(1));
+        self.queue(sim::sent(format!(
+            "%xt%zm%tryQuestComplete%{room}%{quest}%-1%false%1%wvz%"
+        )));
+        if let Some(entry) = self.get(&format!("world.questTree.{quest}")) {
+            if let (Some(slot), Some(value)) =
+                (sim::num(&entry["iSlot"]), sim::num(&entry["iValue"]))
+                && slot >= 0
+            {
+                let mut values = self.slot_values.lock();
+                let have = values.entry(slot).or_insert(0);
+                *have = (*have).max(value);
+            }
+            for req in sim::requirements(&entry).into_iter().filter(|r| r.temp) {
+                let path = Self::container(true);
+                if let Some(Value::Array(mut items)) = self.get(path) {
+                    sim::take_item(&mut items, req.id, req.quantity);
+                    self.set(path, Value::Array(items));
+                }
+            }
+        }
+        self.queue(sim::pext(
+            json!({ "cmd": "ccqr", "bSuccess": 1, "QuestID": quest }),
+        ));
     }
 
     /// How many calls it has answered.
@@ -228,6 +468,7 @@ impl WorldFake {
         else {
             return None;
         };
+        self.want(path, filter);
         let pick = |items: &[Value]| -> String {
             let picked: Vec<&Value> = items
                 .iter()
@@ -262,6 +503,25 @@ impl WorldFake {
 
     fn set(&self, path: &str, value: Value) {
         self.overlay.lock().insert(path.to_owned(), value);
+        // Its text (and a parent's or child's that contains it) is out of date.
+        self.texts
+            .lock()
+            .retain(|p, _| !(p.starts_with(path) || path.starts_with(p.as_str())));
+    }
+
+    /// A path's value as JSON text, written once until the path changes: a high-level
+    /// character's whole inventory is large, and some scripts read it on every pass.
+    fn text(&self, path: &str) -> String {
+        if let Some(text) = self.texts.lock().get(path) {
+            return text.clone();
+        }
+        let text = self
+            .get(path)
+            .map_or_else(|| "null".into(), |v| v.to_string());
+        if text.len() > 4096 {
+            self.texts.lock().insert(path.to_owned(), text.clone());
+        }
+        text
     }
 
     /// The rules: what a send changes.
@@ -285,15 +545,19 @@ impl WorldFake {
                 }
             }
             "callGameFunction" if text(0) == "world.acceptQuest" => {
-                if let Some(id) = args.get(1).and_then(Value::as_f64) {
-                    self.in_progress.lock().insert(id as i64);
+                if let Some(id) = args.get(1).and_then(sim::num) {
+                    self.in_progress.lock().insert(id);
+                    let room = self.get("world.curRoom").unwrap_or(json!(1));
+                    self.queue(sim::sent(format!("%xt%zm%acceptQuest%{room}%{id}%")));
                 }
             }
             "callGameFunction" if text(0) == "world.tryQuestComplete" => {
-                if let Some(id) = args.get(1).and_then(Value::as_f64) {
-                    self.in_progress.lock().remove(&(id as i64));
+                if let Some(id) = args.get(1).and_then(sim::num) {
+                    self.turn_in(id);
                 }
             }
+            // A map item: what the quests in progress still need.
+            "callGameFunction" if text(0) == "world.getMapItem" => self.give_quest_items(),
             "callGameFunction" if text(0) == "sfc.sendString" => self.packet(text(1)),
             _ => {}
         }
@@ -308,6 +572,13 @@ impl WorldFake {
             self.set("world.strFrame", Value::from(parts[8]));
             self.set("world.strPad", Value::from(parts[9]));
             self.set("world.mapLoadInProgress", Value::Bool(false));
+            // The map's monsters, from the catalog (none for a map it doesn't have).
+            let names = self
+                .catalog
+                .get(&map.to_lowercase())
+                .cloned()
+                .unwrap_or_default();
+            self.combat.lock().enter(&names);
         }
     }
 
@@ -315,11 +586,7 @@ impl WorldFake {
         let json: Vec<Value> = args.iter().map(crate::tape::arg_json).collect();
         let first = json.first().and_then(Value::as_str).unwrap_or_default();
         match name {
-            "getGameObject" | "getGameObjectS" => {
-                return self
-                    .get(first)
-                    .map_or_else(|| "null".into(), |v| v.to_string());
-            }
+            "getGameObject" | "getGameObjectS" => return self.text(first),
             "isNull" => {
                 let null = match self.get(first) {
                     Some(value) => value.is_null(),
@@ -333,9 +600,27 @@ impl WorldFake {
                 return null.to_string();
             }
             "isLoggedIn" => return "true".into(),
+            "getMonsters" => return self.monsters(false),
+            "availableMonsters" => return self.monsters(true),
+            "getTargetMonster" => return self.target().to_string(),
+            "attackMonsterID" => {
+                let id = json.first().and_then(sim::num);
+                return self.combat.lock().attack(id, None).to_string();
+            }
+            "attackMonsterName" => {
+                return self.combat.lock().attack(None, Some(first)).to_string();
+            }
+            "useSkill" => {
+                self.hit();
+                return "true".into();
+            }
             // A quest slot's value says which quests are done: one the tape never read is 0 (not
             // done), never another slot's.
             "callGameFunction" if first == "world.getQuestValue" => {
+                let slot = json.get(1).and_then(sim::num).unwrap_or(-1);
+                if let Some(value) = self.slot_values.lock().get(&slot) {
+                    return value.to_string();
+                }
                 return self
                     .answers
                     .get(&key(name, &json))
@@ -378,6 +663,22 @@ impl FlashHost for WorldFake {
         let selected = (name == "selectArrayObjectsWhere")
             .then(|| self.select_where(&args))
             .flatten();
+        // Its target is the fake's, not the tape's.
+        let recorded_snapshot = recorded_snapshot.map(|answer| {
+            let with_target = matches!(args.first(), Some(FlashArg::Bool(true)));
+            match serde_json::from_str::<Value>(&answer) {
+                Ok(mut snap) if with_target => {
+                    let target = self.target();
+                    snap["target"] = if target.as_object().is_some_and(|t| t.is_empty()) {
+                        Value::Null
+                    } else {
+                        target
+                    };
+                    snap.to_string()
+                }
+                _ => answer,
+            }
+        });
         let answer = match recorded_snapshot.or(selected) {
             Some(answer) => answer,
             None => crate::testing::batched(name, &args, |n, a| self.answer(n, a))
@@ -389,6 +690,12 @@ impl FlashHost for WorldFake {
         }
         let cut: String = answer.chars().take(80).collect();
         recent.push_back(format!("{name}({}) -> {cut}", shown.join(", ")));
+        drop(recent);
+        // What the call set off reaches the bot as the game's packets would, no lock held.
+        let events = std::mem::take(&mut *self.pending.lock());
+        if !events.is_empty() {
+            sim::deliver(self.bot.lock().upgrade(), events);
+        }
         Ok(answer)
     }
 }
@@ -694,6 +1001,150 @@ mod tests {
                 vec!["world.shopinfo.ShopID".into()]
             ),
             "332"
+        );
+    }
+
+    fn world_with_monsters() -> WorldFake {
+        world().with_monsters(HashMap::from([(
+            "frozentower".to_owned(),
+            vec!["Polar Elemental".to_owned()],
+        )]))
+    }
+
+    fn join(world: &WorldFake, map: &str) {
+        ask(
+            world,
+            "callGameFunction",
+            vec![
+                "sfc.sendString".into(),
+                format!("%xt%zm%cmd%1%tfer%Questwalker%{map}%Enter%Spawn%").into(),
+            ],
+        );
+    }
+
+    #[test]
+    fn a_maps_monsters_come_from_the_catalog_and_stand_in_your_cell() {
+        let world = world_with_monsters();
+        join(&world, "frozentower-1234");
+        ask(&world, "jumpCorrectRoom", vec!["r5".into(), "Left".into()]);
+        let monsters: Vec<Value> =
+            serde_json::from_str(&ask(&world, "getMonsters", vec![])).unwrap();
+        assert_eq!(monsters.len(), 1);
+        assert_eq!(monsters[0]["strMonName"], "Polar Elemental");
+        assert_eq!(monsters[0]["strFrame"], "r5");
+        // A map the catalog doesn't have: none.
+        join(&world, "nowhere");
+        assert_eq!(ask(&world, "getMonsters", vec![]), "[]");
+    }
+
+    #[test]
+    fn a_monster_dies_on_the_third_hit_and_comes_back() {
+        let world = world_with_monsters();
+        join(&world, "frozentower");
+        assert_eq!(
+            ask(&world, "attackMonsterName", vec!["polar elemental".into()]),
+            "true"
+        );
+        let target: Value = serde_json::from_str(&ask(&world, "getTargetMonster", vec![])).unwrap();
+        assert_eq!(target["strMonName"], "Polar Elemental");
+        ask(&world, "useSkill", vec![1.0.into()]);
+        ask(&world, "useSkill", vec![2.0.into()]);
+        assert_ne!(ask(&world, "getTargetMonster", vec![]), "{}");
+        ask(&world, "useSkill", vec![3.0.into()]);
+        assert_eq!(ask(&world, "getTargetMonster", vec![]), "{}");
+        // With no bot (no clock), the dead come back at the next look.
+        let alive: Vec<Value> =
+            serde_json::from_str(&ask(&world, "availableMonsters", vec![])).unwrap();
+        assert_eq!(alive.len(), 1);
+    }
+
+    #[test]
+    fn a_kill_drops_what_the_script_asked_for() {
+        let world = world_with_monsters();
+        join(&world, "frozentower");
+        let filter =
+            FlashArg::Object([("sName".to_owned(), FlashArg::from("Frozen Shard"))].into());
+        ask(
+            &world,
+            "selectArrayObjectsWhere",
+            vec!["world.myAvatar.tempitems".into(), filter.clone()],
+        );
+        ask(&world, "attackMonsterID", vec![1.0.into()]);
+        for _ in 0..3 {
+            ask(&world, "useSkill", vec![1.0.into()]);
+        }
+        let held: Vec<Value> = serde_json::from_str(&ask(
+            &world,
+            "selectArrayObjectsWhere",
+            vec!["world.myAvatar.tempitems".into(), filter],
+        ))
+        .unwrap();
+        assert_eq!(held.len(), 1, "{held:?}");
+        assert_eq!(held[0]["iQty"], 1);
+    }
+
+    #[test]
+    fn a_map_item_gives_what_a_quest_needs_and_a_turn_in_marks_it_done() {
+        let world = world();
+        ask(
+            &world,
+            "callGameFunction",
+            vec!["world.showQuests".into(), "4777".into(), "q".into()],
+        );
+        ask(
+            &world,
+            "callGameFunction",
+            vec!["world.acceptQuest".into(), 4777.0.into()],
+        );
+        ask(
+            &world,
+            "callGameFunction",
+            vec!["world.getMapItem".into(), 1.0.into()],
+        );
+        let need =
+            FlashArg::Object([("sName".to_owned(), FlashArg::from("Item for quest 4777"))].into());
+        let held = ask(
+            &world,
+            "selectArrayObjectsWhere",
+            vec!["world.myAvatar.tempitems".into(), need.clone()],
+        );
+        assert!(held.contains("Item for quest 4777"), "{held}");
+
+        let slot = || {
+            ask(
+                &world,
+                "callGameFunction",
+                vec!["world.getQuestValue".into(), 4777.0.into()],
+            )
+        };
+        assert_eq!(slot(), "0");
+        ask(
+            &world,
+            "callGameFunction",
+            vec![
+                "world.tryQuestComplete".into(),
+                4777.0.into(),
+                (-1.0).into(),
+                false.into(),
+            ],
+        );
+        // Done: its slot holds its value, it isn't in progress, and its item was handed in.
+        assert_eq!(slot(), "1");
+        assert_eq!(
+            ask(
+                &world,
+                "callGameFunction",
+                vec!["world.isQuestInProgress".into(), 4777.0.into()]
+            ),
+            "false"
+        );
+        assert_eq!(
+            ask(
+                &world,
+                "selectArrayObjectsWhere",
+                vec!["world.myAvatar.tempitems".into(), need]
+            ),
+            "[]"
         );
     }
 }

@@ -509,6 +509,44 @@ because the sample of drafts needed it:
 - Loading a shop fills `world.shopinfo`: the tape's when it is that shop, else an empty one with
   its ID.
 
+**Reaching further** (the same day, `bot/src/world_fake/sim.rs`). A count of what drafts got done
+(the engine's own counters: kills, quests accepted, turned in, in the report's `progress` line)
+read 0 on every draft: the fake sent none of the packets they move on, and where drafts stopped
+said why: of 203 sampled, 56 were polling the inventory for an item no monster ever dropped. The
+rules added, each because of that:
+
+- **Monsters per map**, from a catalog the run builds from the scripts' own `huntMonster`,
+  `killMonster` and `killQuest` calls (953 maps). Monster names never cross the Flash boundary (a
+  kill is `attackMonsterID`), so they can't come from a tape. They stand in whatever cell you're
+  in, so a script's cell always has its monster; a map the catalog lacks has none (the tape's map
+  keeps the tape's).
+- **Combat:** an attack (`attackMonsterID`, `attackMonsterName`, `*` any) sets the target; each
+  hit (`useSkill`) takes a third of its HP; on the third it dies, with the game's packets
+  (`addGoldExp` with `typ: "m"`, a `ct` with `intState: 0`), and comes back 2 s later by the bot's
+  clock (the game's `mtls` came about 2 s after a kill on tape). The `snapshot`'s target is the
+  fake's.
+- **Drops:** item names do cross the boundary, since a hunt asks for its item by name on every pass
+  (`selectArrayObjectsWhere` on the inventory, temporary inventory, bank or house). A kill drops
+  one of each item asked for in the last 10 s, into the container it was asked of, plus one more of
+  whatever the quests in progress still need; a map item (`world.getMapItem`) gives the latter.
+  Each arrives with the game's `addItems`.
+- **Quests:** an accept sends its packet; a turn-in always goes through (scripts wait for their
+  items themselves, and a strict check would only strand the quests the fake can't supply): the
+  quest's slot gets its value, so it reads as done, its temporary items go, and the server's
+  `ccqr` comes.
+- The fake gets the bot (`WorldFake::attach`, weakly) for its clock and to deliver those packets,
+  after each call, with no lock of its own held. Large values' JSON text is kept until the path
+  changes (`world.myAvatar.items` of a level-100 character, read on every pass by some scripts).
+- The run never fetches the server list (a draft that reaches a relogin would have called AQW's
+  API from the nightly).
+
+The same 203 drafts went from 0 kills, 0 accepts and 0 turn-ins to 1,023 kills (127 drafts), 577
+quests accepted (131) and 429 turned in (107). All 1,623 in 134 s: 7,736 kills (956 drafts), 4,283
+accepted (1,005), 3,160 turned in (814), no failure but the known gap (TowerOfDoom passes floor 1
+now and stops on floor 2, whose monster no script names). Five reached the 10 s real cap; the
+three looked at were busy, not stuck (two loops of 30,000 and 45,000 calls, one reading a level-100
+inventory, which the engine parses on each read).
+
 **The run:** each draft with a `main` (Core files are libraries) on a bot of its own, `ActionDelay`
 0, started silently, on a virtual clock for `DRAFT_SECS` (60) of play and at most
 `DRAFT_REAL_SECS` (10) of real time ("Decision 2: the virtual clock"; the first full run, below,
@@ -553,8 +591,8 @@ finished, 889 still running. Going further found three failures:
   list can't go stale.
 
 **What it can't catch:** a draft that runs but is wrong (integer division, the wrong quest ID),
-anything past 8 s, and code behind the fake's gaps (shop contents, monsters that die and drop,
-items arriving): decision 4 or a tape of that flow covers those.
+anything past its budget, and code behind the fake's gaps (shop contents, monsters of maps no
+script names, monsters found by cell only): decision 4 or a tape of that flow covers those.
 
 **Pull requests:** CI's "Changed drafts" job (`ci.yml`) runs the drafts a pull request's scripts
 change. `tools/drafts/changed.sh <base>` compares the scripts submodule's commit on the base branch
@@ -568,8 +606,7 @@ hand, not a draft) `skip`.
 
 **Not done:** the first nightly run and the first "Changed drafts" run on GitHub (neither is
 pushed); options per draft (the Lone Wolf ultras need `PrivateRoomNumber`; drafts start with their
-options' defaults); monsters that die and drops (no draft needed them to get past setup, since a
-hunt waiting for its drop counts as running).
+options' defaults); shop contents (merges stop on their empty shop).
 
 ## Decision 2: the virtual clock
 

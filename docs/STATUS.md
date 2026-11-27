@@ -1072,8 +1072,10 @@ memory budget (NVIDIA, AMD).
   formats, async C# rewritten as handlers). Each one with a `main` (1,623 of the 1,639 marked
   files; the rest are Core libraries) now runs for 60 s of play on a virtual clock against a fake
   world seeded from a tape (2026-11-27, `bot/tests/draft_smoke.rs`, nightly in
-  `.github/workflows/drafts-nightly.yml`). None throws or fails to start in that time but
-  `story/TowerOfDoom.ts`, a gap in the fake (it keeps the seed tape's monsters on another map).
+  `.github/workflows/drafts-nightly.yml`). The fake world has monsters that die and drop what the
+  draft asks for and quests that are turned in, so drafts get through their hunts and quests: all
+  1,623 made 7,736 kills and turned in 3,160 quests between them. None throws or fails to start
+  but `story/TowerOfDoom.ts`, a gap in the fake (no monster for the floors no script names).
   It found two port bugs, fixed in `ultrasv3/dependenciesultras/UltraGeneral.ts` (`Kolrv3` and
   `Masakadov3` read class options they don't declare, which C# allows). That checks they load and
   get into their own code (the story drafts do their quests); it doesn't check that what they do

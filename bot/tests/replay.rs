@@ -478,7 +478,7 @@ fn replays_to_its_end_with(
     name: &str,
     logged: &[&str],
     options: ReplayOptions,
-) -> turu_bot::testing::ReplayReport {
+) -> (turu_bot::testing::ReplayReport, Arc<Bot>) {
     let (bot, host) = replay_committed_with(name, &committed_script(name), options);
     // Replays run at the recorded pace but for the events' delays: a combat tape takes about as
     // long as it was recorded (decision 2, a virtual clock, would make it instant).
@@ -490,7 +490,7 @@ fn replays_to_its_end_with(
     for line in logged {
         assert!(log.contains(line), "{line} isn't in the log:\n{log}");
     }
-    report
+    (report, bot)
 }
 
 /// CoreAdvanced's `enhanceEquipped`, Lucky, on a level-16 character's class gear: the real
@@ -535,7 +535,7 @@ fn the_relogin_tape_replays() {
 /// tape with combat.
 #[test]
 fn the_core_story_tape_replays() {
-    let report = replays_to_its_end_with(
+    let (report, _) = replays_to_its_end_with(
         "core_story",
         &[
             "Quest 3538: unlocked true, done false",
@@ -552,7 +552,7 @@ fn the_core_story_tape_replays() {
 /// Bone Dust, its drop handling picking them up.
 #[test]
 fn the_kill_farm_tape_replays() {
-    let report = replays_to_its_end_with(
+    let (report, bot) = replays_to_its_end_with(
         "kill_farm",
         &[
             "Start: level 100, Bone Dust 1163",
@@ -561,6 +561,12 @@ fn the_kill_farm_tape_replays() {
         tape_options(),
     );
     assert!(report.unchecked_sends > 0, "{report:?}");
+    // The engine counted the kills from the game's packets (the draft run's measure).
+    assert!(
+        bot.state.lock().stats.kills > 0,
+        "{:?}",
+        bot.state.lock().stats.kills
+    );
 }
 
 /// The merge template on SynderesMerge, buying only "NO BOTS Armor": the missing souvenir handed
@@ -582,7 +588,7 @@ fn the_merge_tape_replays() {
 #[test]
 fn the_chute_quest_tape_replays_on_a_virtual_clock() {
     let started = Instant::now();
-    let report = replays_to_its_end_with("chute_quest", &["Turn-in 3: done"], tape_options());
+    let (report, _) = replays_to_its_end_with("chute_quest", &["Turn-in 3: done"], tape_options());
     assert!(report.clock_time > Duration::from_secs(5), "{report:?}");
     assert!(
         started.elapsed() < Duration::from_secs(5),
