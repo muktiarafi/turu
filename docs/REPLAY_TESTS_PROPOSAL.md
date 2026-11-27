@@ -1,5 +1,8 @@
 # Proposal: tests from recorded game sessions
 
+Continuing this work: `docs/REPLAY_TESTS_HANDOVER.md` (where it stands, how to run and record,
+the next steps, the traps).
+
 Status: phases 0 and 1 done (2026-11-26): the spike (see "What a do-nothing game shows") and
 the recorder, checked in game (see "As built, phase 1"). Phase 2 done (2026-11-27): the scrubber
 and the replay (see "As built, phase 2"), with the first tape recorded in game committed and

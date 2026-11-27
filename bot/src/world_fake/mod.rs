@@ -865,11 +865,16 @@ mod tests {
             ask(&world, "isNull", vec!["mcConnDetail.stage".into()]),
             "true"
         );
-        // A cooldown the tape never read is free.
-        assert_eq!(
-            ask(&world, "getGameObject", vec!["world.lock.buyItem".into()]),
-            r#"{"cd":0,"ts":0}"#
-        );
+        // A cooldown the tape never read is free. Compared by content: the app's build keeps
+        // serde_json's key order (`preserve_order`, from Ruffle's dependencies), this crate's
+        // alone doesn't, and CI builds them together.
+        let lock: serde_json::Value = serde_json::from_str(&ask(
+            &world,
+            "getGameObject",
+            vec!["world.lock.buyItem".into()],
+        ))
+        .unwrap();
+        assert_eq!(lock, serde_json::json!({"cd": 0, "ts": 0}));
         // A quest slot answers its own value, else 0, never another slot's.
         let slot = |n: f64| {
             ask(
