@@ -655,6 +655,21 @@ every player has sent its ready signal (`allPlayersSignaled`). Each player sends
 own goal, so partners copying the draft's own `SIGNAL` lines would answer it; other signals are
 one seat's (player 4's Mystify, an owner's clear), where a copy would claim what no partner did.
 
+**The bank.** The fake answered no bank move: `bankToInv` went nowhere, `inventoryHasSpaceFor` (an
+item's JSON, never the same twice) read null, so no space, and `loadBank` got no answer, so each
+`bank.load(true)` waited its 20 tries. CoreBots' `unbank` gave up ("Failed to unbank", 87 times a
+run) and the Void bosses retried theirs until their budget. Now `bankToInv`, `bankFromInv` and
+`bankSwapInv` move the item's stack between `world.bankinfo.items` and the inventory (the house for
+a house item) and keep `iBankCount`; `loadBank` gets the server's `loadBank`; `inventoryHasSpaceFor`
+answers as turu.swf does: a stack it adds to, a swap, or a free slot by `iBagSlots`, and room when
+the game sorts its bag in category pools (`InvCat`), which count in a way the tape doesn't show.
+
+Full run (2026-11-28), compared draft by draft: 37 drafts that ran to their budget now end, every
+Void boss among them (each moves its Void Essence or Void Energy and stops where the account does:
+no King's Echo, no SpellCrafting rank); none is worse (`other/LoreBowl` was cut at the 10 s real
+cap under load; alone it ends in 6.6 s). Kills 9,857 (8,487 before), turn-ins 3,259 (2,944), no
+error, no "Failed to unbank".
+
 **Pull requests:** CI's "Changed drafts" job (`ci.yml`) runs the drafts a pull request's scripts
 change. `tools/drafts/changed.sh <base>` compares the scripts submodule's commit on the base branch
 with the pull request's and prints `skip`, `DRAFT_FILTER=<paths>` or `DRAFT_EVERY=16`: the changed

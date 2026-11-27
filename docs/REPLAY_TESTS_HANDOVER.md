@@ -17,7 +17,7 @@ and replay it in CI against the same script; and run every converted script ("dr
 | 1. Recorder | Done, checked in game (`bot/src/tape/recorder.rs`, `TURU_TAPE`, `--record-tape`). |
 | 2. Scrubber and replay | Done. `turu-tape scrub`, `turu_bot::testing::ReplayHost`. |
 | 3. Core flows on tape | Done. Seven tapes in `bot/tests/tapes/`, each with its script beside it. |
-| 4. World fake and draft smoke | Built: `WorldFake` (with monsters, drops, quests and merge shops), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. Not yet seen running on GitHub. |
+| 4. World fake and draft smoke | Built: `WorldFake` (with monsters, drops, quests, merge shops and the bank), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. Not yet seen running on GitHub. |
 | Decision 2 (virtual clock) | Done: `ScriptControl`'s clock, real unless a test makes it virtual. |
 | 5. Recording from Diagnostics | Not built. |
 
@@ -58,7 +58,7 @@ UTC). The "Changed drafts" job runs only on pull requests, so it hasn't run eith
   virtual clock. `committed_tapes_hold_no_secrets` guards every committed tape.
 - **Virtual clock** (`bot/src/control.rs`): `ClockTime`, `ScriptControl::now`, `set_virtual`,
   `participate`, `wait_until`, `spend`. Unit tests there, including the woken-waiter race.
-- **World fake** (`bot/src/world_fake/mod.rs` for reads from the tape and shops, `sim.rs` for
+- **World fake** (`bot/src/world_fake/mod.rs` for reads from the tape, shops and the bank, `sim.rs` for
   monsters, drops, quests and the shops' items): see the proposal's "Phase 4 so far" for each rule
   and why it exists.
 - **Draft run** (`bot/tests/draft_smoke.rs`, ignored): every draft with a `main` for 60 s of play
@@ -135,8 +135,9 @@ A script that changes what it sends needs its tape recorded again: remove the ol
 4. ~~Monsters by map ID.~~ Done (proposal, "Monsters by map ID"): each map is as long as the
    highest map ID a script hunts or fights there by (`huntMonsterMapID`, the ultras' `...MapId`
    constants). Left: `TowerOfDoom`, which reads the name of the monster it finds by cell (a known
-   gap); the Void bosses' bank move the fake never completes (they retry `loadBank` for Void
-   Essence); and `ArmyPrismatasGoldFarm_LW`'s "everyone ready" signal past 60 s.
+   gap); and `ArmyPrismatasGoldFarm_LW`'s "everyone ready" signal past 60 s. ~~The Void
+   bosses' bank move.~~ Done (proposal, "The bank"): the fake moves items to and from the bank,
+   answers `loadBank` and `inventoryHasSpaceFor`; 37 more drafts end.
 5. **Correctness (decision 4).** The smoke run catches throws, not wrong behaviour. Comparing a
    draft's sends with VibeSkua's for the same script needs a packet log from VibeSkua on Windows.
 6. **Smaller:** phase 5 (Diagnostics > Record Session, scrubbing on save); moving the few

@@ -5,8 +5,9 @@
 //! `getGameObject` path, the paths inside `getMany`'s answers, `isNull`, and every other read by
 //! its name and arguments. On top is an overlay that sends change, through a short list of rules:
 //! `setGameObject` sets the path, joining a map (the `tfer` packet) moves you there, a jump moves
-//! you to the cell. Batched reads (`snapshot`, `getMany`, ...) are built from the single ones, as
-//! turu.swf builds them from the game.
+//! you to the cell, a bank move (`bankToInv`, `bankFromInv`, `bankSwapInv`) moves the item. Batched
+//! reads (`snapshot`, `getMany`, ...) are built from the single ones, as turu.swf builds them from
+//! the game.
 //!
 //! It is a model, so it is wrong in places: its job is only to get a draft past its setup into its
 //! own code. Each rule is there because a draft needed it; the answers come from the tape, not
@@ -24,6 +25,10 @@ pub use sim::ShopStock;
 use sim::{Combat, Monster, Wanted};
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
+
+const BANK: &str = "world.bankinfo.items";
+const HOUSE: &str = "world.myAvatar.houseitems";
+const BANK_COUNT: &str = "world.myAvatar.iBankCount";
 
 /// A fake world (see the module's documentation).
 pub struct WorldFake {
@@ -319,6 +324,96 @@ impl WorldFake {
             Some(Value::Array(items)) => sim::quantity(&items, id),
             _ => 0,
         }
+    }
+
+    fn find_item(&self, path: &str, id: i64) -> Option<Value> {
+        match self.get(path) {
+            Some(Value::Array(items)) => items
+                .into_iter()
+                .find(|i| sim::num(&i["ItemID"]) == Some(id)),
+            _ => None,
+        }
+    }
+
+    /// Moves an item's whole stack between the bank and the inventory or house (`to` None: the
+    /// inventory, or the house for a house item), as the server's answer to a bank move does,
+    /// and keeps the bank's count.
+    fn move_item(&self, from: &str, to: Option<&str>, id: i64) {
+        let Some(item) = self.find_item(from, id) else {
+            return;
+        };
+        let house = item["bHouse"] == json!(1) || item["bHouse"] == json!("1");
+        let to = to.unwrap_or(if house { HOUSE } else { Self::container(false) });
+        let take = |path: &str, item: Option<Value>| {
+            let mut items = match self.get(path) {
+                Some(Value::Array(items)) => items,
+                _ => Vec::new(),
+            };
+            items.retain(|i| sim::num(&i["ItemID"]) != Some(id));
+            items.extend(item);
+            self.set(path, Value::Array(items));
+        };
+        take(from, None);
+        let mut moved = item;
+        moved["bBank"] = json!(if to == BANK { 1 } else { 0 });
+        // A stack already there grows; the item keeps its quantity otherwise.
+        if let Some(there) = self.find_item(to, id) {
+            let total =
+                sim::num(&there["iQty"]).unwrap_or(0) + sim::num(&moved["iQty"]).unwrap_or(0);
+            moved["iQty"] = json!(total);
+        }
+        take(to, Some(moved));
+        if let Some(count) = self.get(BANK_COUNT).as_ref().and_then(sim::num) {
+            let step = if to == BANK { 1 } else { -1 };
+            self.set(BANK_COUNT, json!((count + step).max(0)));
+        }
+    }
+
+    /// `inventoryHasSpaceFor(item, quantity, purchase, outgoing)`, as turu.swf answers it: a stack
+    /// it adds to, an item swapped out for it, or a free bag slot (the house's for a house item).
+    /// No slot count on the tape, or the game's category pools: room.
+    fn has_space_for(&self, args: &[Value]) -> bool {
+        let item: Value = args
+            .first()
+            .and_then(Value::as_str)
+            .and_then(|text| serde_json::from_str(text).ok())
+            .unwrap_or_default();
+        if args.get(3).is_some_and(|out| !out.is_null()) {
+            return true;
+        }
+        let house = item["bHouse"] == json!(1) || item["bHouse"] == json!("1");
+        let (path, slots) = if house {
+            (HOUSE, "world.myAvatar.objData.iHouseSlots")
+        } else {
+            (Self::container(false), "world.myAvatar.objData.iBagSlots")
+        };
+        if let Some(id) = sim::num(&item["ItemID"])
+            && let Some(there) = self.find_item(path, id)
+        {
+            let quantity = args.get(1).and_then(sim::num).unwrap_or(1);
+            let stack = sim::num(&there["iStk"]).unwrap_or(i64::MAX);
+            return sim::num(&there["iQty"]).unwrap_or(0) + quantity <= stack;
+        }
+        // The game's category pools (`InvCat`) count the bag their own way, which the tape
+        // doesn't show: a new item has room there.
+        let categories = self.answers.get(&key(
+            "callGameFunction",
+            &[
+                json!("loaderInfo.applicationDomain.hasDefinition"),
+                json!("InvCat"),
+            ],
+        ));
+        if categories.is_some_and(|answer| answer == "true") {
+            return true;
+        }
+        let used = match self.get(path) {
+            Some(Value::Array(items)) => items.len() as i64,
+            _ => 0,
+        };
+        self.get(slots)
+            .as_ref()
+            .and_then(sim::num)
+            .is_none_or(|slots| used < slots)
     }
 
     /// Adds an item to a container, as the game's `addItems` does.
@@ -672,6 +767,33 @@ impl WorldFake {
     /// A packet the client sends: joining a map (`%xt%zm%cmd%<room>%tfer%<user>%<map>%<cell>%<pad>%`).
     fn packet(&self, packet: &str) {
         let parts: Vec<&str> = packet.split('%').collect();
+        let id = |i: usize| parts.get(i).and_then(|p| p.trim().parse::<i64>().ok());
+        match parts.get(3).copied() {
+            // The server's answer; the bank itself is the tape's.
+            Some("loadBank") => self.queue(sim::pext(json!({ "cmd": "loadBank", "items": [] }))),
+            Some("bankToInv") => {
+                if let Some(item) = id(5) {
+                    self.move_item(BANK, None, item);
+                }
+            }
+            Some("bankFromInv") => {
+                if let Some(item) = id(5) {
+                    let from = [Self::container(false), HOUSE]
+                        .into_iter()
+                        .find(|path| self.find_item(path, item).is_some());
+                    if let Some(from) = from {
+                        self.move_item(from, Some(BANK), item);
+                    }
+                }
+            }
+            Some("bankSwapInv") => {
+                if let (Some(out), Some(item)) = (id(5), id(7)) {
+                    self.move_item(Self::container(false), Some(BANK), out);
+                    self.move_item(BANK, None, item);
+                }
+            }
+            _ => {}
+        }
         if parts.get(5) == Some(&"tfer") && parts.len() >= 10 {
             let map = parts[7].split('-').next().unwrap_or_default();
             self.set("world.strMapName", Value::from(map));
@@ -706,6 +828,7 @@ impl WorldFake {
                 return null.to_string();
             }
             "isLoggedIn" => return "true".into(),
+            "inventoryHasSpaceFor" => return self.has_space_for(&json).to_string(),
             "getMonsters" => return self.monsters(false),
             "availableMonsters" => return self.monsters(true),
             "getTargetMonster" => return self.target().to_string(),
@@ -943,6 +1066,10 @@ mod tests {
             // After the script: the client's logout at exit, which isn't the world.
             call(7, "getGameObject", json!(["world.strMapName"]), "null"),
         ];
+        from_lines(lines)
+    }
+
+    fn from_lines(lines: Vec<Line>) -> WorldFake {
         WorldFake::from_tape(&Tape {
             header: Header {
                 format: 1,
@@ -961,6 +1088,93 @@ mod tests {
 
     fn ask(world: &WorldFake, name: &str, args: Vec<FlashArg>) -> String {
         world.call(name, args).unwrap()
+    }
+
+    #[test]
+    fn the_bank_moves_items_and_counts_the_bag() {
+        let essence = r#"{"ItemID":73641,"CharItemID":11,"sName":"Void Essence","iQty":25,"iStk":25,"bBank":1,"bHouse":"0"}"#;
+        let chair = r#"{"ItemID":500,"CharItemID":12,"sName":"Chair","iQty":1,"iStk":1,"bBank":1,"bHouse":"1"}"#;
+        let world = from_lines(vec![
+            call(0, "getGameObject", json!(["world.curRoom"]), "7"),
+            call(
+                1,
+                "getGameObject",
+                json!(["world.myAvatar.items"]),
+                r#"[{"ItemID":1,"sName":"Gear","iQty":1,"iStk":1}]"#,
+            ),
+            call(
+                2,
+                "getGameObject",
+                json!(["world.bankinfo.items"]),
+                &format!("[{essence},{chair}]"),
+            ),
+            call(
+                3,
+                "getGameObject",
+                json!(["world.myAvatar.objData.iBagSlots"]),
+                "2",
+            ),
+            call(
+                4,
+                "getGameObject",
+                json!(["world.myAvatar.iBankCount"]),
+                "2",
+            ),
+        ]);
+        let names = |path: &str| -> Vec<String> {
+            let items: Vec<Value> =
+                serde_json::from_str(&ask(&world, "getGameObject", vec![path.into()])).unwrap();
+            items
+                .iter()
+                .map(|i| i["sName"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        let space = |item: &str| {
+            ask(
+                &world,
+                "inventoryHasSpaceFor",
+                vec![item.into(), 1.0.into(), false.into()],
+            )
+        };
+        let send = |packet: &str| {
+            ask(
+                &world,
+                "callGameFunction",
+                vec!["sfc.sendString".into(), packet.into()],
+            );
+        };
+
+        // One of two bag slots used: room for the essence.
+        assert_eq!(space(essence), "true");
+        send("%xt%zm%bankToInv%7%73641%11%");
+        assert_eq!(names("world.myAvatar.items"), ["Gear", "Void Essence"]);
+        assert_eq!(names("world.bankinfo.items"), ["Chair"]);
+        assert_eq!(
+            ask(
+                &world,
+                "getGameObject",
+                vec!["world.myAvatar.iBankCount".into()]
+            ),
+            "1"
+        );
+        // The bag is full now, but a full stack is still a full stack and a house item goes to the house.
+        assert_eq!(space(r#"{"ItemID":2,"sName":"Cog","iQty":1}"#), "false");
+        assert_eq!(space(essence), "false");
+        send("%xt%zm%bankToInv%7%500%12%");
+        assert_eq!(names("world.myAvatar.houseitems"), ["Chair"]);
+
+        // Back to the bank, and a swap.
+        send("%xt%zm%bankFromInv%7%73641%11%");
+        assert_eq!(names("world.bankinfo.items"), ["Void Essence"]);
+        send("%xt%zm%bankSwapInv%7%1%1%73641%11%");
+        assert_eq!(names("world.myAvatar.items"), ["Void Essence"]);
+        assert_eq!(names("world.bankinfo.items"), ["Gear"]);
+
+        // `loadBank` is answered, as the server does: the bot hears the bank loaded.
+        let bot = Bot::new();
+        world.attach(&bot);
+        send("%xt%zm%loadBank%7%All%");
+        assert!(bot.state.lock().bank_loaded);
     }
 
     #[test]
