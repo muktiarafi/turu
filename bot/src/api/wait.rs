@@ -11,7 +11,7 @@ use crate::control::Topics;
 use crate::error::{BotError, BotResult};
 use serde_json::Value;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// VibeSkua `WAIT_SLEEP`.
 pub const WAIT_SLEEP: u64 = 100;
@@ -45,7 +45,7 @@ pub fn for_true_on(
     let mut counter = 0;
     // When the current try ends: a wake looks early, but tries keep their pace, so events
     // however frequent can't hold off the timeout.
-    let mut try_ends = Instant::now() + Duration::from_millis(sleep_ms);
+    let mut try_ends = bot.control.now() + Duration::from_millis(sleep_ms);
     loop {
         bot.control.check()?;
         // Before looking: what fires from here on wakes the sleep below.
@@ -64,9 +64,10 @@ pub fn for_true_on(
             counter += 1;
         } else {
             bot.control.sleep_until(try_ends, wake, &mark)?;
-            if Instant::now() >= try_ends {
+            let now = bot.control.now();
+            if now >= try_ends {
                 counter += 1;
-                try_ends = Instant::now() + Duration::from_millis(sleep_ms);
+                try_ends = now + Duration::from_millis(sleep_ms);
             }
         }
     }
@@ -93,10 +94,12 @@ pub fn until_on(
 
 /// Runs a named wait and records how it went in the perf log (`waits:`).
 fn timed(bot: &Bot, name: &'static str, wait: impl FnOnce() -> BotResult<bool>) -> BotResult<bool> {
-    let started = Instant::now();
+    let started = bot.control.now();
     let result = wait();
     if let Ok(done) = result {
-        bot.flash.perf().record_wait(name, started.elapsed(), done);
+        bot.flash
+            .perf()
+            .record_wait(name, bot.control.now().since(started), done);
     }
     result
 }
@@ -294,7 +297,7 @@ fn for_signal(
 ) -> BotResult<bool> {
     // The timeout is the script's: a huge one waits "forever" rather than overflowing.
     let ms = (timeout.max(0) as u64).saturating_mul(WAIT_SLEEP);
-    let deadline = Instant::now() + Duration::from_millis(ms);
+    let deadline = bot.control.now() + Duration::from_millis(ms);
     loop {
         // Before the flag: a packet between the look and the sleep still wakes it.
         let mark = bot.control.mark();
@@ -306,7 +309,7 @@ fn for_signal(
                 return Ok(true);
             }
         }
-        if Instant::now() >= deadline {
+        if bot.control.now() >= deadline {
             return Ok(false);
         }
         // As VibeSkua's `AutoResetEvent.WaitOne`: asleep until the packet's signal.

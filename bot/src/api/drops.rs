@@ -116,8 +116,9 @@ impl DropRunner {
     /// `rejectElse`, rejects the rest. Does nothing when it already runs.
     pub fn start(&self, bot: &Arc<Bot>) {
         let weak = Arc::downgrade(bot);
-        self.worker
-            .start("Drops", move |cancel| drop_loop(&weak, cancel));
+        self.worker.start(&bot.control, "Drops", move |cancel| {
+            drop_loop(&weak, cancel)
+        });
     }
 }
 

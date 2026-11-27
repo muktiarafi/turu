@@ -2,13 +2,14 @@
 
 use super::{Args, ok, wait};
 use crate::Bot;
+use crate::control::ClockTime;
 use crate::error::{BotError, BotResult};
 use crate::models::{Badge, Monster, lenient_bool, lenient_i64, lenient_string};
 use crate::state::GameState;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// How long a read of [`logged_in`] or [`state`] is reused (Turu). Nearly every wait and
 /// background loop asks them (through `alive`, `playing`, ...), each on its own: about 25 times
@@ -16,20 +17,21 @@ use std::time::{Duration, Instant};
 /// ([`wait::WAIT_SLEEP`]) is the most a change can go unseen.
 const SHARED_READ: Duration = Duration::from_millis(100);
 
-/// The value `slot` holds if it's younger than [`SHARED_READ`], else `read`'s (kept in `slot`).
-/// The game is read without the state lock held.
+/// The value `slot` holds if it's younger than [`SHARED_READ`] on the bot's clock, else
+/// `read`'s (kept in `slot`). The game is read without the state lock held.
 fn shared<T: Copy>(
     bot: &Bot,
-    slot: impl Fn(&mut GameState) -> &mut Option<(Instant, T)>,
+    slot: impl Fn(&mut GameState) -> &mut Option<(ClockTime, T)>,
     read: impl FnOnce() -> BotResult<T>,
 ) -> BotResult<T> {
+    let now = bot.control.now();
     if let Some((at, value)) = *slot(&mut bot.state.lock())
-        && at.elapsed() < SHARED_READ
+        && now.since(at) < SHARED_READ
     {
         return Ok(value);
     }
     let value = read()?;
-    *slot(&mut bot.state.lock()) = Some((Instant::now(), value));
+    *slot(&mut bot.state.lock()) = Some((bot.control.now(), value));
     Ok(value)
 }
 
@@ -84,7 +86,7 @@ impl Snapshot {
 /// or missing target. It refreshes the reads [`logged_in`] and [`state`] reuse.
 pub fn snapshot(bot: &Bot, with_target: bool) -> BotResult<Snapshot> {
     let snap: Snapshot = bot.flash.call_json("snapshot", vec![with_target.into()])?;
-    let now = Instant::now();
+    let now = bot.control.now();
     let mut state = bot.state.lock();
     state.logged_in_read = Some((now, snap.logged_in));
     state.avatar_state_read = Some((now, if snap.avatar { snap.state } else { 0 }));

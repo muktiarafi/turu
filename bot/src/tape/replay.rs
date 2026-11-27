@@ -21,6 +21,7 @@
 
 use super::{Line, Tape};
 use crate::Bot;
+use crate::control::{ClockTime, ScriptControl};
 use crate::host::{FlashArg, FlashHost, HostError};
 use crate::player_packets::Direction;
 use crate::script::ScriptStatus;
@@ -29,6 +30,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -182,6 +184,9 @@ pub struct ReplayOptions {
     /// Plays a tape the scrubber hasn't renamed the players in (a test's own recording). Never
     /// for a committed tape.
     pub allow_unscrubbed: bool,
+    /// Plays the tape on a virtual clock ([`ScriptControl::set_virtual`]): the script's sleeps
+    /// and waits, and the tape's delays, take no real time.
+    pub virtual_clock: bool,
     /// Threads whose sends aren't checked, only answered and counted
     /// ([`ReplayReport::unchecked_sends`]): the skill timer by default, which casts whichever
     /// skill is off cooldown at its own pace, so which casts come and in what order depends on
@@ -198,6 +203,7 @@ impl Default for ReplayOptions {
             script_thread: "Script Thread".into(),
             stall: Duration::from_secs(10),
             allow_unscrubbed: false,
+            virtual_clock: false,
             unchecked_threads: vec!["Skill Timer".into()],
         }
     }
@@ -212,6 +218,8 @@ pub struct ReplayReport {
     pub background_sends: usize,
     /// Sends from [`ReplayOptions::unchecked_threads`].
     pub unchecked_sends: usize,
+    /// How long the replay took on the bot's clock (virtual time on a virtual clock).
+    pub clock_time: Duration,
     /// Reads the tape had no answer for (each once), answered `"null"`: always empty in strict
     /// mode.
     pub missing_reads: Vec<String>,
@@ -253,6 +261,11 @@ pub struct ReplayHost {
     /// Held while lines are taken and delivered, so they reach the bot in order.
     delivering: Mutex<()>,
     bot: Mutex<Weak<Bot>>,
+    /// The bot's control: its clock paces the replay ([`ReplayHost::attach`]).
+    control: Mutex<Option<Arc<ScriptControl>>>,
+    /// Raised when the position moves to a send or the replay fails: the replay's thread looks
+    /// again (it may wait on the clock for a line due by the old position).
+    moved: AtomicU64,
 }
 
 struct State {
@@ -264,8 +277,11 @@ struct State {
     next_send: usize,
     /// Each other thread's next send, in its list.
     thread_next: HashMap<String, usize>,
-    /// When the position last moved to a send, and that line's time on the tape.
-    anchor: (Instant, u64),
+    /// When the position last moved to a send (on the bot's clock), and that line's time on the
+    /// tape.
+    anchor: (ClockTime, u64),
+    /// When the replay was attached, on the bot's clock.
+    started: ClockTime,
     /// The script has made its first call: the stall check starts then, not while it compiles.
     script_began: bool,
     /// Where the script's current segment starts: just after its last matched send.
@@ -350,7 +366,7 @@ impl ReplayHost {
                 limit,
                 next_send: 0,
                 thread_next: HashMap::new(),
-                anchor: (Instant::now(), start_t),
+                anchor: (ClockTime::default(), start_t),
                 script_began: false,
                 segment: 0,
                 consumed: HashMap::new(),
@@ -358,6 +374,7 @@ impl ReplayHost {
                 unchecked_sends: 0,
                 missing_reads: Vec::new(),
                 failure: None,
+                started: ClockTime::default(),
             }),
             tape,
             options,
@@ -369,6 +386,8 @@ impl ReplayHost {
             socket,
             delivering: Mutex::new(()),
             bot: Mutex::new(Weak::new()),
+            control: Mutex::new(None),
+            moved: AtomicU64::new(0),
         }))
     }
 
@@ -382,6 +401,11 @@ impl ReplayHost {
     /// Makes this `bot`'s game: the tape's options (`ActionDelay`, ...) and host SWF, and the
     /// lines before its script started delivered. Then load the script and start it.
     pub fn attach(self: &Arc<Self>, bot: &Arc<Bot>) {
+        if self.options.virtual_clock {
+            bot.control.set_virtual();
+        }
+        *self.control.lock() = Some(bot.control.clone());
+        self.state.lock().started = bot.control.now();
         if let Ok(options) = serde_json::from_value(self.tape.header.options.clone()) {
             *bot.options.write() = options;
         }
@@ -404,15 +428,19 @@ impl ReplayHost {
                 let mut state = self.state.lock();
                 let to = started.min(state.limit);
                 let lines = self.pass(&mut state, to);
-                state.anchor = (Instant::now(), line_t(&self.tape.lines[started]));
+                state.anchor = (bot.control.now(), line_t(&self.tape.lines[started]));
                 lines
             };
             self.deliver(bot, &lines);
         }
         let weak = Arc::downgrade(self);
+        let control = bot.control.clone();
+        // The replay's thread takes part in a virtual clock: the tape's delays pass on it.
+        let participant = control.participate_for_new_thread();
         let spawned = std::thread::Builder::new()
             .name("Turu Replay".into())
             .spawn(move || {
+                let _participant = participant.enter();
                 while let Some(host) = weak.upgrade() {
                     let Some(bot) = host.bot.lock().upgrade() else {
                         return;
@@ -420,8 +448,15 @@ impl ReplayHost {
                     if !host.walk(&bot) {
                         return;
                     }
-                    drop((host, bot));
-                    std::thread::sleep(Duration::from_millis(5));
+                    drop(bot);
+                    // Until the next line is due, or the position moves (a send, a failure);
+                    // at the position's stop, only the latter.
+                    let seen = host.moved.load(Ordering::Acquire);
+                    let due = host.next_due();
+                    let moved = || host.moved.load(Ordering::Acquire) != seen;
+                    if control.wait_until(due, moved).is_err() {
+                        return;
+                    }
                 }
             });
         if let Err(e) = spawned {
@@ -537,6 +572,7 @@ impl ReplayHost {
             sends: state.next_send,
             background_sends: state.background_sends,
             unchecked_sends: state.unchecked_sends,
+            clock_time: self.now().since(state.started),
             missing_reads: state.missing_reads.clone(),
             status: bot.scripts.status(),
         })
@@ -575,7 +611,7 @@ impl ReplayHost {
         let (at, from) = state.anchor;
         let gap = line_t(&self.tape.lines[next]).saturating_sub(from);
         let due = at + Duration::from_millis(gap) + self.options.stall;
-        if Instant::now() < due {
+        if self.now() < due {
             return None;
         }
         let message = format!(
@@ -613,14 +649,43 @@ impl ReplayHost {
     /// Records the replay's first failure; every call fails from then on.
     fn fail(&self, message: String) {
         let mut state = self.state.lock();
+        self.mark_failed(&mut state, message);
+    }
+
+    /// Records `message` as the failure (the first wins) and wakes the replay's thread to end.
+    fn mark_failed(&self, state: &mut State, message: String) {
         state.failure.get_or_insert(message);
+        self.moved_on();
+    }
+
+    /// The position moved, or the replay failed: the replay's thread looks again.
+    fn moved_on(&self) {
+        self.moved.fetch_add(1, Ordering::AcqRel);
+        if let Some(control) = self.control.lock().as_ref() {
+            control.notify();
+        }
+    }
+
+    /// Now, on the bot's clock (zero before [`ReplayHost::attach`]).
+    fn now(&self) -> ClockTime {
+        self.control
+            .lock()
+            .as_ref()
+            .map_or_else(ClockTime::default, |c| c.now())
     }
 
     /// When the line recorded at `t` comes in this replay.
-    fn paced(&self, state: &State, t: u64) -> Instant {
+    fn paced(&self, state: &State, t: u64) -> ClockTime {
         let (at, from) = state.anchor;
         let gap = t.saturating_sub(from) as f64 * self.options.delay_scale.max(0.0);
         at + Duration::from_secs_f64(gap / 1000.0)
+    }
+
+    /// When the next line comes: `None` at the position's stop (the script's next send) or the
+    /// tape's end.
+    fn next_due(&self) -> Option<ClockTime> {
+        let state = self.state.lock();
+        (state.pos < state.limit).then(|| self.paced(&state, line_t(&self.tape.lines[state.pos])))
     }
 
     /// Moves the position up to `to`, returning the lines to deliver.
@@ -648,7 +713,7 @@ impl ReplayHost {
             if state.failure.is_some() || state.pos >= self.tape.lines.len() {
                 return false;
             }
-            let now = Instant::now();
+            let now = self.now();
             let mut to = state.pos;
             while to < state.limit && self.paced(&state, line_t(&self.tape.lines[to])) <= now {
                 to += 1;
@@ -736,7 +801,7 @@ impl ReplayHost {
             );
             let pos = state.pos;
             let message = self.context(&state, pos, message);
-            state.failure.get_or_insert(message);
+            self.mark_failed(&mut state, message);
             return Err(HostError::Closed);
         }
         if !state.missing_reads.contains(&key) {
@@ -767,7 +832,7 @@ impl ReplayHost {
                         mismatch(&thread, expected.map(|&i| &self.tape.lines[i]), name, args);
                     let pos = state.pos;
                     let message = self.context(&state, pos, message);
-                    state.failure.get_or_insert(message);
+                    self.mark_failed(&mut state, message);
                     Err(HostError::Closed)
                 }
             };
@@ -786,8 +851,9 @@ impl ReplayHost {
                     .get(state.next_send)
                     .copied()
                     .unwrap_or(self.tape.lines.len());
-                state.anchor = (Instant::now(), line_t(&self.tape.lines[i]));
+                state.anchor = (self.now(), line_t(&self.tape.lines[i]));
                 drop(state);
+                self.moved_on();
                 if let Some(bot) = self.bot.lock().upgrade() {
                     self.deliver(&bot, &lines);
                 }
@@ -804,7 +870,7 @@ impl ReplayHost {
                     self.script_sends.len()
                 );
                 let message = self.context(&state, at, message);
-                state.failure.get_or_insert(message);
+                self.mark_failed(&mut state, message);
                 Err(HostError::Closed)
             }
         }
@@ -863,7 +929,7 @@ impl FlashHost for ReplayHost {
                 && std::thread::current().name() == Some(self.options.script_thread.as_str())
             {
                 state.script_began = true;
-                state.anchor = (Instant::now(), self.first_script_t);
+                state.anchor = (self.now(), self.first_script_t);
             }
         }
         let args: Vec<Value> = args.iter().map(super::recorder::arg_json).collect();

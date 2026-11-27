@@ -630,10 +630,13 @@ fn start_with(bot: &Arc<Bot>, silent: bool) -> Result<(), String> {
         lists.note_started(&path)
     });
     let thread_bot = bot.clone();
+    // On a virtual clock (tests): counted from the spawn, so time can't jump before it runs.
+    let participant = bot.control.participate_for_new_thread();
     std::thread::Builder::new()
         .name("Script Thread".into())
         .spawn(move || {
             let bot = thread_bot;
+            let _participant = participant.enter();
             mark_script_thread(true);
             let name = path
                 .file_name()

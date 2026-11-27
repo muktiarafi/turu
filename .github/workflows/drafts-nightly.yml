@@ -1,9 +1,10 @@
 name: Drafts nightly
 
 # The draft smoke run (docs/REPLAY_TESTS_PROPOSAL.md, phase 4): every converted script not yet
-# read through by hand runs for 8 seconds against a fake world seeded from a recorded tape
+# read through by hand runs for 60 seconds of play on a virtual clock (about a second of real
+# time) against a fake world seeded from a recorded tape
 # (bot/tests/draft_smoke.rs). It fails when a draft throws or can't start; the report
-# (target/draft-smoke.txt) is kept as an artifact either way. About 25 minutes.
+# (target/draft-smoke.txt) is kept as an artifact either way.
 on:
   schedule:
     - cron: "17 3 * * *"
@@ -48,7 +49,8 @@ jobs:
       - name: Run the drafts
         env:
           DRAFT_EVERY: "1"
-          DRAFT_SECS: "8"
+          DRAFT_SECS: "60"
+          DRAFT_REAL_SECS: "10"
           DRAFT_JOBS: "8"
           DRAFT_FILTER: ${{ inputs.filter }}
         run: cargo nextest run --locked -p turu_bot draft_smoke --run-ignored only --no-capture

@@ -97,33 +97,37 @@ impl QuestRunner {
         self.shared.loader.stop(Duration::ZERO);
         let ids: Vec<i64> = quests.iter().map(|&(id, _)| id).collect();
         let weak = Arc::downgrade(bot);
-        self.shared.loader.start("Quest Loader", move |cancel| {
-            for id in ids {
-                let Some(bot) = weak.upgrade() else { return };
-                let quest = match ensure_load_cancellable(&bot, id, Some(cancel)) {
-                    Ok(Some(q)) => q,
-                    Ok(None) => continue,
-                    Err(_) => return,
-                };
-                if cancel.load(Ordering::Acquire) {
-                    return;
+        self.shared
+            .loader
+            .start(&bot.control, "Quest Loader", move |cancel| {
+                for id in ids {
+                    let Some(bot) = weak.upgrade() else { return };
+                    let quest = match ensure_load_cancellable(&bot, id, Some(cancel)) {
+                        Ok(Some(q)) => q,
+                        Ok(None) => continue,
+                        Err(_) => return,
+                    };
+                    if cancel.load(Ordering::Acquire) {
+                        return;
+                    }
+                    let items: Vec<NameOrId> = quest
+                        .requirements
+                        .iter()
+                        .chain(&quest.accept_requirements)
+                        .filter(|r| !r.temp)
+                        .map(|r| NameOrId::Id(r.id))
+                        .collect();
+                    bot.drops.add(&items);
                 }
-                let items: Vec<NameOrId> = quest
-                    .requirements
-                    .iter()
-                    .chain(&quest.accept_requirements)
-                    .filter(|r| !r.temp)
-                    .map(|r| NameOrId::Id(r.id))
-                    .collect();
-                bot.drops.add(&items);
-            }
-        });
+            });
 
         let weak = Arc::downgrade(bot);
         let shared = self.shared.clone();
-        self.shared.poller.start("Quest Thread", move |cancel| {
-            quest_loop(&weak, &shared, cancel)
-        });
+        self.shared
+            .poller
+            .start(&bot.control, "Quest Thread", move |cancel| {
+                quest_loop(&weak, &shared, cancel)
+            });
     }
 
     /// VibeSkua `UnregisterQuests`.
@@ -440,7 +444,8 @@ pub fn load(bot: &Bot, ids: &[i64]) -> BotResult<()> {
     // quest's `ensureLoad`) is dropped ("Please slow down"); keep `ActionDelay` after the last.
     let gap = Duration::from_millis(bot.opts().action_delay.max(0) as u64);
     let last = bot.state.lock().last_get_quests;
-    if let Some(wait) = last.and_then(|at| gap.checked_sub(at.elapsed()))
+    let now = bot.control.now();
+    if let Some(wait) = last.and_then(|at| gap.checked_sub(now.since(at)))
         && !wait.is_zero()
     {
         // Rounded up: whole milliseconds cut short would send it up to 1 ms early.
@@ -525,7 +530,8 @@ pub fn can_complete(bot: &Bot, id: i64) -> BotResult<bool> {
 fn space_quest_packet(bot: &Bot) -> BotResult<()> {
     let gap = Duration::from_millis(bot.opts().action_delay.max(0) as u64);
     let last = bot.state.lock().last_quest_packet;
-    if let Some(wait) = last.and_then(|at| gap.checked_sub(at.elapsed()))
+    let now = bot.control.now();
+    if let Some(wait) = last.and_then(|at| gap.checked_sub(now.since(at)))
         && !wait.is_zero()
     {
         // Rounded up: whole milliseconds cut short would send it up to 1 ms early.

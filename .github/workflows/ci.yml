@@ -332,7 +332,8 @@ jobs:
 
   drafts:
     # The drafts a pull request's scripts change (docs/REPLAY_TESTS_PROPOSAL.md, phase 4): each runs
-    # for 8 seconds against a fake world from a tape and must not throw (bot/tests/draft_smoke.rs).
+    # for 60 seconds of play on a virtual clock against a fake world from a tape and must not throw
+    # (bot/tests/draft_smoke.rs).
     # tools/drafts/changed.sh picks them from the scripts submodule's two commits; a Core change runs
     # a sample, a pull request that moves no draft skips. Every draft runs nightly
     # (drafts-nightly.yml).
@@ -375,7 +376,8 @@ jobs:
         if: steps.changed.outputs.run != 'skip'
         env:
           RUN: ${{ steps.changed.outputs.run }}
-          DRAFT_SECS: "8"
+          DRAFT_SECS: "60"
+          DRAFT_REAL_SECS: "10"
           DRAFT_JOBS: "8"
         run: |
           # RUN is DRAFT_FILTER=<paths> or DRAFT_EVERY=16 (tools/drafts/changed.sh).

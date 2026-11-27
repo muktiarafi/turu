@@ -73,10 +73,12 @@ pub fn start(
         .hunting
         .store(mode == AutoMode::Hunt, Ordering::Relaxed);
     let thread_bot = bot.clone();
+    let participant = bot.control.participate_for_new_thread();
     let spawned = std::thread::Builder::new()
         .name(format!("Turu {}", mode.label()))
         .spawn(move || {
             let bot = thread_bot;
+            let _participant = participant.enter();
             // Like the script thread: Stop (`request_stop`) makes the next bot call fail.
             mark_script_thread(true);
             bot.control.reset();

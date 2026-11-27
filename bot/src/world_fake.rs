@@ -220,6 +220,46 @@ impl WorldFake {
         self.set("world.shopinfo", shop);
     }
 
+    /// `selectArrayObjectsWhere(path, filter)`: the items of `path` whose fields match the
+    /// filter's, as turu.swf matches them; `None` when the call isn't that shape.
+    fn select_where(&self, args: &[FlashArg]) -> Option<String> {
+        let (Some(FlashArg::String(path)), Some(FlashArg::Object(filter))) =
+            (args.first(), args.get(1))
+        else {
+            return None;
+        };
+        let pick = |items: &[Value]| -> String {
+            let picked: Vec<&Value> = items
+                .iter()
+                .filter(|item| {
+                    filter.iter().all(|(key, want)| {
+                        crate::testing::loosely(item.get(key).unwrap_or(&Value::Null), want)
+                    })
+                })
+                .collect();
+            serde_json::to_string(&picked).unwrap_or_default()
+        };
+        // Borrowed where it is kept whole (not copied: an inventory is large).
+        if let Some(value) = self.overlay.lock().get(path.as_str()) {
+            return Some(
+                value
+                    .as_array()
+                    .map_or_else(String::new, |items| pick(items)),
+            );
+        }
+        if let Some(value) = self.paths.get(path.as_str()) {
+            return Some(
+                value
+                    .as_array()
+                    .map_or_else(String::new, |items| pick(items)),
+            );
+        }
+        match self.get(path) {
+            Some(Value::Array(items)) => Some(pick(&items)),
+            _ => Some(String::new()),
+        }
+    }
+
     fn set(&self, path: &str, value: Value) {
         self.overlay.lock().insert(path.to_owned(), value);
     }
@@ -333,7 +373,12 @@ impl FlashHost for WorldFake {
                 self.answers.get(&key(name, &json)).cloned()
             })
             .flatten();
-        let answer = match recorded_snapshot {
+        // `selectArrayObjectsWhere` filtered on the value it has, not written out whole and read
+        // back (a high-level character's inventory makes that slow, and scripts poll it).
+        let selected = (name == "selectArrayObjectsWhere")
+            .then(|| self.select_where(&args))
+            .flatten();
+        let answer = match recorded_snapshot.or(selected) {
             Some(answer) => answer,
             None => crate::testing::batched(name, &args, |n, a| self.answer(n, a))
                 .unwrap_or_else(|| self.answer(name, args)),

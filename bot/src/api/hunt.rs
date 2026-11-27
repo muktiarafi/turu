@@ -8,14 +8,14 @@ use crate::Bot;
 use crate::error::{BotError, BotResult};
 use serde_json::Value;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Sleeps until `HuntDelay` passed since the last hunt jump.
 fn throttle(bot: &Bot) -> BotResult<()> {
     let last = bot.state.lock().last_hunt_jump;
     let delay = Duration::from_millis(bot.opts().hunt_delay.max(0) as u64);
     if let Some(last) = last {
-        let elapsed = last.elapsed();
+        let elapsed = bot.control.now().since(last);
         if elapsed < delay {
             bot.sleep((delay - elapsed).as_millis() as u64)?;
         }
@@ -27,7 +27,7 @@ fn throttle(bot: &Bot) -> BotResult<()> {
 pub(crate) fn hunt_jump(bot: &Bot, cell: &str) -> BotResult<()> {
     throttle(bot)?;
     map::jump(bot, cell, "Left", true, false)?;
-    bot.state.lock().last_hunt_jump = Some(Instant::now());
+    bot.state.lock().last_hunt_jump = Some(bot.control.now());
     Ok(())
 }
 

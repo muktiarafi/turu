@@ -15,7 +15,6 @@ use serde_json::{Value, json};
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Instant;
 
 /// Why a script or snippet ended other than by returning.
 #[derive(Debug)]
@@ -104,6 +103,19 @@ fn install_natives(
     })
     .map_err(failed)?;
     globals.set("__turuEvents", events).map_err(failed)?;
+    // A virtual clock (tests: a replay, the draft run): a script's own timing (`Date.now()`
+    // deadlines around `bot.sleep`) runs on it too, or a loop would spin through instant sleeps
+    // until a real deadline.
+    if bot.control.is_virtual() {
+        let clock_bot = bot.clone();
+        let now = Function::new(ctx.clone(), move || -> f64 {
+            clock_bot.control.unix_ms() as f64
+        })
+        .map_err(failed)?;
+        globals.set("__turuNow", now).map_err(failed)?;
+        ctx.eval::<(), _>("Date.now = () => __turuNow();")
+            .map_err(failed)?;
+    }
     Ok(())
 }
 
@@ -225,7 +237,7 @@ fn call(bot: &Arc<Bot>, method: &str, args: &str) -> String {
     };
     match crate::api::dispatch(bot, method, &args) {
         Ok(value) => {
-            json!({ "ok": value, "due": bot.handlers.take_due(Instant::now()) }).to_string()
+            json!({ "ok": value, "due": bot.handlers.take_due(bot.control.now()) }).to_string()
         }
         Err(BotError::Stopped) => json!({ "error": "ScriptStopped", "stopped": true }).to_string(),
         Err(e) => json!({ "error": e.to_string() }).to_string(),

@@ -1070,11 +1070,14 @@ memory budget (NVIDIA, AMD).
   made (a line under their header says so) that type-check and load but weren't read through by
   hand; expect C#/TS differences the types don't show (integer division, culture-dependent
   formats, async C# rewritten as handlers). Each one with a `main` (1,623 of the 1,639 marked
-  files; the rest are Core libraries) now runs for 8 s against a fake world seeded from a tape
-  (2026-11-27, `bot/tests/draft_smoke.rs`, nightly in `.github/workflows/drafts-nightly.yml`):
-  none throws or fails to start in that time. That checks they load and get past their setup into
-  their own code (the story drafts start their quests); it doesn't check that what they do is
-  right, nor anything past 8 s.
+  files; the rest are Core libraries) now runs for 60 s of play on a virtual clock against a fake
+  world seeded from a tape (2026-11-27, `bot/tests/draft_smoke.rs`, nightly in
+  `.github/workflows/drafts-nightly.yml`). None throws or fails to start in that time but
+  `story/TowerOfDoom.ts`, a gap in the fake (it keeps the seed tape's monsters on another map).
+  It found two port bugs, fixed in `ultrasv3/dependenciesultras/UltraGeneral.ts` (`Kolrv3` and
+  `Masakadov3` read class options they don't declare, which C# allows). That checks they load and
+  get into their own code (the story drafts do their quests); it doesn't check that what they do
+  is right, nor anything past the fake's gaps.
   `bot.map.cellPlayers` reads each player's `world.uoTree` cell (VibeSkua tracks them from
   packets). Nothing is left to port but what is
   skipped on purpose: the Ultras' `TestZone`, `Templates`, the unused `Prototypes`, the generator, and the
@@ -1084,10 +1087,12 @@ memory budget (NVIDIA, AMD).
   from a recording. The recorder (phase 1) is built and checked on a 20-minute headless farm
   run: `TURU_TAPE` / `--record-tape` (docs/HEADLESS.md, "Recording a tape"). So is the
   scrubber (`turu-tape scrub`), checked on that run's tape, and the replay
-  (`turu_bot::testing::ReplayHost`, 2026-11-27, `bot/tests/replay.rs`), with the first tape
-  recorded in game (`bot/tests/tapes/chute_quest`: a quest turned in three times in /chute)
-  replayed by the tests. Phases 3 to 5 (Core flows on tape, the drafts against a world fake)
-  aren't built.
+  (`turu_bot::testing::ReplayHost`, 2026-11-27, `bot/tests/replay.rs`). Seven tapes recorded
+  in game replay in the tests (`bot/tests/tapes/`: a quest loop, a merge buy, enhancement, bank
+  moves, a relogin, CoreStory and a kill farm), on a virtual clock (decision 2: the bot's clock in
+  `ScriptControl`, real unless a test makes it virtual), a second or two each. The converted
+  scripts run against a fake world from a tape (phase 4, below). Phase 5 (recording from
+  Diagnostics for bug reports) isn't built.
 - **Potions is unverified in game:** its runtime test only checks that it loads, reads its
   options and stops (the fake game doesn't serve inventory, shops or maps). Farming, the alchemy
   crafts and buying are not checked yet.

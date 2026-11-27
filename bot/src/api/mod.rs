@@ -34,7 +34,7 @@ use crate::error::{BotError, BotResult};
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Routes `"module.method"` to the module's `dispatch`.
 pub fn dispatch(bot: &Arc<Bot>, method: &str, args: &[Value]) -> BotResult<Value> {
@@ -82,13 +82,13 @@ fn root(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
         // here they run between bot calls, so a sleep ends early when one falls due. Returns the
         // milliseconds slept; `bot/js/turu.ts` sleeps the rest after running the handlers.
         "sleep" => {
-            let started = Instant::now();
+            let started = bot.control.now();
             let mut until = started + Duration::from_millis(args.i64(0)?.max(0) as u64);
             if let Some(due) = bot.handlers.next_due() {
                 until = until.min(due.max(started));
             }
-            bot.control.sleep(until - started)?;
-            ok(started.elapsed().as_millis() as u64)
+            bot.control.sleep(until.since(started))?;
+            ok(bot.control.now().since(started).as_millis() as u64)
         }
         "shouldExit" => ok(bot.should_exit()),
         "sellJunk" => {

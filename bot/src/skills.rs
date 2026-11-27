@@ -12,7 +12,7 @@
 use crate::Bot;
 use crate::api::auras::{self, Subject};
 use crate::api::{inventory, map, monsters, player};
-use crate::control::mark_script_thread;
+use crate::control::{ClockTime, ScriptControl, mark_script_thread};
 use crate::error::{BotError, BotResult};
 use crate::models::{Monster, Skill};
 use parking_lot::Mutex;
@@ -34,6 +34,8 @@ use std::time::{Duration, Instant};
 struct WorkerHandle {
     cancel: Arc<AtomicBool>,
     thread: JoinHandle<()>,
+    /// The bot's control: a cancel wakes the loop's wait on the clock.
+    control: Arc<ScriptControl>,
 }
 
 /// One background loop owned by the running script (VibeSkua's "Drops" timer, "Quest
@@ -54,9 +56,11 @@ impl Worker {
     }
 
     /// Starts `body` on a new thread unless the loop already runs. `body` must return soon
-    /// after its cancel flag is set (sleep with [`nap`]).
+    /// after its cancel flag is set (sleep with [`nap`]). The thread takes part in `control`'s
+    /// clock when it is virtual.
     pub(crate) fn start(
         &self,
+        control: &Arc<ScriptControl>,
         name: &str,
         body: impl FnOnce(&AtomicBool) + Send + 'static,
     ) -> bool {
@@ -69,16 +73,23 @@ impl Worker {
         }
         let cancel = Arc::new(AtomicBool::new(false));
         let flag = cancel.clone();
+        // Counted from the spawn, before the thread runs: time can't jump past its start.
+        let participant = control.participate_for_new_thread();
         let spawned = std::thread::Builder::new()
             .name(name.to_owned())
             .spawn(move || {
+                let _participant = participant.enter();
                 mark_script_thread(true);
                 body(&flag);
                 mark_script_thread(false);
             });
         match spawned {
             Ok(thread) => {
-                *slot = Some(WorkerHandle { cancel, thread });
+                *slot = Some(WorkerHandle {
+                    cancel,
+                    thread,
+                    control: control.clone(),
+                });
                 true
             }
             Err(e) => {
@@ -90,8 +101,13 @@ impl Worker {
 
     /// Asks the loop to end without waiting (safe from event handlers).
     pub(crate) fn cancel(&self) {
-        if let Some(h) = self.slot.lock().as_ref() {
+        let control = self.slot.lock().as_ref().map(|h| {
             h.cancel.store(true, Ordering::Release);
+            h.control.clone()
+        });
+        // The loop may wait on the clock: it looks at its flag again.
+        if let Some(control) = control {
+            control.notify();
         }
     }
 
@@ -113,21 +129,15 @@ impl Worker {
     }
 }
 
-/// Sleeps `ms` in short slices. `Ok(false)` when `cancel` was set; on a script thread, fails
-/// with [`BotError::Stopped`] when the script stops and blocks while it's paused.
+/// Sleeps `ms` on the bot's clock. `Ok(false)` when `cancel` was set ([`Worker::cancel`] wakes
+/// it); on a script thread, fails with [`BotError::Stopped`] when the script stops and blocks
+/// while it's paused.
 pub(crate) fn nap(bot: &Bot, ms: u64, cancel: &AtomicBool) -> BotResult<bool> {
-    let deadline = Instant::now() + Duration::from_millis(ms);
-    loop {
-        if cancel.load(Ordering::Acquire) {
-            return Ok(false);
-        }
-        let now = Instant::now();
-        if now >= deadline {
-            return Ok(true);
-        }
-        let slice = (deadline - now).min(Duration::from_millis(50));
-        bot.sleep(slice.as_millis().max(1) as u64)?;
-    }
+    let deadline: ClockTime = bot.control.now() + Duration::from_millis(ms);
+    let cancelled = bot
+        .control
+        .wait_until(Some(deadline), || cancel.load(Ordering::Acquire))?;
+    Ok(!cancelled && !cancel.load(Ordering::Acquire))
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1544,9 +1554,10 @@ impl SkillRunner {
         }
         let weak = Arc::downgrade(bot);
         let shared = self.shared.clone();
-        self.worker.start("Skill Timer", move |cancel| {
-            skill_timer(&weak, &shared, cancel)
-        });
+        self.worker
+            .start(&bot.control, "Skill Timer", move |cancel| {
+                skill_timer(&weak, &shared, cancel)
+            });
     }
 
     /// `skills.startSkills(text, timeout, mode)`.

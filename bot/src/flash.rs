@@ -48,6 +48,10 @@ impl HostInfo {
     }
 }
 
+/// What a call into Flash costs on a virtual clock ([`ScriptControl::spend`]): about what one
+/// takes the player's thread in the game (0.6 to 0.8 ms measured, docs/REPLAY_TESTS_PROPOSAL.md).
+const VIRTUAL_CALL_COST: std::time::Duration = std::time::Duration::from_millis(1);
+
 /// A callback a debug build may call though `hostInfo` doesn't list it (`turu.swf`'s
 /// `throwForTest`, to check error reports by hand).
 const UNLISTED_DEBUG_CALLBACKS: &[&str] = &["throwForTest"];
@@ -164,6 +168,9 @@ impl Flash {
             .and_then(|tape| Some((tape.begin_call()?, args.clone(), tape)));
         let asked = Instant::now();
         let result = host.call_timed(name, args);
+        // Turu: on a virtual clock (tests) a call costs the time it takes the player, about a
+        // millisecond: a loop that polls the game without sleeping still moves time on.
+        self.control.spend(VIRTUAL_CALL_COST);
         let (run, reply) = match &result {
             Ok((reply, run)) => (*run, Some(reply.len())),
             Err(_) => (None, None),

@@ -7,11 +7,12 @@
 
 use super::{Args, ok};
 use crate::Bot;
+use crate::control::ClockTime;
 use crate::error::{BotError, BotResult};
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// VibeSkua's timer runs the handlers every 20 ms, so a shorter interval wouldn't run any sooner.
 const MIN_INTERVAL: Duration = Duration::from_millis(20);
@@ -19,7 +20,7 @@ const MIN_INTERVAL: Duration = Duration::from_millis(20);
 struct Entry {
     name: String,
     interval: Duration,
-    next: Instant,
+    next: ClockTime,
     once: bool,
     running: bool,
 }
@@ -30,15 +31,15 @@ pub struct HandlerRunner {
 }
 
 impl HandlerRunner {
-    /// Adds a handler, replacing the one with the same name.
-    pub fn add(&self, name: &str, interval: Duration, once: bool) {
+    /// Adds a handler at `now` (the bot's clock), replacing the one with the same name.
+    pub fn add(&self, name: &str, interval: Duration, once: bool, now: ClockTime) {
         let interval = interval.max(MIN_INTERVAL);
         let mut entries = self.entries.lock();
         entries.retain(|e| e.name != name);
         entries.push(Entry {
             name: name.to_owned(),
             interval,
-            next: Instant::now() + interval,
+            next: now + interval,
             once,
             running: false,
         });
@@ -58,7 +59,7 @@ impl HandlerRunner {
 
     /// Names of the handlers due at `now`. Each is marked running until [`finish`](Self::finish),
     /// so a handler never runs inside its own run.
-    pub fn take_due(&self, now: Instant) -> Vec<String> {
+    pub fn take_due(&self, now: ClockTime) -> Vec<String> {
         self.entries
             .lock()
             .iter_mut()
@@ -72,7 +73,7 @@ impl HandlerRunner {
 
     /// When the next handler that isn't running falls due, or `None` without one. A script's
     /// `bot.sleep` ends then, so the handlers keep their interval while the script sleeps.
-    pub fn next_due(&self) -> Option<Instant> {
+    pub fn next_due(&self) -> Option<ClockTime> {
         self.entries
             .lock()
             .iter()
@@ -83,8 +84,8 @@ impl HandlerRunner {
 
     /// The script ran the handler. It is due again one interval after the run ended (VibeSkua's
     /// `LimitedRun` stamps the end too), or removed when it was added as `once`. Returns whether
-    /// the handler is still registered.
-    pub fn finish(&self, name: &str) -> bool {
+    /// the handler is still registered. `now` is when the run ended, on the bot's clock.
+    pub fn finish(&self, name: &str, now: ClockTime) -> bool {
         let mut entries = self.entries.lock();
         let Some(index) = entries.iter().position(|e| e.name == name) else {
             return false;
@@ -96,7 +97,7 @@ impl HandlerRunner {
             return false;
         }
         entry.running = false;
-        entry.next = Instant::now() + entry.interval;
+        entry.next = now + entry.interval;
         true
     }
 }
@@ -106,7 +107,12 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
     match name {
         "add" => {
             let interval = Duration::from_millis(args.i64(1)?.max(0) as u64);
-            handlers.add(args.str(0)?, interval, args.bool_or(2, false));
+            handlers.add(
+                args.str(0)?,
+                interval,
+                args.bool_or(2, false),
+                bot.control.now(),
+            );
             ok(())
         }
         "remove" => ok(handlers.remove(args.str(0)?)),
@@ -114,7 +120,7 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
             handlers.clear();
             ok(())
         }
-        "finish" => ok(handlers.finish(args.str(0)?)),
+        "finish" => ok(handlers.finish(args.str(0)?, bot.control.now())),
         _ => Err(BotError::UnknownMethod(format!("handlers.{name}"))),
     }
 }
@@ -123,75 +129,73 @@ pub fn dispatch(bot: &Arc<Bot>, name: &str, args: Args) -> BotResult<Value> {
 mod tests {
     use super::*;
 
+    const fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
     #[test]
     fn a_handler_is_due_once_per_interval() {
         let handlers = HandlerRunner::default();
-        handlers.add("a", Duration::from_millis(100), false);
+        let t0 = ClockTime::default();
+        handlers.add("a", ms(100), false, t0);
 
-        assert!(handlers.take_due(Instant::now()).is_empty());
-        let later = Instant::now() + Duration::from_millis(200);
-        assert_eq!(handlers.take_due(later), ["a"]);
+        assert!(handlers.take_due(t0).is_empty());
+        assert_eq!(handlers.take_due(t0 + ms(200)), ["a"]);
         // Running: not due again until it finishes.
-        assert!(handlers.take_due(later).is_empty());
+        assert!(handlers.take_due(t0 + ms(200)).is_empty());
 
-        assert!(handlers.finish("a"));
-        assert!(handlers.take_due(Instant::now()).is_empty());
-        assert_eq!(
-            handlers.take_due(Instant::now() + Duration::from_millis(200)),
-            ["a"]
-        );
+        assert!(handlers.finish("a", t0 + ms(200)));
+        assert!(handlers.take_due(t0 + ms(250)).is_empty());
+        assert_eq!(handlers.take_due(t0 + ms(400)), ["a"]);
     }
 
     #[test]
     fn next_due_skips_running_handlers() {
         let handlers = HandlerRunner::default();
+        let t0 = ClockTime::default();
         assert_eq!(handlers.next_due(), None);
 
-        handlers.add("slow", Duration::from_secs(60), false);
-        handlers.add("fast", Duration::from_millis(20), false);
-        let fast = handlers.next_due().unwrap();
-        assert!(fast <= Instant::now() + Duration::from_millis(20));
+        handlers.add("slow", Duration::from_secs(60), false, t0);
+        handlers.add("fast", ms(20), false, t0);
+        assert_eq!(handlers.next_due(), Some(t0 + ms(20)));
 
         // "fast" runs: the next one due is "slow".
-        let later = Instant::now() + Duration::from_millis(200);
-        assert_eq!(handlers.take_due(later), ["fast"]);
-        assert!(handlers.next_due().unwrap() > Instant::now() + Duration::from_secs(30));
+        assert_eq!(handlers.take_due(t0 + ms(200)), ["fast"]);
+        assert_eq!(handlers.next_due(), Some(t0 + Duration::from_secs(60)));
     }
 
     #[test]
     fn a_once_handler_is_removed_when_it_finishes() {
         let handlers = HandlerRunner::default();
-        handlers.add("once", Duration::from_millis(20), true);
+        let t0 = ClockTime::default();
+        handlers.add("once", ms(20), true, t0);
 
-        let later = Instant::now() + Duration::from_millis(200);
-        assert_eq!(handlers.take_due(later), ["once"]);
-        assert!(!handlers.finish("once"));
-        assert!(handlers.take_due(later + Duration::from_secs(1)).is_empty());
+        assert_eq!(handlers.take_due(t0 + ms(200)), ["once"]);
+        assert!(!handlers.finish("once", t0 + ms(200)));
+        assert!(handlers.take_due(t0 + ms(1200)).is_empty());
     }
 
     #[test]
     fn a_once_handler_that_was_registered_again_during_its_run_stays() {
         let handlers = HandlerRunner::default();
-        handlers.add("once", Duration::from_millis(20), true);
-        let later = Instant::now() + Duration::from_millis(200);
-        assert_eq!(handlers.take_due(later), ["once"]);
+        let t0 = ClockTime::default();
+        handlers.add("once", ms(20), true, t0);
+        assert_eq!(handlers.take_due(t0 + ms(200)), ["once"]);
 
         // The run registers the name again; that new registration hasn't run yet.
-        handlers.add("once", Duration::from_millis(20), true);
-        assert!(handlers.finish("once"));
-        assert_eq!(handlers.take_due(later + Duration::from_secs(1)), ["once"]);
+        handlers.add("once", ms(20), true, t0 + ms(200));
+        assert!(handlers.finish("once", t0 + ms(200)));
+        assert_eq!(handlers.take_due(t0 + ms(1200)), ["once"]);
     }
 
     #[test]
     fn adding_a_name_again_replaces_the_handler() {
         let handlers = HandlerRunner::default();
-        handlers.add("a", Duration::from_secs(60), false);
-        handlers.add("a", Duration::from_millis(20), false);
+        let t0 = ClockTime::default();
+        handlers.add("a", Duration::from_secs(60), false, t0);
+        handlers.add("a", ms(20), false, t0);
 
-        assert_eq!(
-            handlers.take_due(Instant::now() + Duration::from_millis(200)),
-            ["a"]
-        );
+        assert_eq!(handlers.take_due(t0 + ms(200)), ["a"]);
         assert!(handlers.remove("a"));
         assert!(!handlers.remove("a"));
     }
@@ -199,12 +203,13 @@ mod tests {
     #[test]
     fn the_interval_has_a_floor() {
         let handlers = HandlerRunner::default();
-        handlers.add("fast", Duration::ZERO, false);
-        let later = Instant::now() + Duration::from_millis(200);
-        assert_eq!(handlers.take_due(later), ["fast"]);
-        handlers.finish("fast");
+        let t0 = ClockTime::default();
+        handlers.add("fast", Duration::ZERO, false, t0);
+        assert_eq!(handlers.take_due(t0 + ms(200)), ["fast"]);
+        handlers.finish("fast", t0 + ms(200));
 
         // Due again one floor interval after the run, not at once.
-        assert!(handlers.take_due(Instant::now()).is_empty());
+        assert!(handlers.take_due(t0 + ms(200)).is_empty());
+        assert_eq!(handlers.take_due(t0 + ms(220)), ["fast"]);
     }
 }

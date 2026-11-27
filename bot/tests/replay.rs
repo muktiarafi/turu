@@ -407,7 +407,16 @@ fn tapes_dir() -> PathBuf {
 /// Replays a committed tape to `source` (its script, or a changed copy) at a quarter of its
 /// events' delays.
 fn replay_committed(name: &str, source: &str) -> (Arc<Bot>, Arc<ReplayHost>) {
-    replay_committed_with(name, source, ReplayOptions::default())
+    replay_committed_with(name, source, tape_options())
+}
+
+/// How committed tapes replay: on a virtual clock (docs/REPLAY_TESTS_PROPOSAL.md, decision 2),
+/// so a two-minute combat tape takes about a second. One test replays on the real clock.
+fn tape_options() -> ReplayOptions {
+    ReplayOptions {
+        virtual_clock: true,
+        ..ReplayOptions::default()
+    }
 }
 
 /// [`replay_committed`] with `options` (a tape's noise), at a quarter of its events' delays.
@@ -445,7 +454,12 @@ fn committed_script(name: &str) -> String {
 /// on a spare account on a quiet server (twig).
 #[test]
 fn the_chute_quest_tape_replays() {
-    let (bot, host) = replay_committed("chute_quest", &committed_script("chute_quest"));
+    // On the real clock: the one committed tape that does, so that path stays checked.
+    let (bot, host) = replay_committed_with(
+        "chute_quest",
+        &committed_script("chute_quest"),
+        ReplayOptions::default(),
+    );
     let report = host
         .wait(&bot, Duration::from_secs(90))
         .unwrap_or_else(|e| panic!("{e}"));
@@ -457,7 +471,7 @@ fn the_chute_quest_tape_replays() {
 /// Replays a committed tape to its own script: it must reach the tape's end with `logged` in the
 /// script log.
 fn replays_to_its_end(name: &str, logged: &[&str]) {
-    replays_to_its_end_with(name, logged, ReplayOptions::default());
+    replays_to_its_end_with(name, logged, tape_options());
 }
 
 fn replays_to_its_end_with(
@@ -528,7 +542,7 @@ fn the_core_story_tape_replays() {
             "Quest 3539: unlocked true, done false",
             "After: 3538 true, 3539 true",
         ],
-        ReplayOptions::default(),
+        tape_options(),
     );
     // The skill timer cast (unchecked: which skill, and when, follows its cooldowns' timing).
     assert!(report.unchecked_sends > 0, "{report:?}");
@@ -544,7 +558,7 @@ fn the_kill_farm_tape_replays() {
             "Start: level 100, Bone Dust 1163",
             "Farmed: Bone Dust 1163 to 1171",
         ],
-        ReplayOptions::default(),
+        tape_options(),
     );
     assert!(report.unchecked_sends > 0, "{report:?}");
 }
@@ -560,6 +574,20 @@ fn the_merge_tape_replays() {
             "Bought 1 NO BOTS Armor",
             "After: NO BOTS Armor true, gold 93481663",
         ],
+    );
+}
+
+/// The chute tape on a virtual clock (docs/REPLAY_TESTS_PROPOSAL.md, decision 2): the same
+/// outcome as on the real one, in no real time to speak of.
+#[test]
+fn the_chute_quest_tape_replays_on_a_virtual_clock() {
+    let started = Instant::now();
+    let report = replays_to_its_end_with("chute_quest", &["Turn-in 3: done"], tape_options());
+    assert!(report.clock_time > Duration::from_secs(5), "{report:?}");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "took {:?} real",
+        started.elapsed()
     );
 }
 

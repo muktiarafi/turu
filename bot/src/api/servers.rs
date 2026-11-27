@@ -375,15 +375,16 @@ impl<'a> Ctx<'a> {
     }
 
     fn sleep(&self, ms: u64) -> BotResult<()> {
-        let deadline = Instant::now() + Duration::from_millis(ms);
+        let control = &self.bot.control;
+        let deadline = control.now() + Duration::from_millis(ms);
         loop {
             self.check()?;
-            let now = Instant::now();
-            if now >= deadline {
+            let left = deadline.since(control.now());
+            if left.is_zero() {
                 return Ok(());
             }
-            let left = (deadline - now).as_millis() as u64;
-            self.bot.sleep(left.min(100))?;
+            // In slices: a relogin thread's cancel is only looked at between them.
+            self.bot.sleep((left.as_millis() as u64).clamp(1, 100))?;
         }
     }
 
@@ -1134,8 +1135,8 @@ fn ensure_login(ctx: &Ctx, preferred: &str) -> BotResult<bool> {
         }
 
         // At most 15 s for the world, so a stuck load doesn't hang the relogin.
-        let deadline = Instant::now() + Duration::from_millis(server_list_timeout(bot));
-        while !in_world(bot) && Instant::now() < deadline {
+        let deadline = bot.control.now() + Duration::from_millis(server_list_timeout(bot));
+        while !in_world(bot) && bot.control.now() < deadline {
             let detail = conn_detail(bot);
             if ["lost", "banned", "closed"]
                 .iter()
@@ -1247,8 +1248,8 @@ fn server_list_ready(bot: &Bot) -> bool {
 /// A login error dialog fails it at once; a ban ends the relogin.
 fn wait_for_server_list(ctx: &Ctx) -> BotResult<bool> {
     let bot = ctx.bot;
-    let deadline = Instant::now() + Duration::from_millis(server_list_timeout(bot));
-    while Instant::now() < deadline {
+    let deadline = bot.control.now() + Duration::from_millis(server_list_timeout(bot));
+    while bot.control.now() < deadline {
         ctx.check()?;
         let modal = bot
             .flash

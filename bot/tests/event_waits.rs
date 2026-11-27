@@ -76,7 +76,7 @@ fn a_fire_between_the_look_and_the_sleep_isnt_lost() {
     let started = Instant::now();
     let woken = control
         .sleep_until(
-            started + Duration::from_secs(5),
+            control.now() + Duration::from_secs(5),
             Topics::CELL | Topics::MAP,
             &mark,
         )
@@ -88,7 +88,7 @@ fn a_fire_between_the_look_and_the_sleep_isnt_lost() {
     control.fire(Topics::SIGNALS);
     let woken = control
         .sleep_until(
-            Instant::now() + Duration::from_millis(100),
+            control.now() + Duration::from_millis(100),
             Topics::CELL,
             &mark,
         )
@@ -105,7 +105,7 @@ fn stop_still_wakes_a_script_waiting_on_events() {
     mark_script_thread(true);
     let mark = control.mark();
     let started = Instant::now();
-    let result = control.sleep_until(started + Duration::from_secs(5), Topics::MAP, &mark);
+    let result = control.sleep_until(control.now() + Duration::from_secs(5), Topics::MAP, &mark);
     mark_script_thread(false);
     stop.join().unwrap();
     assert!(

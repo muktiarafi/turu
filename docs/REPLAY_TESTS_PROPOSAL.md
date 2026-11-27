@@ -455,11 +455,10 @@ Each tape's script is beside it in `bot/tests/tapes/` and recorded as the first 
   at 48 s the tape cast skill 1 where the replay chose skill 4, as the timer casts whichever skill
   is off cooldown at its own pace. Other background threads stay strict (on these tapes they sent
   only a frame-rate set and the exit's `gotoAndPlay`).
-- **Decision 2, first evidence:** a replay runs at the recorded pace but for the events' delays
-  (`ActionDelay`, the hunt's sleeps and waits are real time), so the CoreStory tape takes about
-  as long as it was recorded (116 s for 2.1 min). Its test has a nextest override
-  (`.config/nextest.toml`) so it isn't ended at 2 minutes. A virtual clock would make combat tapes
-  fast; whether it is worth touching every wait is still open.
+- **Decision 2, first evidence:** a replay ran at the recorded pace but for the events' delays
+  (`ActionDelay`, the hunt's sleeps and waits were real time), so the CoreStory tape took about
+  as long as it was recorded (116 s for 2.1 min). That led to the virtual clock ("Decision 2: the
+  virtual clock"), which replays it in 1.5 s.
 
 - **The kill farm** used a second account the owner gave for it (level 100, on twig), with the
   same relogin watchdog (it didn't fire). A first try on Dungeon Minions dropped nothing (their
@@ -511,7 +510,9 @@ because the sample of drafts needed it:
   its ID.
 
 **The run:** each draft with a `main` (Core files are libraries) on a bot of its own, `ActionDelay`
-0, started silently, for `DRAFT_SECS` (8); `DRAFT_JOBS` (6, 8 nightly) at once. It fails when a
+0, started silently, on a virtual clock for `DRAFT_SECS` (60) of play and at most
+`DRAFT_REAL_SECS` (10) of real time ("Decision 2: the virtual clock"; the first full run, below,
+was 8 s on the real clock); `DRAFT_JOBS` (6, 8 nightly) at once. It fails when a
 draft throws or can't start; it passes when one ends or is still running at its budget. The report
 (`target/draft-smoke.txt`) gives each draft's outcome, its last three log lines and its last
 twelve calls at the budget (before Stop runs its handlers). `DRAFT_FILTER` takes a comma-separated
@@ -536,6 +537,21 @@ reading the fake's quest rewards, which had none (now it has one). So no draft t
 The story drafts get into their quests ("Doing Quest: [9897]"), the farms into their hunts, the
 merges up to their shop.
 
+**On the virtual clock** (the same day, 60 s of play, at most 10 s real, 10 at once): 7 minutes for
+all 1,623. The median draft played 61 s in 0.4 s real (1,133 calls); none needed the real cap
+(647 did before a call cost a millisecond and the fake filtered `selectArrayObjectsWhere` on its
+stored value instead of writing a level-100 inventory out and parsing it back on every call). 733
+finished, 889 still running. Going further found three failures:
+
+- `ultrasv3/challengebosses/Kolrv3.ts` and `ultrasv3/testultrasorbossesscripts/Masakadov3.ts`:
+  a port bug. The shared `UltraGeneral.ts` reads `Class1` to `Class7`; C#'s `Config.Get` gives
+  null for an option the script doesn't declare (Kolr declares two), Turu's `config.get` refuses
+  it. Fixed by reading them through `configOr`.
+- `story/TowerOfDoom.ts`: a gap in the fake. It looks up the monster in cell r10 of the map it
+  joined, and the fake keeps the seed tape's monsters. Listed in `KNOWN_FAKE_GAPS` with that
+  reason: reported as "known", not failing the run; a listed draft that passes fails it, so the
+  list can't go stale.
+
 **What it can't catch:** a draft that runs but is wrong (integer division, the wrong quest ID),
 anything past 8 s, and code behind the fake's gaps (shop contents, monsters that die and drop,
 items arriving): decision 4 or a tape of that flow covers those.
@@ -554,6 +570,48 @@ hand, not a draft) `skip`.
 pushed); options per draft (the Lone Wolf ultras need `PrivateRoomNumber`; drafts start with their
 options' defaults); monsters that die and drops (no draft needed them to get past setup, since a
 hunt waiting for its drop counts as running).
+
+## Decision 2: the virtual clock
+
+`ScriptControl` (`bot/src/control.rs`) keeps the bot's clock: `ScriptControl::now` gives a
+`ClockTime` (a type of its own, so the compiler finds every place that mixed it with a real
+`Instant`). It is real time unless a test calls `set_virtual` before the script starts
+(`ReplayOptions::virtual_clock`, the draft run). Virtual time doesn't pass by itself: it jumps to
+the earliest wake-up when every *participant* waits on the clock. Participants are the threads that
+run the script (the script thread, its helper loops through `Worker::start`, Auto) and a replay's
+own thread; the background timer, Butler, the monitor and the test run in real time beside them
+(their reads aren't checked by a replay, their sends are rare or unchecked).
+
+- **The invariant:** a participant counts as running from the moment anything wakes it (a time
+  jump, a topic firing, Stop, Pause, `notify`) until it decides to wait again; whoever wakes it
+  counts it, under the one lock (`ScriptControl`'s own), so time never jumps past a thread about to
+  act. A thread is counted from its spawn (`participate_for_new_thread`), so time can't jump before
+  it runs. `control::tests::a_woken_waiter_runs_before_time_jumps_on` (50 rounds) fails at once
+  without it.
+- **On the clock:** `sleep`, `sleep_until` and the new `wait_until` (the waits' tries and
+  deadlines in `api/wait.rs`), `bot.sleep` and the handlers' due times, `nap` (a worker's cancel
+  wakes it), the relogin's waits (`Ctx::sleep`, the server list and world timeouts), the shared
+  `snapshot` reads (`SHARED_READ`), the quest, hunt and shop timestamps (`GameState`), a script's
+  `Date.now()` (replaced when the clock is virtual), and the replay host's pacing, its thread and
+  its stall check.
+- **A call costs a millisecond** (`Flash::call_host`, `ScriptControl::spend`): about what it takes
+  the player's thread in the game. Without it a loop that polls the game without sleeping (a hunt
+  with no monster available, checking the inventory again and again) held the time still until
+  the real cap.
+- **Found on the way:** real-time deadlines around clock sleeps spin through instant sleeps (the
+  relogin's `Ctx::sleep` ran 10 virtual seconds in 100 real milliseconds and tripped the stall
+  check), and real-time caches go stale on no time (`SHARED_READ` served one "not loaded"
+  `snapshot` to 300 tries). Each was moved to the clock.
+- **The real clock is unchanged:** every function above reads the real clock when it isn't
+  virtual. The tests that measure real timing (`ensure_complete::turn_ins_keep_action_delay_apart`,
+  `event_waits`) keep doing so.
+
+**What it changed:** every committed tape replays on it, and `chute_quest` on the real clock too,
+so that path stays checked (it passes on both). CoreStory went from 116 s to 1.5 s, the
+merge tape from 49 s to 1.8 s, the kill farm from 46 s to 1.6 s, the bank, enhancement and
+relogin tapes to 1 to 2 s; the CoreStory test's nextest override is gone. In the draft run a
+draft reaches about a minute of play in a second or two: the Doomwood story drafts made about
+2,400 calls and 70 s of play in under a second, where 8 real seconds gave about 200.
 
 ## Phases
 
@@ -577,10 +635,8 @@ a time with no further engine work. Phase 4 can start after the first phase 3 ta
    it). Options: in the repo under `bot/tests/tapes/`, kept short (a few minutes each); Git LFS;
    or a repo of their own fetched by the test. Short tapes in the repo are the default
    suggestion.
-2. **A virtual clock.** Replays run in real time, which is fine for minutes-long tapes but not
-   for hours. A test clock in `ScriptControl` (sleep and deadlines on a clock the test advances)
-   would make replays instant. It would touch every wait, so decide after phase 2 shows how slow
-   real time is.
+2. **A virtual clock.** Settled (2026-11-27): a fully virtual clock in `ScriptControl`, for
+   replays and the draft run ("Decision 2: the virtual clock").
 3. **Which account records.** Tapes come from real runs. They need a test character that may
    be renamed in fixtures, run on a quiet server (never Twilly, Artix or Alteon). The emulator's
    tabs are off limits (CLAUDE.md, "standing requests").

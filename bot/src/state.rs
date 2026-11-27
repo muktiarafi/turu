@@ -11,7 +11,8 @@ use std::time::{Duration, Instant};
 /// A `tryQuestComplete` sent, for the log of its outcome (Turu).
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TurnInSent {
-    pub at: Instant,
+    /// On the bot's clock.
+    pub at: crate::control::ClockTime,
     /// Another quest's turn-in sent before it, and how long before.
     pub after: Option<(i64, Duration)>,
 }
@@ -28,21 +29,22 @@ pub struct GameState {
     pub catching_packets: bool,
     /// When the last two `tryQuestComplete` packets for each quest were sent (earlier, latest),
     /// for the log of a refused turn-in.
-    pub(crate) turn_ins_sent: HashMap<i64, (Option<Instant>, Instant)>,
+    pub(crate) turn_ins_sent:
+        HashMap<i64, (Option<crate::control::ClockTime>, crate::control::ClockTime)>,
     /// Turn-ins the server hasn't answered (`ccqr`) yet, by quest.
     pub(crate) unanswered_turn_ins: HashMap<i64, TurnInSent>,
     /// The quest and time of the last `tryQuestComplete` sent.
-    pub(crate) last_turn_in: Option<(i64, Instant)>,
+    pub(crate) last_turn_in: Option<(i64, crate::control::ClockTime)>,
     /// When the last `acceptQuest` or `tryQuestComplete` was sent, by anyone (scripts, the
     /// game, the registered-quest loop): `quests::accept` and `complete` keep `ActionDelay`
     /// after it.
-    pub(crate) last_quest_packet: Option<Instant>,
+    pub(crate) last_quest_packet: Option<crate::control::ClockTime>,
     /// When the last `getQuests` was sent: `quests::load` keeps `ActionDelay` after it.
-    pub(crate) last_get_quests: Option<Instant>,
+    pub(crate) last_get_quests: Option<crate::control::ClockTime>,
     /// The last reads of `isLoggedIn` and of the avatar's `intState`, reused for a moment by
     /// every thread (`api::player::logged_in` and `state`).
-    pub(crate) logged_in_read: Option<(Instant, bool)>,
-    pub(crate) avatar_state_read: Option<(Instant, i64)>,
+    pub(crate) logged_in_read: Option<(crate::control::ClockTime, bool)>,
+    pub(crate) avatar_state_read: Option<(crate::control::ClockTime, i64)>,
     /// The logged-in username (`loginResponse`, then `loginInfo.strUsername`), as the game
     /// spells it. Used by packet handlers, which can't ask Flash.
     pub username: Option<String>,
@@ -64,7 +66,7 @@ pub struct GameState {
     /// Counters for Combat > Stats.
     pub stats: Stats,
     /// Shop data from the last `loadShop` packet.
-    pub shop_loaded_at: Option<Instant>,
+    pub shop_loaded_at: Option<crate::control::ClockTime>,
     /// The shops loaded in this client, by `loadShop` packet (VibeSkua `Shops.LoadedCache`;
     /// Grabber > Shop IDs). A shop loaded again replaces its entry.
     pub loaded_shops: Vec<crate::models::ShopInfo>,
@@ -85,7 +87,7 @@ pub struct GameState {
     /// `AutoResetEvent`s): set by the packet, consumed by the wait.
     pub signals: Signals,
     /// When `Hunt` last jumped to another cell (VibeSkua `_lastHuntTick`).
-    pub last_hunt_jump: Option<Instant>,
+    pub last_hunt_jump: Option<crate::control::ClockTime>,
     /// What `options::apply` last pushed into the game.
     pub options_applied: crate::api::options::Applied,
     /// The game's frame rate when it was slowed down (Headless Mode, or a hidden tab),

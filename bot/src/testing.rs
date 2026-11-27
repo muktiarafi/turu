@@ -119,7 +119,7 @@ fn parse(raw: &str) -> Value {
 
 /// turu.swf's matching: strings trimmed and ignoring case, numbers by value, the game's
 /// booleans.
-fn loosely(have: &Value, want: &FlashArg) -> bool {
+pub(crate) fn loosely(have: &Value, want: &FlashArg) -> bool {
     match want {
         FlashArg::Bool(want) => {
             let truthy = match have {

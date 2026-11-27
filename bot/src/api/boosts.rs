@@ -106,8 +106,9 @@ impl BoostRunner {
     /// Starts the timer: uses the boosts at once, then every 30 s.
     pub fn start(&self, bot: &Arc<Bot>) {
         let weak = Arc::downgrade(bot);
-        self.worker
-            .start("Boosts", move |cancel| boost_loop(&weak, cancel));
+        self.worker.start(&bot.control, "Boosts", move |cancel| {
+            boost_loop(&weak, cancel)
+        });
     }
 
     /// Stops the timer (waits up to 200 ms for it).

@@ -12,7 +12,7 @@ use crate::models::{ItemBase, ShopInfo};
 use crate::state::TurnInSent;
 use serde_json::Value;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// A server packet: `{ params: { type: "json" | "str", dataObj } }`.
 pub fn on_extension_packet(bot: &Arc<Bot>, packet: Value) {
@@ -221,7 +221,7 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
                 let apart = match sent {
                     Some((Some(earlier), latest)) => format!(
                         "; its last two attempts were sent {} ms apart",
-                        latest.duration_since(earlier).as_millis()
+                        latest.since(earlier).as_millis()
                     ),
                     _ => String::new(),
                 };
@@ -250,7 +250,7 @@ fn on_json(bot: &Arc<Bot>, data: &Value) {
             let shop = data.get("shopinfo").and_then(ShopInfo::from_packet);
             {
                 let mut state = bot.state.lock();
-                state.shop_loaded_at = Some(Instant::now());
+                state.shop_loaded_at = Some(bot.control.now());
                 if let Some(shop) = shop {
                     state.loaded_shops.retain(|s| s.id != shop.id);
                     state.loaded_shops.push(shop);
@@ -449,7 +449,7 @@ pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
         }),
         "tryQuestComplete" => {
             let quest_id = part(4).parse().unwrap_or_default();
-            let now = Instant::now();
+            let now = bot.control.now();
             let unanswered = {
                 let mut state = bot.state.lock();
                 let earlier = state
@@ -460,7 +460,7 @@ pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
                 let after = state
                     .last_turn_in
                     .filter(|(quest, _)| *quest != quest_id)
-                    .map(|(quest, at)| (quest, now.duration_since(at)));
+                    .map(|(quest, at)| (quest, now.since(at)));
                 state.last_turn_in = Some((quest_id, now));
                 state.last_quest_packet = Some(now);
                 state
@@ -471,18 +471,18 @@ pub fn on_packet_sent(bot: &Arc<Bot>, packet: &str) {
             if let Some(sent) = unanswered {
                 bot.note(format!(
                     "Quest {quest_id}: no reply to the turn-in sent {} ms before this one{}.",
-                    now.duration_since(sent.at).as_millis(),
+                    now.since(sent.at).as_millis(),
                     after_text(&sent)
                 ));
             }
         }
-        "getQuests" => bot.state.lock().last_get_quests = Some(Instant::now()),
+        "getQuests" => bot.state.lock().last_get_quests = Some(bot.control.now()),
         "acceptQuest" => {
             let quest_id = part(4).parse().unwrap_or_default();
             {
                 let mut state = bot.state.lock();
                 state.stats.quests_accepted += 1;
-                state.last_quest_packet = Some(Instant::now());
+                state.last_quest_packet = Some(bot.control.now());
             }
             bot.events.emit(BotEvent::QuestAccepted { quest_id });
         }
