@@ -703,6 +703,28 @@ items go on, so its budget ends before the house step it stopped at; `other/Lore
 time (the 10 s real cap). Left: a used potion is "not verified after use", since the fake gives no
 aura (`hasActiveAura`); the drafts log it and go on.
 
+**The real-time cap.** A draft stopped by the 10 s cap before its budget played as far as the
+machine let it: `other/LoreBowl` ended in one full run and was cut in the next (6.6 s alone, 10 s
+beside nine others), so every run-to-run comparison had a draft or two to explain away. Timing the
+fake's answers in `ThirdErrand` (cut at 23 s of play) put them at 0.2 s of its 10: the rest was the
+engine's own work, in an unoptimized build, mostly reading the 127-item inventory as items (89 KB of
+JSON, 1,056 times, each turned into items and handed to the script as JSON again). Optimizing
+serde_json alone didn't move it (the item types' deserializers are turu_bot's own code).
+
+The draft run now has a Cargo profile of its own, `draft` (the test profile at `opt-level = 2`,
+debug assertions and overflow checks on, line tables only), and the nightly and "Changed drafts"
+jobs run with `--cargo-profile draft`; it builds in about a minute and a half. The heavy drafts run
+four to seven times faster (LoreBowl 1.5 s, KagesMerge 1.5 s, GoldenTicket 1.4 s), and a full run
+takes 108 s (about 240 before). The report says which drafts the cap stopped and at what clock time
+("cut at the real-time cap").
+
+Full runs (2026-11-28) with 6 and with 12 drafts at once: the same outcome for every draft, and the
+same as the last unoptimized run. Three still take over 5 s, all farm loops still farming at their
+budget, so "running" either way: `ThirdErrand`, cut at 37 s every time (`CoreDarkon.thirdErrand`
+stores the gear on every pass, as the C# does, and each pass reads the inventory several times), and
+`CraggleRockREP` and `CragsGemMerge` (53,000 calls of `getMonsters` and `factions` polling; 4.6 s
+alone, cut with 12 at once).
+
 **Pull requests:** CI's "Changed drafts" job (`ci.yml`) runs the drafts a pull request's scripts
 change. `tools/drafts/changed.sh <base>` compares the scripts submodule's commit on the base branch
 with the pull request's and prints `skip`, `DRAFT_FILTER=<paths>` or `DRAFT_EVERY=16`: the changed

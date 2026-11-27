@@ -64,7 +64,9 @@ UTC). The "Changed drafts" job runs only on pull requests, so it hasn't run eith
 - **Draft run** (`bot/tests/draft_smoke.rs`, ignored): every draft with a `main` for 60 s of play
   on a virtual clock (10 s real at most), several at once; the report (`target/draft-smoke.txt`)
   has a `progress` line (kills, quests accepted, turned in, purchases) and, per draft, the last log lines,
-  the last calls at the budget and, if it ran out of real time, the clock's report.
+  the last calls at the budget and, if it ran out of real time, the clock's report; a line names
+  the drafts the real-time cap stopped. Run it with `--cargo-profile draft` (an optimized test
+  build: proposal, "The real-time cap"), as CI does.
   `KNOWN_FAKE_GAPS` lists drafts that fail for the fake's sake (now only `story/TowerOfDoom.ts`).
   `DRAFT_OPTIONS` sets the option values a draft can't start without (the Lone Wolf ultras' room
   number, a roster for them and two Army dailies); the rest run with their defaults. Each draft
@@ -81,9 +83,9 @@ UTC). The "Changed drafts" job runs only on pull requests, so it hasn't run eith
 ```bash
 cargo nextest run -p turu_bot replay::                       # the replays, a second or two each
 cargo nextest run -p turu_bot world_fake control::tests      # the fake's and the clock's tests
-DRAFT_EVERY=8 DRAFT_JOBS=10 cargo nextest run -p turu_bot draft_smoke --run-ignored only --no-capture   # ~200 drafts, ~20 s
-DRAFT_EVERY=1 DRAFT_JOBS=10 cargo nextest run -p turu_bot draft_smoke --run-ignored only --no-capture   # all 1,623, ~2 min
-DRAFT_FILTER=story/doomwood,farm/BuyScrolls cargo nextest run -p turu_bot draft_smoke --run-ignored only --no-capture
+DRAFT_EVERY=8 DRAFT_JOBS=10 cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture   # ~200 drafts, ~20 s
+DRAFT_EVERY=1 DRAFT_JOBS=10 cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture   # all 1,623, ~2 min
+DRAFT_FILTER=story/doomwood,farm/BuyScrolls cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture
 tools/drafts/changed.sh origin/main                          # which drafts a branch's scripts change
 ```
 
@@ -145,7 +147,11 @@ A script that changes what it sends needs its tape recorded again: remove the ol
    answers `loadBank` and `inventoryHasSpaceFor`; 37 more drafts end.
 5. **Correctness (decision 4).** The smoke run catches throws, not wrong behaviour. Comparing a
    draft's sends with VibeSkua's for the same script needs a packet log from VibeSkua on Windows.
-6. **Smaller:** phase 5 (Diagnostics > Record Session, scrubbing on save); moving the few
+6. ~~The real-time cap.~~ Done (proposal, "The real-time cap"): the `draft` profile; outcomes are
+   the same with 6 and 12 at once. Left: `ThirdErrand` still needs 17 s of real time for its 60 s
+   (0.4 ms a call), mostly reading the inventory, which the engine parses and writes as JSON again
+   for the script on each read.
+7. **Smaller:** phase 5 (Diagnostics > Record Session, scrubbing on save); moving the few
    genuinely timer-bound engine tests (Butler follow, relogin, `gear`'s bank equip) onto the
    virtual clock (each needs `bot.control.participate()` on the test thread and fakes that reply on
    the bot's clock, not from real-time threads).

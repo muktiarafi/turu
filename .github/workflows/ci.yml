@@ -382,7 +382,7 @@ jobs:
         run: |
           # RUN is DRAFT_FILTER=<paths> or DRAFT_EVERY=16 (tools/drafts/changed.sh).
           export "${RUN?}"
-          cargo nextest run --locked -p turu_bot draft_smoke --run-ignored only --no-capture
+          cargo nextest run --locked --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture
 
       - name: Keep the report
         if: always() && steps.changed.outputs.run != 'skip'

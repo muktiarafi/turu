@@ -7,7 +7,7 @@
 //! Ignored: run by hand or nightly.
 //!
 //! ```text
-//! cargo nextest run -p turu_bot draft_smoke --run-ignored only --no-capture
+//! cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture
 //! ```
 //!
 //! `DRAFT_EVERY` (32) runs every Nth draft of the sorted list, `DRAFT_FILTER` only paths with that
@@ -783,6 +783,21 @@ fn draft_smoke_sample() {
         with(|o| o.completed),
         did(|o| o.bought),
         with(|o| o.bought),
+    ));
+    // Stopped by the real-time cap before their budget: how far they got depends on the machine.
+    let cut: Vec<String> = outcomes
+        .iter()
+        .filter(|o| o.kind == "running" && o.clock_secs < budget.as_secs_f64() - 0.5)
+        .map(|o| format!("{} ({:.1} s)", o.script, o.clock_secs))
+        .collect();
+    report.push_str(&format!(
+        "cut at the real-time cap ({real_cap:?}): {}{}\n",
+        cut.len(),
+        if cut.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", cut.join(", "))
+        }
     ));
     for kind in ["error", "not started", "known", "finished", "running"] {
         let these: Vec<&Outcome> = outcomes.iter().filter(|o| o.kind == kind).collect();

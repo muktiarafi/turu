@@ -92,6 +92,15 @@ panic = "unwind"
 [profile.release]
 panic = "abort"
 
+# Turu: the draft smoke run (`--cargo-profile draft`, docs/REPLAY_TESTS_PROPOSAL.md, "The real-time
+# cap"): a test build, optimized. Its drafts play 60 s on a virtual clock in at most 10 s of real
+# time; unoptimized, a draft that reads a large inventory on every pass is cut at that cap, more or
+# less early as the machine is loaded. Debug assertions and overflow checks stay on.
+[profile.draft]
+inherits = "test"
+opt-level = 2
+debug = "line-tables-only"
+
 # Release packages (`--profile dist`), as Mugetsu builds them.
 [profile.dist]
 inherits = "release"

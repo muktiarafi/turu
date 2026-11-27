@@ -53,7 +53,7 @@ jobs:
           DRAFT_REAL_SECS: "10"
           DRAFT_JOBS: "8"
           DRAFT_FILTER: ${{ inputs.filter }}
-        run: cargo nextest run --locked -p turu_bot draft_smoke --run-ignored only --no-capture
+        run: cargo nextest run --locked --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture
 
       - name: Keep the report
         if: always()
