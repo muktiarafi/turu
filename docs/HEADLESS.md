@@ -28,7 +28,7 @@ export TURU_PASSWORD='your password'      # not --password: other users can read
 ```
 
 It logs in once the game has loaded, then starts the script; the log goes to the terminal.
-Ctrl+C quits. `--server` is also where relogins go for this run: pick a quiet server, so a
+Ctrl+C stops the script, logs out and quits. `--server` is also where relogins go for this run: pick a quiet server, so a
 relogin finds room (without it, Twilly).
 
 Everything Turu keeps is in its data folder (or `TURU_DATA_DIR`): `~/.local/share/Turu` on
@@ -88,8 +88,10 @@ What holds for every way of running it (systemd and Docker below):
   it stopped; use `Restart=always` (`restart: always`) to loop.
 * An update (`POST /update`, under "Updates") exits with status 75, so "on failure" starts the
   new binary.
-* Stopping it with a signal (`systemctl stop`, `docker compose stop`, Ctrl+C) doesn't log out;
-  the game server drops the connection shortly after.
+* A signal (`systemctl stop`, `docker compose stop`, Ctrl+C) quits cleanly: it stops the
+  playlist and the script (waiting up to 3 s), logs out, closes Butler and the tapes, and exits
+  with status 0. A second signal, or 8 s without it ending (under `docker stop`'s 10 s), quits at
+  once with status 1.
 
 ## Run it as a service
 

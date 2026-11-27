@@ -1891,8 +1891,8 @@ fn exit_on_script_stop(playlist: bool) {
 fn exit_after_stop(bot: &Arc<Bot>) {
     std::thread::sleep(Duration::from_secs(2));
     // Turu: a script that found itself logged out may stop just before the drop starts the
-    // auto-relogin, which restarts it: the run goes on.
-    if bot.servers.is_relogging() || bot.scripts.is_running() {
+    // auto-relogin, which restarts it: the run goes on. And [`shut_down`] quits on its own.
+    if bot.servers.is_relogging() || bot.scripts.is_running() || SHUTTING_DOWN.load(Ordering::SeqCst) {
         return;
     }
     let _ = turu_bot::api::servers::logout(bot);
@@ -1907,6 +1907,47 @@ fn exit_after_stop(bot: &Arc<Bot>) {
         return;
     }
     close_butlers();
+    std::process::exit(0);
+}
+
+/// Set once [`shut_down`] has begun: `--exit-on-script-stop` leaves the quitting to it.
+static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
+
+/// How long [`shut_down`] waits for the script to end before it logs out anyway.
+const SHUTDOWN_SCRIPT_WAIT: Duration = Duration::from_secs(3);
+
+/// Turu: `--headless` on SIGTERM or Ctrl+C (`app/src/headless.rs`): stop the playlist and the
+/// script, log out, close Butler and the tapes, and quit with status 0, as
+/// `--exit-on-script-stop` does when the script ends. Without it a signal ended the process where
+/// it stood: the account stayed in game until the server dropped it, a Butler follower stayed
+/// listed, and the tape lost its last second and its end. Blocks: call it off the player's thread.
+pub fn shut_down() -> ! {
+    SHUTTING_DOWN.store(true, Ordering::SeqCst);
+    let bot = bot();
+    bot.scheduler.stop(&bot);
+    turu_bot::script::stop(&bot);
+    let since = std::time::Instant::now();
+    while bot.scripts.is_running() && since.elapsed() < SHUTDOWN_SCRIPT_WAIT {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if bot.scripts.is_running() {
+        tracing::warn!(
+            "The script didn't stop in {} s: logging out anyway",
+            SHUTDOWN_SCRIPT_WAIT.as_secs()
+        );
+    }
+    if turu_bot::api::player::logged_in(&bot).unwrap_or(false) {
+        match turu_bot::api::servers::logout(&bot) {
+            // As `exit_after_stop`: a second for the logout to reach the server.
+            Ok(()) => std::thread::sleep(Duration::from_secs(1)),
+            Err(e) => tracing::warn!("Couldn't log out: {e}"),
+        }
+    } else {
+        // An auto-relogin waiting to try again would log in as the process ends.
+        turu_bot::api::servers::cancel_relogin(&bot);
+    }
+    close_butlers();
+    tracing::info!("Stopped");
     std::process::exit(0);
 }
 

@@ -956,6 +956,9 @@ memory budget (NVIDIA, AMD).
   bitmap as it is. A desktop that had played AQW in a window kept settings that skip the draw,
   which hid it. The control API is the only way to steer it. CoreBots' restart after a logout
   (`Bot.Manager.RestartScriptAsync`) isn't ported.
+  SIGTERM and Ctrl+C quit cleanly (`turu::shut_down`, 2026-11-27): the playlist and script
+  stopped, a logout, Butler and the tapes closed, status 0; a second signal or 8 s quits at once
+  with status 1. Before, a signal ended the process where it stood.
   In game it runs at a hidden tab's 2 FPS (`state.hidden_tab`, set in `app/src/headless.rs`;
   the login screen keeps full speed), and its player has no mouse (`set_mouse_in_stage(false)`).
   Ruffle starts with the mouse on the stage, and every update (about 50 a second, for timers and

@@ -56,6 +56,7 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url) -> Result<(), Error> 
     // login screen keeps full speed). Halved the process's CPU on a farm, with the same kills.
     turu::bot().state.lock().hidden_tab = true;
     tracing::info!("Running without a window (--headless); stop with Ctrl+C");
+    runtime.spawn(quit_on_signal());
     // Turu: Options > Application's launch updates (skill sets; the script it runs is updated on its own).
     turu::start_updates();
     let mut memory_log = turu::perf_log_every().map(|every| (every, Instant::now()));
@@ -75,6 +76,51 @@ pub fn run(preferences: GlobalPreferences, movie_url: Url) -> Result<(), Error> 
     });
     turu::bot().set_host(None);
     Ok(())
+}
+
+/// How long a signal's clean quit may take before the process quits anyway: under `docker stop`'s
+/// 10 s, after which Docker kills it.
+const QUIT_LIMIT: Duration = Duration::from_secs(8);
+
+/// Turu: SIGTERM (`systemctl stop`, `docker stop`) or Ctrl+C quits cleanly (`turu::shut_down`:
+/// the script stopped, logged out, Butler and the tapes closed). A second signal, or
+/// [`QUIT_LIMIT`] without the clean quit ending, quits at once with status 1.
+async fn quit_on_signal() {
+    if let Err(e) = next_signal().await {
+        tracing::warn!("Couldn't listen for Ctrl+C or SIGTERM: they end the process at once ({e})");
+        return;
+    }
+    tracing::info!("Stopping: the script, then logging out (Ctrl+C again quits at once)");
+    if let Err(e) = std::thread::Builder::new()
+        .name("Turu Shutdown".into())
+        .spawn(|| turu::shut_down())
+    {
+        tracing::error!("Couldn't start quitting cleanly: {e}");
+    } else {
+        tokio::select! {
+            _ = next_signal() => tracing::warn!("Quitting at once"),
+            () = tokio::time::sleep(QUIT_LIMIT) => {
+                tracing::warn!("Couldn't quit cleanly in {} s: quitting at once", QUIT_LIMIT.as_secs());
+            }
+        }
+    }
+    turu_bot::tape::finish_all();
+    std::process::exit(1);
+}
+
+/// The next Ctrl+C (SIGINT), or SIGTERM on Unix.
+async fn next_signal() -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut term = signal(SignalKind::terminate())?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result,
+            _ = term.recv() => Ok(()),
+        }
+    }
+    #[cfg(not(unix))]
+    tokio::signal::ctrl_c().await
 }
 
 /// With `TURU_PERF_LOG`: the windowed build's `memory:` line without its GPU parts, to see where

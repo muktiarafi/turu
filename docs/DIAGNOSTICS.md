@@ -135,8 +135,8 @@ its options' values) and stops (docs/REPLAY_TESTS_PROPOSAL.md).
   process leaves a tape readable up to its last second, without its `end` line. Lines the writer
   couldn't keep up with are dropped, never waited for, and counted in the `end` line (and as gaps
   in their numbers). Quitting through Turu finishes the file: `--exit-on-script-stop` (or
-  `POST /script/stop` with it), an update, closing the window. A signal (`systemctl stop`,
-  Ctrl+C) doesn't: the tape then ends at its last flush.
+  `POST /script/stop` with it), an update, closing the window, and without a window a signal
+  (`systemctl stop`, Ctrl+C). A killed process's tape ends at its last flush.
 - **Cost.** FarmerJoe DoAll writes about 9 MB of tape an hour (70 lines a second); the writer's
   work is negligible in a release build.
 
