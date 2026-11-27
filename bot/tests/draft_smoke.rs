@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use turu_bot::script::{self, ScriptStatus};
-use turu_bot::testing::WorldFake;
+use turu_bot::testing::{ShopStock, WorldFake};
 use turu_bot::{Bot, tape};
 
 const MARK: &str = "not yet read through by hand";
@@ -91,21 +91,7 @@ fn monster_catalog() -> std::collections::HashMap<String, Vec<String>> {
     .unwrap();
     let quoted = regex::Regex::new(r#""([^"]+)""#).unwrap();
     let mut catalog: std::collections::HashMap<String, Vec<String>> = Default::default();
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if !path.ends_with("node_modules") {
-                    walk(&path, out);
-                }
-            } else if path.extension().is_some_and(|e| e == "ts") {
-                out.push(path);
-            }
-        }
-    }
-    let mut files = Vec::new();
-    walk(&repo().join("scripts"), &mut files);
-    for file in files {
+    for file in all_scripts() {
         let Ok(text) = std::fs::read_to_string(&file) else {
             continue;
         };
@@ -136,6 +122,87 @@ fn monster_catalog() -> std::collections::HashMap<String, Vec<String>> {
     catalog
 }
 
+/// Each merge shop's stock, by shop ID, from its merge script: the shop it names
+/// (`startBuyAllMerge("map", id, ...)`), the items its options list (`option.bool("29574",
+/// "Synderes' Cape of Doom", ...)`, the `Select` group's switches, named by item ID) and the
+/// materials it farms (`findIngredients`' `case "Synderes' Souvenir":`). A shop's contents reach the
+/// game only once it loads, so a tape can't supply them. Also the merge scripts it found nothing in,
+/// by what was missing.
+fn shop_catalog() -> (std::collections::HashMap<i64, ShopStock>, Vec<String>) {
+    // A string literal in any quote: Prettier picks single quotes for a name with a `"`, and some
+    // ports keep C#'s verbatim strings as template literals.
+    const TEXT: &str = r#"(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|`([^`$]*)`)"#;
+    let shop = regex::Regex::new(r#"startBuyAllMerge\(\s*["'`][^"'`]*["'`],\s*(\d+)"#).unwrap();
+    let item =
+        regex::Regex::new(&format!(r#"option\.bool\(\s*["'`](\d+)["'`],\s*{TEXT}"#)).unwrap();
+    let case = regex::Regex::new(&format!(r#"case\s+{TEXT}\s*:"#)).unwrap();
+    let literal = |c: &regex::Captures, at: usize| {
+        c.get(at)
+            .or_else(|| c.get(at + 1))
+            .or_else(|| c.get(at + 2))
+            .map(|m| m.as_str().replace("\\'", "'").replace("\\\"", "\""))
+            .unwrap_or_default()
+    };
+    let mut catalog: std::collections::HashMap<i64, ShopStock> = Default::default();
+    let mut gaps = Vec::new();
+    for file in all_scripts() {
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        let Some(id) = shop.captures(&text).and_then(|c| c[1].parse::<i64>().ok()) else {
+            continue;
+        };
+        let stock = catalog.entry(id).or_default();
+        let items: Vec<(i64, String)> = item
+            .captures_iter(&text)
+            .filter_map(|c| Some((c[1].parse().ok()?, literal(&c, 2))))
+            .collect();
+        let materials: Vec<String> = case.captures_iter(&text).map(|c| literal(&c, 1)).collect();
+        let name = file
+            .strip_prefix(repo().join("scripts"))
+            .unwrap_or(&file)
+            .display()
+            .to_string();
+        match (items.is_empty(), materials.is_empty()) {
+            (true, true) => gaps.push(format!("{name}: no items, no materials")),
+            (true, false) => gaps.push(format!("{name}: no items")),
+            (false, true) => gaps.push(format!("{name}: no materials")),
+            _ => {}
+        }
+        for (id, name) in items {
+            if !stock.items.iter().any(|(i, _)| *i == id) {
+                stock.items.push((id, name));
+            }
+        }
+        for material in materials {
+            if !stock.materials.contains(&material) {
+                stock.materials.push(material);
+            }
+        }
+    }
+    gaps.sort();
+    (catalog, gaps)
+}
+
+/// Every script under `scripts/`.
+fn all_scripts() -> Vec<PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if !path.ends_with("node_modules") {
+                    walk(&path, out);
+                }
+            } else if path.extension().is_some_and(|e| e == "ts") {
+                out.push(path);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    walk(&repo().join("scripts"), &mut files);
+    files
+}
+
 /// How one draft went.
 #[derive(Debug)]
 struct Outcome {
@@ -148,10 +215,12 @@ struct Outcome {
     secs: f64,
     /// How far it got on its (virtual) clock.
     clock_secs: f64,
-    /// What it got done, by the engine's counters: kills, quests accepted, quests turned in.
+    /// What it got done, by the engine's counters: kills, quests accepted, quests turned in; and
+    /// by the fake's, purchases.
     kills: u64,
     accepted: u64,
     completed: u64,
+    bought: u64,
     last_log: String,
     /// The last calls into the fake.
     recent: Vec<String>,
@@ -159,9 +228,15 @@ struct Outcome {
     clock: String,
 }
 
+/// What the fake world knows from the scripts: each map's monsters, each merge shop's stock.
+struct Catalogs {
+    monsters: std::collections::HashMap<String, Vec<String>>,
+    shops: std::collections::HashMap<i64, ShopStock>,
+}
+
 fn run_one(
     world: &tape::Tape,
-    catalog: &std::collections::HashMap<String, Vec<String>>,
+    catalog: &Catalogs,
     path: &Path,
     budget: Duration,
     real_cap: Duration,
@@ -176,7 +251,11 @@ fn run_one(
         *bot.options.write() = options;
     }
     bot.options.write().action_delay = 0;
-    let fake = Arc::new(WorldFake::from_tape(world).with_monsters(catalog.clone()));
+    let fake = Arc::new(
+        WorldFake::from_tape(world)
+            .with_monsters(catalog.monsters.clone())
+            .with_shops(catalog.shops.clone()),
+    );
     fake.attach(&bot);
     // A virtual clock (decision 2): the draft's sleeps and waits take no real time, so its
     // budget is virtual and it gets as far as that many seconds of play would take it.
@@ -199,6 +278,7 @@ fn run_one(
             kills: 0,
             accepted: 0,
             completed: 0,
+            bought: 0,
             last_log: String::new(),
             recent: Vec::new(),
             clock: String::new(),
@@ -257,6 +337,7 @@ fn run_one(
         kills: stats.kills,
         accepted: stats.quests_accepted,
         completed: stats.quests_completed,
+        bought: fake.purchases(),
         last_log: {
             let mut meaningful: Vec<&str> = lines
                 .iter()
@@ -311,8 +392,20 @@ fn draft_smoke_sample() {
     let queue = Arc::new(Mutex::new(picked));
     let outcomes = Arc::new(Mutex::new(Vec::new()));
     let world = Arc::new(world);
-    let catalog = Arc::new(monster_catalog());
-    println!("monster catalog: {} maps", catalog.len());
+    let (shops, shop_gaps) = shop_catalog();
+    let catalog = Arc::new(Catalogs {
+        monsters: monster_catalog(),
+        shops,
+    });
+    println!(
+        "monster catalog: {} maps; shop catalog: {} shops",
+        catalog.monsters.len(),
+        catalog.shops.len()
+    );
+    // A merge script the catalog read nothing from: its shop is empty, or its items need nothing.
+    for gap in &shop_gaps {
+        println!("shop catalog gap: {gap}");
+    }
     let workers: Vec<_> = (0..jobs)
         .map(|_| {
             let (queue, outcomes, world, catalog) = (
@@ -358,13 +451,15 @@ fn draft_smoke_sample() {
     let did = |f: fn(&Outcome) -> u64| outcomes.iter().map(f).sum::<u64>();
     let with = |f: fn(&Outcome) -> u64| outcomes.iter().filter(|o| f(o) > 0).count();
     report.push_str(&format!(
-        "progress: {} kills ({} drafts), {} quests accepted ({}), {} turned in ({})\n",
+        "progress: {} kills ({} drafts), {} quests accepted ({}), {} turned in ({}), {} purchases ({})\n",
         did(|o| o.kills),
         with(|o| o.kills),
         did(|o| o.accepted),
         with(|o| o.accepted),
         did(|o| o.completed),
         with(|o| o.completed),
+        did(|o| o.bought),
+        with(|o| o.bought),
     ));
     for kind in ["error", "not started", "known", "finished", "running"] {
         let these: Vec<&Outcome> = outcomes.iter().filter(|o| o.kind == kind).collect();

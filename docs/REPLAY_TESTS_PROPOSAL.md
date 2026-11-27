@@ -510,7 +510,7 @@ because the sample of drafts needed it:
   value the tape never read is 0, never another slot's (it was, and every quest read as done).
 - Accepting a quest marks it in progress; turning it in ends that.
 - Loading a shop fills `world.shopinfo`: the tape's when it is that shop, else an empty one with
-  its ID.
+  its ID (since "Shops", below: else what the merge scripts say it sells).
 
 **Reaching further** (the same day, `bot/src/world_fake/sim.rs`). A count of what drafts got done
 (the engine's own counters: kills, quests accepted, turned in, in the report's `progress` line)
@@ -549,6 +549,37 @@ accepted (1,005), 3,160 turned in (814), no failure but the known gap (TowerOfDo
 now and stops on floor 2, whose monster no script names). Five reached the 10 s real cap; the
 three looked at were busy, not stuck (two loops of 30,000 and 45,000 calls, one reading a level-100
 inventory, which the engine parses on each read).
+
+**Shops** (the same day). Every merge stopped at the fake's empty shop ("The bot fetched 0 items
+to farm"), and `mergeshops/` is the largest folder. A shop's contents reach the game only once it
+loads, so no tape has them but the shop's own; the merge scripts do. Each names its shop
+(`startBuyAllMerge("map", id, ...)`), lists the shop's items in its options (the `Select` group's
+switches, named by item ID: `option.bool("29574", "Synderes' Cape of Doom", ...)`) and names the
+materials it farms (`findIngredients`' cases). The run reads the three from the source, as it reads
+monsters (453 shops; single, double and backtick quotes; a merge script it reads no items or no
+materials from is printed as a "shop catalog gap", none now), and hands them to the fake
+(`WorldFake::with_shops`). The handover had suggested taking the list from the running script's
+options; the source gives the same list with no plumbing, and the materials besides. The rules:
+
+- **A shop the catalog has** loads with those items, shaped after one recorded in game
+  (`merge_buy`'s shop 332): free, with no quest, token, level, reputation or membership
+  requirement, and one material each to merge from, the script's materials in turn, given the ID
+  `sim::id_for` its name. Both readers take them (the engine's `ShopItem` and CoreBots' raw
+  fields: `world_fake::tests::a_merge_shop_sells_its_scripts_items_for_its_materials`).
+- **The purchase check** (`getUnmetPurchaseRequirements`) answers the missing materials as turu.swf
+  words them, `[]` when none.
+- **A purchase** (`buyItemByID`, `buyItemByName`) with its materials held takes them, adds the item
+  to the inventory and sends the server's `buyItem` (`bitSuccess: 1`, as recorded); without them,
+  `bitSuccess: 0`. Not `addItems`: a purchase isn't a drop.
+- **A material asked for by ID** (the merge checks requirements by ID, `findIngredients` by name)
+  drops under its name, and an item asked for both ways drops once a kill.
+- The report's `progress` line counts purchases.
+
+The 313 drafts under `mergeshops` (and the few elsewhere a filter of that name picks) went from 0
+purchases to 226 (58 drafts), 1,165 kills to 2,061, and 182 finished to 38: the rest now farm
+their materials at the budget instead of stopping, and some of the 38 bought their whole shop. No
+failure. All 1,623 in 173 s: 9,000 kills (1,119 drafts), 4,615 quests accepted (1,138), 3,297
+turned in (853), 323 purchases (80), no failure but the known gap.
 
 **The run:** each draft with a `main` (Core files are libraries) on a bot of its own, `ActionDelay`
 0, started silently, on a virtual clock for `DRAFT_SECS` (60) of play and at most
@@ -594,8 +625,9 @@ finished, 889 still running. Going further found three failures:
   list can't go stale.
 
 **What it can't catch:** a draft that runs but is wrong (integer division, the wrong quest ID),
-anything past its budget, and code behind the fake's gaps (shop contents, monsters of maps no
-script names, monsters found by cell only): decision 4 or a tape of that flow covers those.
+anything past its budget, and code behind the fake's gaps (a shop's real requirements, gold, AC
+and membership, shops no merge script lists, monsters of maps no script names, monsters found by
+cell only): decision 4 or a tape of that flow covers those.
 
 **Pull requests:** CI's "Changed drafts" job (`ci.yml`) runs the drafts a pull request's scripts
 change. `tools/drafts/changed.sh <base>` compares the scripts submodule's commit on the base branch
@@ -609,7 +641,7 @@ hand, not a draft) `skip`.
 
 **Not done:** the first nightly run and the first "Changed drafts" run on GitHub (neither is
 pushed); options per draft (the Lone Wolf ultras need `PrivateRoomNumber`; drafts start with their
-options' defaults); shop contents (merges stop on their empty shop).
+options' defaults).
 
 ## Decision 2: the virtual clock
 

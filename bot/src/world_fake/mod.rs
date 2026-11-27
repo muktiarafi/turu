@@ -20,6 +20,7 @@ use crate::host::{FlashArg, FlashHost, HostError};
 use crate::tape::{Line, Tape};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
+pub use sim::ShopStock;
 use sim::{Combat, Monster, Wanted};
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
@@ -57,6 +58,13 @@ pub struct WorldFake {
     pending: Mutex<Vec<(String, Vec<Value>)>>,
     /// Large values' JSON text by path, until the path changes ([`Self::text`]).
     texts: Mutex<HashMap<String, String>>,
+    /// What each shop sells, by shop ID, from the scripts ([`Self::with_shops`]).
+    shops: HashMap<i64, ShopStock>,
+    /// The shops' materials' names by the IDs they're given, so an item asked for by ID drops
+    /// under its name.
+    materials: HashMap<i64, String>,
+    /// Purchases made, for a report.
+    purchases: Mutex<u64>,
 }
 
 impl WorldFake {
@@ -140,7 +148,22 @@ impl WorldFake {
             bot: Mutex::new(Weak::new()),
             pending: Mutex::default(),
             texts: Mutex::default(),
+            shops: HashMap::new(),
+            materials: HashMap::new(),
+            purchases: Mutex::default(),
         }
+    }
+
+    /// What each shop sells, by shop ID, for the shops a script loads (the tape's shop keeps its
+    /// own). Each item is merged from one of the shop's materials, in turn (see [`ShopStock`]).
+    pub fn with_shops(mut self, shops: HashMap<i64, ShopStock>) -> Self {
+        self.materials = shops
+            .values()
+            .flat_map(|shop| &shop.materials)
+            .map(|name| (sim::id_for(name), name.clone()))
+            .collect();
+        self.shops = shops;
+        self
     }
 
     /// Each map's monsters by name, for the maps a script joins (the tape's map keeps its own).
@@ -253,13 +276,18 @@ impl WorldFake {
             .filter(|w| w.fresh(now))
             .cloned()
             .collect();
+        // One of each: an item asked for by ID and by name is one item.
+        let mut dropped = std::collections::HashSet::new();
         for w in wanted {
             let name = w
                 .name
                 .clone()
+                .or_else(|| w.id.and_then(|id| self.materials.get(&id).cloned()))
                 .unwrap_or_else(|| format!("Item {}", w.id.unwrap_or_default()));
             let id = w.id.unwrap_or_else(|| sim::id_for(&name));
-            self.give(id, &name, 1, w.temp);
+            if dropped.insert((id, w.temp)) {
+                self.give(id, &name, 1, w.temp);
+            }
         }
     }
 
@@ -341,6 +369,11 @@ impl WorldFake {
     /// How many calls it has answered.
     pub fn calls(&self) -> u64 {
         *self.calls.lock()
+    }
+
+    /// How many purchases went through.
+    pub fn purchases(&self) -> u64 {
+        *self.purchases.lock()
     }
 
     /// The last calls (up to 12), oldest first, each as `name(args) -> answer`.
@@ -446,18 +479,91 @@ impl WorldFake {
         }
     }
 
-    /// Loading a shop: the tape's shop when it is that one, else an empty shop with its ID (a
-    /// merge script then goes on into its own code, finding nothing to buy).
+    /// Loading a shop: the tape's shop when it is that one, else what the scripts say it sells
+    /// ([`Self::with_shops`]), else an empty shop with its ID (a script then goes on into its own
+    /// code, finding nothing to buy).
     fn load_shop(&self, id: i64) {
         let recorded = self
             .paths
             .get("world.shopinfo")
             .filter(|shop| shop["ShopID"].as_f64() == Some(id as f64))
             .cloned();
-        let shop = recorded.unwrap_or_else(
-            || serde_json::json!({ "ShopID": id, "sName": format!("Shop {id}"), "items": [] }),
-        );
+        let shop = recorded
+            .unwrap_or_else(|| sim::shop(id, self.shops.get(&id).unwrap_or(&ShopStock::default())));
         self.set("world.shopinfo", shop);
+    }
+
+    /// The loaded shop's entry for an item (`shop_item_id` <= 0: any), as turu.swf's `shopItem`.
+    fn shop_item(&self, id: i64, shop_item_id: i64) -> Option<Value> {
+        match self.get("world.shopinfo.items") {
+            Some(Value::Array(items)) => items.into_iter().find(|item| {
+                sim::num(&item["ItemID"]) == Some(id)
+                    && (shop_item_id <= 0 || sim::num(&item["ShopItemID"]) == Some(shop_item_id))
+            }),
+            _ => None,
+        }
+    }
+
+    /// `getUnmetPurchaseRequirements`: the materials missing for `bundles` of `item`, worded as
+    /// turu.swf words them (the fake's shops have no quest or token requirement).
+    fn unmet(&self, item: Option<&Value>, bundles: i64) -> Vec<String> {
+        let Some(item) = item else {
+            return vec!["The shop doesn't sell this item.".into()];
+        };
+        sim::values(&item["turnin"])
+            .filter_map(|m| {
+                let need = sim::num(&m["iQty"]).unwrap_or(1) * bundles;
+                let have = self.held(sim::num(&m["ItemID"])?, false);
+                (have < need).then(|| {
+                    format!(
+                        "Missing {} x{}.",
+                        m["sName"].as_str().unwrap_or_default(),
+                        need - have
+                    )
+                })
+            })
+            .collect()
+    }
+
+    /// A purchase (`buyItemByID`, `buyItemByName`; `quantity` -1 is one bundle): with its
+    /// materials held, they go and the item comes, with the server's `buyItem` answer; without,
+    /// the answer says it failed.
+    fn buy(&self, item: Option<Value>, quantity: i64) {
+        let bundles = quantity.max(1);
+        let Some(item) = item else { return };
+        let (Some(id), name) = (
+            sim::num(&item["ItemID"]),
+            item["sName"].as_str().unwrap_or_default(),
+        ) else {
+            return;
+        };
+        let bought = sim::num(&item["iQty"]).unwrap_or(1).max(1) * bundles;
+        if !self.unmet(Some(&item), bundles).is_empty() {
+            self.queue(sim::pext(
+                json!({ "cmd": "buyItem", "bitSuccess": 0, "ItemID": id }),
+            ));
+            return;
+        }
+        let path = Self::container(false);
+        let mut items = match self.get(path) {
+            Some(Value::Array(items)) => items,
+            _ => Vec::new(),
+        };
+        for m in sim::values(&item["turnin"]) {
+            if let Some(material) = sim::num(&m["ItemID"]) {
+                sim::take_item(
+                    &mut items,
+                    material,
+                    sim::num(&m["iQty"]).unwrap_or(1) * bundles,
+                );
+            }
+        }
+        sim::add_item(&mut items, id, name, bought, false);
+        self.set(path, Value::Array(items));
+        *self.purchases.lock() += 1;
+        self.queue(sim::pext(json!({
+            "cmd": "buyItem", "bitSuccess": 1, "CharItemID": id, "iQty": bought, "ItemID": id, "bBank": 0,
+        })));
     }
 
     /// `selectArrayObjectsWhere(path, filter)`: the items of `path` whose fields match the
@@ -632,6 +738,30 @@ impl WorldFake {
                 return self.in_progress.lock().contains(&id).to_string();
             }
             "callGameFunction0" if first == "world.myAvatar.pMC.artLoaded" => return "true".into(),
+            "getUnmetPurchaseRequirements" => {
+                let num = |i: usize| json.get(i).and_then(sim::num).unwrap_or(-1);
+                let item = self.shop_item(num(0), num(1));
+                let unmet = self.unmet(item.as_ref(), num(2).max(1));
+                return Value::from(unmet).to_string();
+            }
+            "buyItemByID" => {
+                let num = |i: usize| json.get(i).and_then(sim::num).unwrap_or(-1);
+                self.buy(self.shop_item(num(0), num(1)), num(2));
+                return "null".into();
+            }
+            "buyItemByName" => {
+                let item = match self.get("world.shopinfo.items") {
+                    Some(Value::Array(items)) => items.into_iter().find(|item| {
+                        item["sName"]
+                            .as_str()
+                            .is_some_and(|n| n.eq_ignore_ascii_case(first))
+                    }),
+                    _ => None,
+                };
+                let quantity = json.get(1).and_then(sim::num).unwrap_or(-1);
+                self.buy(item, quantity);
+                return "null".into();
+            }
             _ => {}
         }
         self.send(name, &json);
@@ -985,6 +1115,111 @@ mod tests {
             ],
         );
         assert_eq!(in_progress(), "false");
+    }
+
+    fn world_with_a_merge_shop() -> WorldFake {
+        world_with_monsters().with_shops(HashMap::from([(
+            332,
+            ShopStock {
+                items: vec![
+                    (29576, "NO BOTS Armor".to_owned()),
+                    (29753, "Sock Monkey Cape".to_owned()),
+                ],
+                materials: vec!["Synderes' Souvenir".to_owned()],
+            },
+        )]))
+    }
+
+    fn held_by_name(world: &WorldFake, name: &str) -> Vec<Value> {
+        let filter = FlashArg::Object([("sName".to_owned(), FlashArg::from(name))].into());
+        serde_json::from_str(&ask(
+            world,
+            "selectArrayObjectsWhere",
+            vec!["world.myAvatar.items".into(), filter],
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_merge_shop_sells_its_scripts_items_for_its_materials() {
+        let world = world_with_a_merge_shop();
+        ask(
+            &world,
+            "callGameFunction",
+            vec!["world.sendLoadShopRequest".into(), 332.0.into()],
+        );
+        let items: Vec<Value> = serde_json::from_str(&ask(
+            &world,
+            "getGameObject",
+            vec!["world.shopinfo.items".into()],
+        ))
+        .unwrap();
+        // Both readers take every item: the engine's `ShopItem`, and CoreBots' raw fields.
+        let read: Vec<crate::models::ShopItem> = items
+            .iter()
+            .filter_map(|i| serde_json::from_value(i.clone()).ok())
+            .collect();
+        assert_eq!(read.len(), 2);
+        assert_eq!(read[0].item.name, "NO BOTS Armor");
+        let souvenir = sim::id_for("Synderes' Souvenir");
+        assert_eq!(read[0].turnin[0].id, souvenir);
+        assert_eq!(items[0]["turnin"][0]["sName"], "Synderes' Souvenir");
+        let shop_item_id = read[0].shop_item_id as f64;
+
+        let unmet = |world: &WorldFake| -> Value {
+            serde_json::from_str(&ask(
+                world,
+                "getUnmetPurchaseRequirements",
+                vec![29576.0.into(), shop_item_id.into(), 1.0.into()],
+            ))
+            .unwrap()
+        };
+        assert_eq!(unmet(&world), json!(["Missing Synderes' Souvenir x1."]));
+
+        // Asked for by ID (the merge's check), then by name (`findIngredients`): a kill drops it
+        // under its name.
+        let by_id =
+            FlashArg::Object([("ItemID".to_owned(), FlashArg::from(souvenir as f64))].into());
+        ask(
+            &world,
+            "selectArrayObjectsWhere",
+            vec!["world.myAvatar.items".into(), by_id],
+        );
+        held_by_name(&world, "Synderes' Souvenir");
+        join(&world, "frozentower");
+        ask(&world, "attackMonsterID", vec![1.0.into()]);
+        for _ in 0..3 {
+            ask(&world, "useSkill", vec![1.0.into()]);
+        }
+        assert_eq!(held_by_name(&world, "Synderes' Souvenir").len(), 1);
+        assert_eq!(unmet(&world), json!([]));
+
+        ask(
+            &world,
+            "buyItemByID",
+            vec![29576.0.into(), shop_item_id.into(), 1.0.into()],
+        );
+        assert_eq!(held_by_name(&world, "NO BOTS Armor").len(), 1);
+        assert!(held_by_name(&world, "Synderes' Souvenir").is_empty());
+        assert_eq!(world.purchases(), 1);
+        // Without the materials it doesn't go through.
+        ask(
+            &world,
+            "buyItemByName",
+            vec!["Sock Monkey Cape".into(), (-1.0).into()],
+        );
+        assert!(held_by_name(&world, "Sock Monkey Cape").is_empty());
+        assert_eq!(world.purchases(), 1);
+        // A shop no script lists is empty.
+        ask(
+            &world,
+            "callGameFunction",
+            vec!["world.sendLoadShopRequest".into(), 9.0.into()],
+        );
+        assert_eq!(
+            ask(&world, "getGameObject", vec!["world.shopinfo.items".into()]),
+            "[]"
+        );
     }
 
     #[test]

@@ -12,7 +12,7 @@
 //! ```
 
 pub use crate::tape::replay::{ReplayFailure, ReplayHost, ReplayOptions, ReplayReport};
-pub use crate::world_fake::WorldFake;
+pub use crate::world_fake::{ShopStock, WorldFake};
 
 use crate::flash::parse_bool;
 use crate::host::FlashArg;

@@ -7,6 +7,10 @@
 //! not from a tape. Item names do: a hunt asks for its item by name on every pass
 //! (`selectArrayObjectsWhere` on the inventory), so a kill drops what the draft has been asking
 //! for, and what its quests in progress still need.
+//!
+//! Shops' contents don't cross it either until a shop loads, so they come from the merge scripts:
+//! each names its shop (`startBuyAllMerge("map", id, ...)`), lists the shop's items in its options
+//! and names the materials it farms (`findIngredients`' cases).
 
 use crate::Bot;
 use crate::control::ClockTime;
@@ -184,7 +188,7 @@ pub(super) fn requirements(quest: &Value) -> Vec<Requirement> {
 }
 
 /// An object's values or an array's items (the game uses both for lists).
-fn values(value: &Value) -> Box<dyn Iterator<Item = &Value> + '_> {
+pub(super) fn values(value: &Value) -> Box<dyn Iterator<Item = &Value> + '_> {
     match value {
         Value::Object(map) => Box::new(map.values()),
         Value::Array(items) => Box::new(items.iter()),
@@ -271,4 +275,64 @@ pub(super) fn deliver(bot: Option<std::sync::Arc<Bot>>, events: Vec<(String, Vec
     for (name, args) in events {
         bot.on_flash_call(&name, args);
     }
+}
+
+/// What a shop sells, from a merge script ([`super::WorldFake::with_shops`]): its items by ID and
+/// name, and the names of the materials its script farms. Item `n` is merged from material `n`
+/// (in turn), one of it, given the ID [`id_for`] its name: a kill drops that material when the
+/// script asks for it by name or by that ID.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ShopStock {
+    pub items: Vec<(i64, String)>,
+    pub materials: Vec<String>,
+}
+
+/// A shop as the game's `loadShop` fills `world.shopinfo`, its items shaped after one recorded in
+/// game (`merge_buy`'s): no quest, token, level, reputation or membership requirement, free (a
+/// level-16 tape has little gold), and the item's materials in `turnin`.
+pub(super) fn shop(id: i64, stock: &ShopStock) -> Value {
+    let items: Vec<Value> = stock
+        .items
+        .iter()
+        .enumerate()
+        .map(|(i, (item_id, name))| {
+            let turnin: Vec<Value> = if stock.materials.is_empty() {
+                Vec::new()
+            } else {
+                let material = &stock.materials[i % stock.materials.len()];
+                vec![json!({ "ItemID": id_for(material), "sName": material, "iQty": 1 })]
+            };
+            json!({
+                "ItemID": item_id,
+                "ShopItemID": id * 1000 + i as i64 + 1,
+                "sName": name,
+                "sType": "Armor",
+                "sDesc": "",
+                "sES": "co",
+                "iQty": 1,
+                "iStk": 1,
+                "iCost": 0,
+                "bCoins": false,
+                "bUpg": false,
+                "bTemp": false,
+                "bHouse": false,
+                "iLvl": 1,
+                "sFaction": "None",
+                "iReqRep": 0,
+                "iQSindex": -1,
+                "iQSvalue": 0,
+                "TokID": 0,
+                "TokQty": 0,
+                "turnin": turnin,
+            })
+        })
+        .collect();
+    json!({
+        "ShopID": id,
+        "sName": format!("Shop {id}"),
+        "iIndex": -1,
+        "sField": "",
+        "reqItems": null,
+        "items": items,
+    })
 }
