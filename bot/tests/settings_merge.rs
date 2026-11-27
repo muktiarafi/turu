@@ -19,24 +19,21 @@ fn two_writers_keep_each_others_changes() {
     let mut first = loaded.clone();
     first.grandpa_mode = !start.grandpa_mode;
     let mut second = loaded.clone();
-    second.animation_frame_rate = start.animation_frame_rate + 7;
+    second.starting_frame_rate = start.starting_frame_rate + 7;
 
     let (after_first, first_base) = paths.merge_settings(&base, &first).unwrap();
     assert_eq!(after_first.grandpa_mode, first.grandpa_mode);
     let (after_second, _) = paths.merge_settings(&base, &second).unwrap();
     // The second kept the first's change, and took it up.
     assert_eq!(after_second.grandpa_mode, first.grandpa_mode);
-    assert_eq!(
-        after_second.animation_frame_rate,
-        second.animation_frame_rate
-    );
+    assert_eq!(after_second.starting_frame_rate, second.starting_frame_rate);
     let on_disk = paths.load_settings().unwrap();
     assert_eq!(on_disk.grandpa_mode, first.grandpa_mode);
-    assert_eq!(on_disk.animation_frame_rate, second.animation_frame_rate);
+    assert_eq!(on_disk.starting_frame_rate, second.starting_frame_rate);
 
     // The first saving again with nothing new doesn't undo the second's change.
     let (again, _) = paths.merge_settings(&first_base, &after_first).unwrap();
-    assert_eq!(again.animation_frame_rate, second.animation_frame_rate);
+    assert_eq!(again.starting_frame_rate, second.starting_frame_rate);
 }
 
 #[test]
@@ -86,4 +83,23 @@ fn unreadable_options_are_kept_aside_and_saved_whole() {
         })
         .count();
     assert_eq!(leftovers, 0);
+}
+
+#[test]
+fn an_old_files_frame_rate_becomes_30_and_a_chosen_24_stays_24() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = Paths {
+        root: dir.path().to_owned(),
+    };
+    // Saved before `startingFrameRate`: 24 stood for turu.swf's 30.
+    std::fs::write(paths.settings_file(), r#"{"animationFrameRate": 24}"#).unwrap();
+    let loaded = paths.load_settings().unwrap();
+    assert_eq!(loaded.starting_frame_rate, 30);
+    let base = serde_json::to_value(&loaded).unwrap();
+
+    let mut mine = loaded.clone();
+    mine.starting_frame_rate = 24;
+    let (after, _) = paths.merge_settings(&base, &mine).unwrap();
+    assert_eq!(after.starting_frame_rate, 24);
+    assert_eq!(paths.load_settings().unwrap().starting_frame_rate, 24);
 }

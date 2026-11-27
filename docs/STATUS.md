@@ -603,9 +603,11 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   the command line); not yet in game, nor with a real relogin. Per-entry options stay in the
   data folder (`options/Queue_*.cfg`): a playlist copied to another computer comes without them.
 - **Application options and webhooks:** Options > Application (`settings.json`): username in
-  the title, the client's starting frame rate (24 by default, which leaves turu.swf's own 30, as VibeSkua's
-  skua.swf ran: 24 judders on a 60 Hz screen, plain on a phone; any other value is passed to
-  `loadClient`. Set FPS defaults to 0, leaving the game's own FPS setting alone),
+  the title, the client's starting frame rate (`startingFrameRate`, 30 by default, turu.swf's
+  own, as VibeSkua's skua.swf ran: the game's 24 judders on a 60 Hz screen, plain on a phone;
+  any other value is passed to `loadClient`. It replaced `animationFrameRate`, where 24, its
+  default, stood for 30: a file holding 24 starts at 30, any other value carries over. Set FPS
+  defaults to 0, leaving the game's own FPS setting alone),
   relogin delay and watchdog, Clear Flash Cache, and Discord webhooks for script
   start, stop and crash, relogins, listed drops and health pings (`bot/src/webhooks.rs`).
   Unverified against a real webhook. The update switches act at launch: script updates

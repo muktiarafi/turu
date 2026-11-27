@@ -1,25 +1,30 @@
 //! Application settings (VibeSkua: `ClientSettings`, Options > Application), saved in
 //! `settings.json`. The bot's own options (Options > Game) are in [`crate::options`].
 
-use serde::{Deserialize, Serialize};
-
-/// The frame rate AQW's `Game.swf` is made for (its SWF header says 24).
-pub const GAME_FRAME_RATE: i32 = 24;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// The frame rate turu.swf runs at (its SWF header, `host/src/main.rs`), as VibeSkua's skua.swf
-/// did: the client keeps it until the game's FPS setting or Set FPS applies. 30 shows evenly on a
-/// 60 Hz screen; 24 alternates two and three refreshes a picture, a judder plain on a phone.
+/// did, and so the client's starting rate by default ([`AppSettings::starting_frame_rate`]).
+/// AQW's `Game.swf` says 24 in its header, but 30 shows each picture for the same time on a 60 or
+/// 90 Hz screen; 24 alternates two and three refreshes a picture at 60 Hz, a judder plain on a
+/// phone.
 pub const HOST_FRAME_RATE: i32 = 30;
 
+/// What `animationFrameRate`, the setting before [`AppSettings::starting_frame_rate`], held
+/// for turu.swf's own rate: its default, which every settings file saved with it holds.
+const OLD_DEFAULT_FRAME_RATE: i64 = 24;
+
+// The derived impls are `AppSettings::serialize` and `AppSettings::deserialize`; the traits'
+// (below) carry over the setting a file saved before `startingFrameRate`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(remote = "Self", default, rename_all = "camelCase")]
 pub struct AppSettings {
     // General & Performance
     pub show_username_in_title: bool,
     /// VibeSkua's "Client Animation Frame-rate": the frame rate the client starts with, until
-    /// the game's own FPS setting (or Options > Game > Set FPS) applies in game. The default, 24,
-    /// leaves turu.swf's own rate ([`AppSettings::client_frame_rate`]).
-    pub animation_frame_rate: i32,
+    /// the game's own FPS setting (or Options > Game > Set FPS) applies in game. 30 by default,
+    /// turu.swf's own ([`HOST_FRAME_RATE`]).
+    pub starting_frame_rate: i32,
     /// VibeSkua's "Grandpa Mode" (`GrandpaMode`): larger text in the logs and the packet tools.
     pub grandpa_mode: bool,
     // Auto Updates & Sync. The script ones are read at launch (`repo::ScriptRepo::startup`);
@@ -103,17 +108,40 @@ pub struct AppSettings {
 }
 
 impl AppSettings {
-    /// The frame rate the client is started at, or `None` for turu.swf's own
-    /// ([`HOST_FRAME_RATE`]). The default 24 means turu.swf's: every settings file saved before
-    /// it ran at 30 holds 24, and Turu ran at 30 anyway until then (VibeSkua's skua.swf).
-    pub fn client_frame_rate(&self) -> Option<i32> {
-        (self.animation_frame_rate != GAME_FRAME_RATE).then(|| self.animation_frame_rate.max(1))
+    /// The rate the client runs at when nothing else set one ([`Self::starting_frame_rate`]).
+    pub fn start_rate(&self) -> i32 {
+        self.starting_frame_rate.max(1)
     }
 
-    /// The rate the client runs at when nothing else set one: [`Self::client_frame_rate`], else
-    /// turu.swf's.
-    pub fn starting_frame_rate(&self) -> i32 {
-        self.client_frame_rate().unwrap_or(HOST_FRAME_RATE)
+    /// The rate `loadClient` is given, or `None` when it is turu.swf's own already.
+    pub fn client_frame_rate(&self) -> Option<i32> {
+        let fps = self.start_rate();
+        (fps != HOST_FRAME_RATE).then_some(fps)
+    }
+}
+
+impl Serialize for AppSettings {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        AppSettings::serialize(self, serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for AppSettings {
+    /// A file without `startingFrameRate` takes `animationFrameRate`, where 24 (its default)
+    /// stood for turu.swf's 30 and any other rate was the user's. The old key stays in the file
+    /// (`Paths::merge_settings` keeps keys it doesn't know), for an older Turu reading it.
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut value = serde_json::Value::deserialize(deserializer)?;
+        if let Some(map) = value.as_object_mut()
+            && !map.contains_key("startingFrameRate")
+            && let Some(old) = map
+                .get("animationFrameRate")
+                .and_then(serde_json::Value::as_i64)
+            && old != OLD_DEFAULT_FRAME_RATE
+        {
+            map.insert("startingFrameRate".into(), old.into());
+        }
+        AppSettings::deserialize(value).map_err(serde::de::Error::custom)
     }
 }
 
@@ -121,7 +149,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             show_username_in_title: true,
-            animation_frame_rate: GAME_FRAME_RATE,
+            starting_frame_rate: HOST_FRAME_RATE,
             grandpa_mode: false,
             check_bot_scripts_updates: true,
             auto_update_bot_scripts: true,
@@ -247,11 +275,33 @@ mod tests {
     #[test]
     fn the_default_starting_rate_is_turus_swfs_own() {
         let mut settings = AppSettings::default();
+        assert_eq!(settings.starting_frame_rate, HOST_FRAME_RATE);
         assert_eq!(settings.client_frame_rate(), None);
-        assert_eq!(settings.starting_frame_rate(), HOST_FRAME_RATE);
-        settings.animation_frame_rate = 60;
-        assert_eq!(settings.client_frame_rate(), Some(60));
-        assert_eq!(settings.starting_frame_rate(), 60);
+        settings.starting_frame_rate = 24;
+        assert_eq!(settings.client_frame_rate(), Some(24), "24 is 24 now");
+        assert_eq!(settings.start_rate(), 24);
+        settings.starting_frame_rate = 0;
+        assert_eq!(settings.start_rate(), 1);
+    }
+
+    #[test]
+    fn the_old_frame_rate_setting_carries_over_unless_it_was_its_default() {
+        let rate = |json: &str| {
+            serde_json::from_str::<AppSettings>(json)
+                .unwrap()
+                .starting_frame_rate
+        };
+        assert_eq!(rate(r#"{"animationFrameRate": 24}"#), HOST_FRAME_RATE);
+        assert_eq!(rate(r#"{"animationFrameRate": 60}"#), 60);
+        assert_eq!(
+            rate(r#"{"animationFrameRate": 60, "startingFrameRate": 24}"#),
+            24
+        );
+        assert_eq!(rate(r#"{"startingFrameRate": 45}"#), 45);
+        assert_eq!(rate("{}"), HOST_FRAME_RATE);
+        let saved = serde_json::to_value(AppSettings::default()).unwrap();
+        assert_eq!(saved["startingFrameRate"], HOST_FRAME_RATE);
+        assert!(saved.get("animationFrameRate").is_none());
     }
 
     #[test]

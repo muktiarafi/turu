@@ -149,8 +149,10 @@ How it's written:
   (`openWebsite`: Turu only logs it, and the game's own wiki buttons open the browser), a custom-background timer that gives up, the old game removed by reference,
   `packetFromServer` only on request, errors reported (`error`), "Turu" as the login screen's
   title (VibeSkua's says "AURAS!!!"), the Bank hotkey ignored while typing in a text field,
-  `loadClient` taking the frame rate, and the header's frame rate at 24, the game's own (Turu
-  sets 24 when the client loads anyway, `background.rs`; Turu Mas's stage is the host's 24).
+  `loadClient` taking the frame rate, and the header's frame rate at 30, as skua.swf's (it was
+  24, the game's own, until 2026-11-15: 24 judders on a 60 Hz screen; `loadClient` gets a rate
+  only when Options > Application's starting rate isn't 30, `background.rs`; Turu Mas's stage
+  is the host's 24).
   From R5, on the Ruffle builds, `sfc.debug` left as the game sets it (packets come from the
   player).
 - **Build.** `host/as3` (package `turu.host`) is compiled by crate `turu_host` with Ruffle's
@@ -168,7 +170,7 @@ How it's written:
     class.
   - `-swf` writes no End tag and a `DoABC`, so `turu_host` keeps only the ABC and writes the
     SWF: version 43, zlib, `FileAttributes` (AS3, useNetwork), `ScriptLimits` 1000/60, a black
-    background, a `FrameLabel`, `DoABC2`, `SymbolClass` for `turu.host.Main`, 958x550, 24 fps.
+    background, a `FrameLabel`, `DoABC2`, `SymbolClass` for `turu.host.Main`, 958x550, 30 fps.
   - asc emits `callproperty; pop` where Flex has `callpropvoid`, and `findpropstrict x;
     getproperty x` for `getlex x`: patch rules written against Flex's output (`air_patch`'s for
     skua) miss them. `turu.swf` needs no such rules (R4).

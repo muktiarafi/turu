@@ -341,7 +341,7 @@ the steps in the Auto popup row above. Both are disabled while a script or a Con
   search box, chips All/General/Updates/Webhooks with counts, each setting with its description.
   Changes are saved at once (`settings.json`, `AppSettings`). General: Show Username in Title
   (the window title gets " – <character>" while you play), Grandpa Mode (larger log and packet text), Client Animation Frame-rate (the
-  `stage.frameRate` set when the client loads, default 24; the game's own FPS setting, or Set FPS, takes over in game; VibeSkua
+  `stage.frameRate` set when the client loads, default 30, turu.swf's own, as VibeSkua's skua.swf; the game's own FPS setting, or Set FPS, takes over in game; VibeSkua
   stores it and never reads it), Frame Interpolation (Turu's: Mugetsu's switch, also in the game's
   right-click menu on a computer, which a phone can't open; `Host::set_frame_interpolation`
   applies it and saves it as `mugetsu-interpolation.txt`, in Mugetsu's folder on a computer and

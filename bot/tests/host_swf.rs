@@ -78,7 +78,7 @@ fn wait_for_call(swf: &FakeSwf, name: &str) -> Vec<FlashArg> {
 fn turus_swf_gets_the_frame_rate_with_load_client_and_refuses_unlisted_names() {
     let swf = FakeSwf::new(turu_info());
     let bot = bot_with(&swf);
-    bot.settings.write().animation_frame_rate = 60;
+    bot.settings.write().starting_frame_rate = 60;
     bot.on_flash_call("requestLoadGame", vec![]);
 
     let args = wait_for_call(&swf, "loadClient");

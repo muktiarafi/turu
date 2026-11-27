@@ -272,8 +272,8 @@ fn vibeskua_entries() -> Vec<Entry> {
             ..entry!(
                 General,
                 "Client Animation Frame-rate",
-                "The frame rate the game client starts with; the game's own FPS setting, or Set FPS (Game options), takes over in game. 24 (the default) starts it at 30, which looks smoother on a 60 Hz screen",
-                Field::Int(|s| &mut s.animation_frame_rate, "FPS", 1, i32::MAX)
+                "The frame rate the game client starts with; the game's own FPS setting, or Set FPS (Game options), takes over in game. 30 by default: the game's own 24 judders on a 60 Hz screen",
+                Field::Int(|s| &mut s.starting_frame_rate, "FPS", 1, i32::MAX)
             )
         },
         entry!(

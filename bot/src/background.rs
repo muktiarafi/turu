@@ -34,7 +34,7 @@ pub(crate) fn start(bot: &Arc<Bot>) {
 /// Asks turu.swf what it is, then has it load the game's client at the client's frame rate.
 fn load_client(bot: &Arc<Bot>) -> crate::BotResult<()> {
     // VibeSkua's "Client Animation Frame-rate": the client runs at this rate until the game's
-    // FPS setting (or Set FPS) applies in game; without one, at turu.swf's own (30).
+    // FPS setting (or Set FPS) applies in game. At turu.swf's own (30) it needs no argument.
     let fps = bot.settings.read().client_frame_rate();
     for gone in ["TURU_HOST_SWF", "TURU_HOST_PARITY"] {
         if std::env::var_os(gone).is_some() {
