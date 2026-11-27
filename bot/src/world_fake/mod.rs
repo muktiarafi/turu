@@ -21,8 +21,8 @@ use crate::host::{FlashArg, FlashHost, HostError};
 use crate::tape::{Line, Tape};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
-pub use sim::ShopStock;
 use sim::{Combat, Monster, Wanted};
+pub use sim::{ShopStock, id_for as item_id_for};
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
@@ -1340,8 +1340,45 @@ mod tests {
                     (29753, "Sock Monkey Cape".to_owned()),
                 ],
                 materials: vec!["Synderes' Souvenir".to_owned()],
+                sold: Vec::new(),
             },
         )]))
+    }
+
+    #[test]
+    fn a_shop_sells_what_scripts_buy_outright_for_nothing() {
+        // A merge shop that also sells a key: the key costs no material.
+        let world = world_with_monsters().with_shops(HashMap::from([(
+            336,
+            ShopStock {
+                items: vec![(29576, "NO BOTS Armor".to_owned())],
+                materials: vec!["Synderes' Souvenir".to_owned()],
+                sold: vec![(6136, "Golden Key".to_owned())],
+            },
+        )]));
+        ask(
+            &world,
+            "callGameFunction",
+            vec!["world.sendLoadShopRequest".into(), 336.0.into()],
+        );
+        let items: Vec<Value> = serde_json::from_str(&ask(
+            &world,
+            "getGameObject",
+            vec!["world.shopinfo.items".into()],
+        ))
+        .unwrap();
+        assert_eq!(items[0]["iStk"], 1);
+        let key = &items[1];
+        assert_eq!(key["sName"], "Golden Key");
+        assert_eq!(key["turnin"], json!([]));
+        // Any quantity: CoreBots asks for no more than the stack.
+        assert_eq!(key["iStk"], 9999);
+        ask(
+            &world,
+            "buyItemByName",
+            vec!["Golden Key".into(), 20.0.into()],
+        );
+        assert_eq!(held_by_name(&world, "Golden Key")[0]["iQty"], 20);
     }
 
     fn held_by_name(world: &WorldFake, name: &str) -> Vec<Value> {

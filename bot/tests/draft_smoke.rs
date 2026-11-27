@@ -29,7 +29,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use turu_bot::script::{self, ScriptStatus};
-use turu_bot::testing::{ShopStock, WorldFake};
+use turu_bot::testing::{ShopStock, WorldFake, item_id_for};
 use turu_bot::{Bot, tape};
 
 const MARK: &str = "not yet read through by hand";
@@ -296,12 +296,45 @@ fn monster_map_ids() -> (std::collections::BTreeMap<String, usize>, Vec<String>)
     (needed, gaps)
 }
 
+/// Items scripts buy from a shop under a name built at run time, which [`shop_catalog`] can't read
+/// from the source: the shop, the names, and where they come from.
+const SHOP_EXTRAS: &[(i64, &[&str], &str)] = &[
+    (
+        1415,
+        &[
+            "Blinding Daggers of Destiny",
+            "Blinding Bow of Destiny",
+            "Blinding Mace of Destiny",
+            "Blinding Scythe of Destiny",
+            "Blinding Broadsword of Destiny",
+            "Blinding Blade of Destiny",
+        ],
+        "CoreBLOD's getBlindingWeapon: `Blinding ${WeaponOfDestiny[weapon]} of Destiny`",
+    ),
+    (
+        222,
+        &["Behemoth Blade of Light"],
+        "BehemothBlades: `Behemoth Blade of ${blade}` (EvolvedShadowOrbItems buys the Shadow one by name)",
+    ),
+    (
+        1307,
+        &["DOOMFire OF Gravelyn", "Horned DOOMFire Helm"],
+        "GravelynDoomFire: its `shopItems` array",
+    ),
+    (
+        2322,
+        &["Vigil"],
+        "KathoolDepths_LW: `vigilShopId`, a constant",
+    ),
+];
+
 /// Each merge shop's stock, by shop ID, from its merge script: the shop it names
 /// (`startBuyAllMerge("map", id, ...)`), the items its options list (`option.bool("29574",
 /// "Synderes' Cape of Doom", ...)`, the `Select` group's switches, named by item ID) and the
-/// materials it farms (`findIngredients`' `case "Synderes' Souvenir":`). A shop's contents reach the
-/// game only once it loads, so a tape can't supply them. Also the merge scripts it found nothing in,
-/// by what was missing.
+/// materials it farms (`findIngredients`' `case "Synderes' Souvenir":`); and what any script buys
+/// outright (`buyItem(<map>, <shop>, "<name>" or <ID>)`, plus [`SHOP_EXTRAS`]), sold for nothing.
+/// A shop's contents reach the game only once it loads, so a tape can't supply them. Also the merge
+/// scripts it found nothing in, by what was missing.
 fn shop_catalog() -> (std::collections::HashMap<i64, ShopStock>, Vec<String>) {
     // A string literal in any quote: Prettier picks single quotes for a name with a `"`, and some
     // ports keep C#'s verbatim strings as template literals.
@@ -310,6 +343,17 @@ fn shop_catalog() -> (std::collections::HashMap<i64, ShopStock>, Vec<String>) {
     let item =
         regex::Regex::new(&format!(r#"option\.bool\(\s*["'`](\d+)["'`],\s*{TEXT}"#)).unwrap();
     let case = regex::Regex::new(&format!(r#"case\s+{TEXT}\s*:"#)).unwrap();
+    // `buyItem(<map>, <shop>, <name or ID>, ...)`, the map a literal or an expression
+    // (`bot.map.name`).
+    let bought = regex::Regex::new(&format!(
+        r#"buyItem\(\s*(?:{TEXT}|[\w.]+)\s*,\s*(\d+)\s*,\s*(?:{TEXT}|(\d+)\s*[,)])"#
+    ))
+    .unwrap();
+    let mut sold: std::collections::HashMap<i64, Vec<(i64, String)>> = Default::default();
+    for (shop, names, _) in SHOP_EXTRAS {
+        let entry = sold.entry(*shop).or_default();
+        entry.extend(names.iter().map(|n| (item_id_for(n), (*n).to_owned())));
+    }
     let literal = |c: &regex::Captures, at: usize| {
         c.get(at)
             .or_else(|| c.get(at + 1))
@@ -323,6 +367,37 @@ fn shop_catalog() -> (std::collections::HashMap<i64, ShopStock>, Vec<String>) {
         let Ok(text) = std::fs::read_to_string(&file) else {
             continue;
         };
+        for c in bought.captures_iter(&text) {
+            // `bot.shops.buyItem(name, quantity)` names no shop.
+            if text[..c.get(0).unwrap().start()].ends_with("shops.") {
+                continue;
+            }
+            let Ok(shop) = c[4].parse::<i64>() else {
+                continue;
+            };
+            let item = match c.get(8) {
+                Some(id) => id
+                    .as_str()
+                    .parse()
+                    .ok()
+                    .map(|id| (id, format!("Item {id}"))),
+                None => {
+                    let name = literal(&c, 5);
+                    (!name.is_empty()).then(|| (item_id_for(&name), name))
+                }
+            };
+            if let Some(item) = item {
+                let stale = SHOP_EXTRAS.iter().any(|(s, names, _)| {
+                    *s == shop && names.iter().any(|n| n.eq_ignore_ascii_case(&item.1))
+                });
+                assert!(
+                    !stale,
+                    "SHOP_EXTRAS' {} in shop {shop} is read from the source now: take it off",
+                    item.1
+                );
+                sold.entry(shop).or_default().push(item);
+            }
+        }
         let Some(id) = shop.captures(&text).and_then(|c| c[1].parse::<i64>().ok()) else {
             continue;
         };
@@ -351,6 +426,18 @@ fn shop_catalog() -> (std::collections::HashMap<i64, ShopStock>, Vec<String>) {
         for material in materials {
             if !stock.materials.contains(&material) {
                 stock.materials.push(material);
+            }
+        }
+    }
+    for (shop, items) in sold {
+        let stock = catalog.entry(shop).or_default();
+        for (id, name) in items {
+            if !stock
+                .sold
+                .iter()
+                .any(|(i, n)| *i == id || n.eq_ignore_ascii_case(&name))
+            {
+                stock.sold.push((id, name));
             }
         }
     }
@@ -633,9 +720,10 @@ fn draft_smoke_sample() {
         println!("monster catalog gap: map IDs and no mapName in {gap}");
     }
     println!(
-        "monster catalog: {} maps; shop catalog: {} shops",
+        "monster catalog: {} maps; shop catalog: {} shops, {} items bought outright",
         catalog.monsters.len(),
-        catalog.shops.len()
+        catalog.shops.len(),
+        catalog.shops.values().map(|s| s.sold.len()).sum::<usize>()
     );
     // A merge script the catalog read nothing from: its shop is empty, or its items need nothing.
     for gap in &shop_gaps {

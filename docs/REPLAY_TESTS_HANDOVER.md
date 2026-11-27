@@ -126,7 +126,10 @@ A script that changes what it sends needs its tape recorded again: remove the ol
    Branch protection on `main` doesn't require the new jobs; that is the owner's setting.
 2. ~~Shop contents, so merges buy.~~ Done: the draft run reads each merge script's shop, items
    and materials from its source (`shop_catalog`), and the fake sells them (proposal, "Shops").
-   The merge drafts now buy (226 purchases) and farm their materials.
+   The merge drafts now buy (226 purchases) and farm their materials. ~~Shops that sell
+   outright.~~ Done (proposal, "Shops that sell outright"): every `buyItem` with a written-out
+   shop and item stocks that shop, `SHOP_EXTRAS` the names built at run time; purchases 473 in 168
+   drafts. Left: equipping (`KathoolDepths_LW`'s Vigil), and shops bought from by `req.name`.
 3. ~~Per-draft options.~~ Done: `DRAFT_OPTIONS` in the draft run (proposal, "Options per draft").
    ~~The Army's partners.~~ Done (proposal, "The Army's partners"): the ultras sync through their
    setup into their fights, and three finish. What stops them now is mostly the account (a

@@ -204,8 +204,9 @@ pub(super) fn num(value: &Value) -> Option<i64> {
     }
 }
 
-/// An ID for an item known only by name, stable for that name.
-pub(super) fn id_for(name: &str) -> i64 {
+/// An ID for an item known only by name, stable for that name: the one the fake gives it when a
+/// kill drops it.
+pub fn id_for(name: &str) -> i64 {
     let hash = name
         .to_lowercase()
         .bytes()
@@ -277,26 +278,37 @@ pub(super) fn deliver(bot: Option<std::sync::Arc<Bot>>, events: Vec<(String, Vec
     }
 }
 
-/// What a shop sells, from a merge script ([`super::WorldFake::with_shops`]): its items by ID and
+/// What a shop sells ([`super::WorldFake::with_shops`]): from a merge script, its items by ID and
 /// name, and the names of the materials its script farms. Item `n` is merged from material `n`
 /// (in turn), one of it, given the ID [`id_for`] its name: a kill drops that material when the
-/// script asks for it by name or by that ID.
+/// script asks for it by name or by that ID. `sold`: items scripts buy outright (`buyItem`), by ID
+/// and name, for nothing, in any quantity.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ShopStock {
     pub items: Vec<(i64, String)>,
     pub materials: Vec<String>,
+    pub sold: Vec<(i64, String)>,
 }
 
 /// A shop as the game's `loadShop` fills `world.shopinfo`, its items shaped after one recorded in
 /// game (`merge_buy`'s): no quest, token, level, reputation or membership requirement, free (a
 /// level-16 tape has little gold), and the item's materials in `turnin`.
 pub(super) fn shop(id: i64, stock: &ShopStock) -> Value {
+    let merged = stock.items.len();
+    // One entry per item: a merge item a script also buys by name keeps its merge entry.
+    let sold = stock.sold.iter().filter(|(item_id, name)| {
+        !stock
+            .items
+            .iter()
+            .any(|(i, n)| i == item_id || n.eq_ignore_ascii_case(name))
+    });
     let items: Vec<Value> = stock
         .items
         .iter()
+        .chain(sold)
         .enumerate()
         .map(|(i, (item_id, name))| {
-            let turnin: Vec<Value> = if stock.materials.is_empty() {
+            let turnin: Vec<Value> = if i >= merged || stock.materials.is_empty() {
                 Vec::new()
             } else {
                 let material = &stock.materials[i % stock.materials.len()];
@@ -310,7 +322,8 @@ pub(super) fn shop(id: i64, stock: &ShopStock) -> Value {
                 "sDesc": "",
                 "sES": "co",
                 "iQty": 1,
-                "iStk": 1,
+                // CoreBots stops when asked for more than the stack: a bought item takes any.
+                "iStk": if i >= merged { 9999 } else { 1 },
                 "iCost": 0,
                 "bCoins": false,
                 "bUpg": false,

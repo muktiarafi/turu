@@ -670,6 +670,26 @@ no King's Echo, no SpellCrafting rank); none is worse (`other/LoreBowl` was cut 
 cap under load; alone it ends in 6.6 s). Kills 9,857 (8,487 before), turn-ins 3,259 (2,944), no
 error, no "Failed to unbank".
 
+**Shops that sell outright.** The catalog knew only merge shops (`startBuyAllMerge`), so every
+other shop a script bought from loaded empty ("Shop 1415 has no items loaded"): BLOD's Blinding
+weapons, Yulgar's candle, the gold vouchers. `shop_catalog` now also reads every
+`buyItem(<map>, <shop>, "<name>" or <ID>, ...)` across the scripts (the map a literal or
+`bot.map.name`; `bot.shops.buyItem` names no shop), into the shop's `sold` items: free, no
+material, a stack of 9999 (CoreBots stops when asked for more than the stack), and dropped when a
+merge item of the shop has the same name, so it isn't listed twice. Names built at run time (a
+template literal, an enum, an array the call loops over) are in `SHOP_EXTRAS`, each with where it
+comes from; the run fails when the scan comes to read one of them itself, so the list can't go
+stale. 634 shops, 434 items bought outright.
+
+Full run (2026-11-28), compared draft by draft: purchases 473 in 168 drafts (353 in 89), lines
+about an empty shop or a missing item 5 (41), no error. Five outcomes changed, all further:
+`GravelynDoomFire` buys both items and ends; `WeaponReflection` and `YulgarsDualWieldMerge` buy the
+Golden 8th Birthday Candle and go on to hunt and travel; `BuyAllGoldVouchers` buys its vouchers and
+moves to its gold farm; `DarkScroll` buys what its steps need and is at step 8 at its budget
+(it ended at 57.5 s before). Left: `KathoolDepths_LW` buys its Vigil but the fake equips nothing
+("Vigil could not be equipped"); `FirePlaneWarMerge` and `CyseroMerge` buy their materials by
+`req.name` from shops whose items the source doesn't name.
+
 **Pull requests:** CI's "Changed drafts" job (`ci.yml`) runs the drafts a pull request's scripts
 change. `tools/drafts/changed.sh <base>` compares the scripts submodule's commit on the base branch
 with the pull request's and prints `skip`, `DRAFT_FILTER=<paths>` or `DRAFT_EVERY=16`: the changed
