@@ -600,7 +600,7 @@ reading the fake's quest rewards, which had none (now it has one). So no draft t
 
 - 32 Lone Wolf ultras stop on "Private room number 0 is invalid": their `PrivateRoomNumber` script
   option defaults to 0 and they refuse to run until it is set, and the run starts drafts with
-  their options' defaults.
+  their options' defaults (since set: "Options per draft", below).
 - 29 merges stop on "The bot fetched 0 items to farm": the fake's empty shop. Real shop contents
   come only from a tape of that shop.
 - The rest stop on the character's own state, as they should: membership, an item not owned, army
@@ -639,9 +639,31 @@ Speaker fix gives those three drafts, the Lone Wolf Streamer Mode change (a libr
 UltrasLW port (with Core helpers) the sample, and the Femme Cult farm fix (a script read through by
 hand, not a draft) `skip`.
 
-**Not done:** the first nightly run and the first "Changed drafts" run on GitHub (neither is
-pushed); options per draft (the Lone Wolf ultras need `PrivateRoomNumber`; drafts start with their
-options' defaults).
+**Options per draft** (`DRAFT_OPTIONS` in `draft_smoke.rs`): drafts start with their options'
+defaults, except for the values a draft can't start without. Each entry names the drafts (path
+parts), the option, its value and why; it is set wherever a matching draft declares the name, in its
+options or a group (`0AllUltras_LW` keeps its own under "Setup"), before Start, with
+`bot.scripts.set_option_value` (saved to the run's own data folder). An entry that none of the
+drafts it matches declares fails the run, as `KNOWN_FAKE_GAPS` does. Today:
+
+- `PrivateRoomNumber` 1001 for the Lone Wolf ultras (`ultraslw/`): `CoreLoneWolf` stops the bot
+  unless it is 1001 to 99999, and it defaults to 0. That is 32 drafts; the other 2 in `ultraslw/`
+  declare no room.
+- A roster, `player1` "Questwalker" (the fake's player) and `player2` to `player7` made-up names,
+  for those ultras and the two Army dailies that stop without one
+  (`army/dailies/TheEncroachingShadows.ts`, `WrongTurnatVoidbuquerque.ts`, `CoreArmyLite`: fewer
+  than 4 players). `CoreLoneWolf` wants every name it declares given, none twice, and the account
+  among them.
+
+With them (2026-11-27), every Lone Wolf ultra gets past its checks to "Waiting for Army players"
+(60 to 235 s on its clock, where before it stopped at 0 s after 8 calls), and the two Army dailies
+make about 1,000 calls before their own wait for the other members. They still go no further:
+past that point needs the other players' sync records (`CoreLoneWolf`'s READY and ARRIVED lines
+in its `bot.army` log, or `CoreArmyLite`'s), which nothing in the draft run writes. All 1,623
+drafts: no error, the one known gap.
+
+**Not done:** the first nightly run and the first "Changed drafts" run on GitHub; the Army
+partners' side of the sync, so the ultras get into their fights.
 
 ## Decision 2: the virtual clock
 

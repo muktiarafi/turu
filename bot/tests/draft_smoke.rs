@@ -18,6 +18,10 @@
 //! (`kill_farm`) the tape the world comes from. The report goes to `target/draft-smoke.txt`; the
 //! test fails when a draft threw or couldn't start. `.github/workflows/drafts-nightly.yml` runs
 //! every draft each night.
+//!
+//! Drafts run with their options' defaults, except those [`DRAFT_OPTIONS`] sets: values a draft
+//! can't start without (the Lone Wolf ultras stop at once with no private room number and no
+//! roster that holds the account).
 
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
@@ -37,6 +41,72 @@ const KNOWN_FAKE_GAPS: &[(&str, &str)] = &[(
     "it finds each floor's monster by its cell (r10), never by name, so the monster catalog \
      (built from scripts that name them) has none for towerofdoom2 to 10; floor 1 passes",
 )];
+
+/// Option values set before a draft starts, where its defaults would stop it at once: the drafts
+/// whose path holds one of the texts, the option's name, its value as JSON, and why. Each is set
+/// wherever a matching draft declares that name, in its options or in a group (`0AllUltras_LW`
+/// keeps its own under "Setup"), and saved to its options file (in this run's data folder); a
+/// draft that doesn't declare it skips it. An entry that none of the matching drafts run declares
+/// fails the run, so the list can't go stale.
+const DRAFT_OPTIONS: &[(&[&str], &str, &str, &str)] = &[
+    (
+        LONE_WOLF,
+        "PrivateRoomNumber",
+        "1001",
+        "CoreLoneWolf stops the bot unless it is 1001 to 99999; the default is 0",
+    ),
+    (ROSTER, "player1", r#""Questwalker""#, ROSTER_WHY),
+    (ROSTER, "player2", r#""Wanderer2""#, ROSTER_WHY),
+    (ROSTER, "player3", r#""Wanderer3""#, ROSTER_WHY),
+    (ROSTER, "player4", r#""Wanderer4""#, ROSTER_WHY),
+    (ROSTER, "player5", r#""Wanderer5""#, ROSTER_WHY),
+    (ROSTER, "player6", r#""Wanderer6""#, ROSTER_WHY),
+    (ROSTER, "player7", r#""Wanderer7""#, ROSTER_WHY),
+];
+
+/// The Lone Wolf ultras (`CoreLoneWolf`).
+const LONE_WOLF: &[&str] = &["ultraslw/"];
+
+/// The drafts that stop without an Army roster (`player1`, ... up to 4, 5, 6 or 7 of them).
+const ROSTER: &[&str] = &[
+    "ultraslw/",
+    "army/dailies/TheEncroachingShadows.ts",
+    "army/dailies/WrongTurnatVoidbuquerque.ts",
+];
+
+const ROSTER_WHY: &str = "CoreLoneWolf stops the bot unless every name is given, none twice, the \
+                          account's among them (the fake's player is \"Questwalker\"); \
+                          CoreArmyLite's scripts stop with fewer than 4";
+
+/// Sets the loaded draft's [`DRAFT_OPTIONS`]: the indexes of the entries it declares, or why one
+/// was refused.
+fn set_draft_options(bot: &Bot, script: &str) -> Result<Vec<usize>, String> {
+    let script::ScriptOptionsState::Loaded(options) = bot.scripts.options() else {
+        return Ok(Vec::new());
+    };
+    let categories: Vec<String> = options
+        .declaration()
+        .categories()
+        .map(|(category, _)| category.to_owned())
+        .collect();
+    let mut set = Vec::new();
+    for (i, (drafts, name, value, _)) in DRAFT_OPTIONS.iter().enumerate() {
+        if !drafts.iter().any(|d| script.contains(d)) {
+            continue;
+        }
+        let value: serde_json::Value = serde_json::from_str(value).expect("DRAFT_OPTIONS' JSON");
+        for category in categories
+            .iter()
+            .filter(|c| bot.scripts.has_option(c, name))
+        {
+            bot.scripts
+                .set_option_value(category, name, value.clone())
+                .map_err(|e| format!("DRAFT_OPTIONS' {name}: {e}"))?;
+            set.push(i);
+        }
+    }
+    Ok(set)
+}
 
 fn env_or<T: std::str::FromStr>(name: &str, default: T) -> T {
     std::env::var(name)
@@ -226,6 +296,8 @@ struct Outcome {
     recent: Vec<String>,
     /// The clock's report, when the draft ran out of real time before its clock's budget.
     clock: String,
+    /// The [`DRAFT_OPTIONS`] it declares (their indexes).
+    options_set: Vec<usize>,
 }
 
 /// What the fake world knows from the scripts: each map's monsters, each merge shop's stock.
@@ -267,7 +339,8 @@ fn run_one(
     bot.scripts.load(path);
     let started = Instant::now();
     let clock_start = bot.control.now();
-    if let Err(e) = script::start_silent(&bot) {
+    let options_set = set_draft_options(&bot, &script);
+    if let Err(e) = options_set.clone().and_then(|_| script::start_silent(&bot)) {
         return Outcome {
             script,
             kind: "not started",
@@ -282,6 +355,7 @@ fn run_one(
             last_log: String::new(),
             recent: Vec::new(),
             clock: String::new(),
+            options_set: Vec::new(),
         };
     }
     // On its clock's budget, or a real one: a draft that keeps a thread busy holds the clock still.
@@ -351,6 +425,7 @@ fn run_one(
         },
         recent,
         clock,
+        options_set: options_set.unwrap_or_default(),
     }
 }
 
@@ -516,5 +591,21 @@ fn draft_smoke_sample() {
     assert!(
         mended.is_empty(),
         "listed in KNOWN_FAKE_GAPS but no longer failing: {mended:?}"
+    );
+    // An override for drafts that ran, none of which declares it: take it off the list.
+    let unused: Vec<String> = DRAFT_OPTIONS
+        .iter()
+        .enumerate()
+        .filter(|(i, (drafts, ..))| {
+            outcomes
+                .iter()
+                .any(|o| drafts.iter().any(|d| o.script.contains(d)))
+                && !outcomes.iter().any(|o| o.options_set.contains(i))
+        })
+        .map(|(_, (drafts, name, ..))| format!("{name} for {drafts:?}"))
+        .collect();
+    assert!(
+        unused.is_empty(),
+        "in DRAFT_OPTIONS but declared by none of the drafts it's for: {unused:?}"
     );
 }

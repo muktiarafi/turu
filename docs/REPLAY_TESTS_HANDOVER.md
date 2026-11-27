@@ -66,6 +66,8 @@ UTC). The "Changed drafts" job runs only on pull requests, so it hasn't run eith
   has a `progress` line (kills, quests accepted, turned in, purchases) and, per draft, the last log lines,
   the last calls at the budget and, if it ran out of real time, the clock's report.
   `KNOWN_FAKE_GAPS` lists drafts that fail for the fake's sake (now only `story/TowerOfDoom.ts`).
+  `DRAFT_OPTIONS` sets the option values a draft can't start without (the Lone Wolf ultras' room
+  number, a roster for them and two Army dailies); the rest run with their defaults.
   `tools/drafts/changed.sh` picks a pull request's drafts for CI.
 
 ## Running things
@@ -119,8 +121,10 @@ A script that changes what it sends needs its tape recorded again: remove the ol
 2. ~~Shop contents, so merges buy.~~ Done: the draft run reads each merge script's shop, items
    and materials from its source (`shop_catalog`), and the fake sells them (proposal, "Shops").
    The merge drafts now buy (226 purchases) and farm their materials.
-3. **Per-draft options.** The 32 Lone Wolf ultras refuse to start without a `PrivateRoomNumber`
-   script option; drafts run with their defaults. A small table of overrides in the draft run.
+3. ~~Per-draft options.~~ Done: `DRAFT_OPTIONS` in the draft run (proposal, "Options per draft").
+   The 32 Lone Wolf ultras and two Army dailies now get past their option checks, then wait for
+   their Army partners. **Next there:** the partners' side of the sync (`CoreLoneWolf`'s READY
+   and ARRIVED records in its `bot.army` log), so the ultras get into their fights.
 4. **Monsters no script names** (TowerOfDoom's floors find theirs by cell). A generic monster when
    the catalog has none is cheap but is guessing; only for drafts that need it.
 5. **Correctness (decision 4).** The smoke run catches throws, not wrong behaviour. Comparing a
