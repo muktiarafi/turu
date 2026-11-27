@@ -525,8 +525,9 @@ draft that hangs is stopped at its budget like any other.
 reading the fake's quest rewards, which had none (now it has one). So no draft throws in its first
 8 s. Of those that finished early:
 
-- 32 Lone Wolf ultras stop on "Private room number 0 is invalid": the tape's bot options have the
-  private room number 0, as a user's could.
+- 32 Lone Wolf ultras stop on "Private room number 0 is invalid": their `PrivateRoomNumber` script
+  option defaults to 0 and they refuse to run until it is set, and the run starts drafts with
+  their options' defaults.
 - 29 merges stop on "The bot fetched 0 items to farm": the fake's empty shop. Real shop contents
   come only from a tape of that shop.
 - The rest stop on the character's own state, as they should: membership, an item not owned, army
@@ -539,9 +540,20 @@ merges up to their shop.
 anything past 8 s, and code behind the fake's gaps (shop contents, monsters that die and drop,
 items arriving): decision 4 or a tape of that flow covers those.
 
-**Not done:** the first nightly run on GitHub (the workflow isn't pushed); a pull-request job for
-changed scripts (the filter is ready); monsters that die and drops (no draft needed them to get
-past setup, since a hunt waiting for its drop counts as running).
+**Pull requests:** CI's "Changed drafts" job (`ci.yml`) runs the drafts a pull request's scripts
+change. `tools/drafts/changed.sh <base>` compares the scripts submodule's commit on the base branch
+with the pull request's and prints `skip`, `DRAFT_FILTER=<paths>` or `DRAFT_EVERY=16`: the changed
+drafts; the drafts importing a changed library outside `core/` (`ultraslw/CoreLoneWolf.ts` brings in
+its ultras), or a sample when that is more than 60; a sample when anything under `core/` changed;
+`skip` when no draft moved. Checked on this repo's recent submodule bumps: the Darkon, Gramiel and
+Speaker fix gives those three drafts, the Lone Wolf Streamer Mode change (a library) its ultras, the
+UltrasLW port (with Core helpers) the sample, and the Femme Cult farm fix (a script read through by
+hand, not a draft) `skip`.
+
+**Not done:** the first nightly run and the first "Changed drafts" run on GitHub (neither is
+pushed); options per draft (the Lone Wolf ultras need `PrivateRoomNumber`; drafts start with their
+options' defaults); monsters that die and drops (no draft needed them to get past setup, since a
+hunt waiting for its drop counts as running).
 
 ## Phases
 

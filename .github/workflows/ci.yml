@@ -2,9 +2,10 @@ name: CI
 
 # Every pull request to main (and every push to main) is checked here: the branch is rebased on
 # main with no merge commits, the submodules point at pushed commits, the Rust code is formatted
-# and passes clippy with no warning, the tests pass and the scripts type-check against this
-# commit's bot/js/turu.ts. CONTRIBUTING.md lists the same
-# commands to run before pushing. Branch protection on main requires these jobs.
+# and passes clippy with no warning, the tests pass, the scripts type-check against this
+# commit's bot/js/turu.ts, and the converted scripts a pull request changes run without throwing.
+# CONTRIBUTING.md lists the same commands to run before pushing. Branch protection on main
+# requires these jobs.
 on:
   pull_request:
     branches: [main]
@@ -328,3 +329,63 @@ jobs:
       - name: Type-check scripts
         working-directory: scripts
         run: npx -y -p typescript@5.9.3 tsc --noEmit -p .
+
+  drafts:
+    # The drafts a pull request's scripts change (docs/REPLAY_TESTS_PROPOSAL.md, phase 4): each runs
+    # for 8 seconds against a fake world from a tape and must not throw (bot/tests/draft_smoke.rs).
+    # tools/drafts/changed.sh picks them from the scripts submodule's two commits; a Core change runs
+    # a sample, a pull request that moves no draft skips. Every draft runs nightly
+    # (drafts-nightly.yml).
+    name: Changed drafts
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Find the changed drafts
+        id: changed
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE"
+          old=$(git ls-tree "origin/$BASE" scripts | awk '{print $3}')
+          # The base's scripts commit, to compare against (the checkout has only the new one).
+          [[ -n "$old" ]] && git -C scripts fetch --no-tags --depth=1 origin "$old"
+          line=$(tools/drafts/changed.sh "origin/$BASE")
+          echo "$line"
+          echo "run=$line" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.changed.outputs.run != 'skip'
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.changed.outputs.run != 'skip'
+        with:
+          shared-key: ci-drafts
+          save-if: false
+
+      - uses: taiki-e/install-action@v2
+        if: steps.changed.outputs.run != 'skip'
+        with:
+          tool: cargo-nextest
+
+      - name: Run them
+        if: steps.changed.outputs.run != 'skip'
+        env:
+          RUN: ${{ steps.changed.outputs.run }}
+          DRAFT_SECS: "8"
+          DRAFT_JOBS: "8"
+        run: |
+          # RUN is DRAFT_FILTER=<paths> or DRAFT_EVERY=16 (tools/drafts/changed.sh).
+          export "${RUN?}"
+          cargo nextest run --locked -p turu_bot draft_smoke --run-ignored only --no-capture
+
+      - name: Keep the report
+        if: always() && steps.changed.outputs.run != 'skip'
+        uses: actions/upload-artifact@v7
+        with:
+          name: draft-smoke
+          path: target/draft-smoke.txt
+          if-no-files-found: ignore
