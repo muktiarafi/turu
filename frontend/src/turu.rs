@@ -1235,6 +1235,11 @@ pub fn configure_startup() {
     wanted.sort_unstable();
     wanted.dedup();
     if !wanted.is_empty() {
+        // Turu: other Turus on this data folder (several accounts on a server) start at the same
+        // time and write the same files (the downloads' temp files have fixed names): one at a
+        // time, each waiting, since the login needs the scripts. A window's launch update takes
+        // the same lock and skips while it's held.
+        let _held = hold_script_update();
         let repo = script_repo();
         if let Err(e) = repo.refresh() {
             tracing::warn!("Couldn't get the script list ({e}); using the scripts folder as it is");
@@ -1250,6 +1255,36 @@ pub fn configure_startup() {
     // when nothing will).
     bot.scripts.set_interactive(!headless());
     turu_bot::startup::configure(&bot, startup);
+}
+
+/// How long [`configure_startup`] waits for another Turu's script downloads before going on.
+const SCRIPT_UPDATE_WAIT: Duration = Duration::from_secs(120);
+
+/// The script updates' lock across Turu's processes (as [`shared_update`]'s `script-update`, whose
+/// time it leaves alone), waited for up to [`SCRIPT_UPDATE_WAIT`].
+fn hold_script_update() -> Option<turu_bot::shared_job::Held> {
+    let dir = turu_bot::shared_job::dir(&bot().paths.root);
+    let held = turu_bot::shared_job::try_hold(&dir, "script-update").and_then(|held| match held {
+        Some(held) => Ok(Some(held)),
+        None => {
+            tracing::info!("Another Turu on this data folder is updating scripts: waiting for it");
+            turu_bot::shared_job::hold_waiting(&dir, "script-update", SCRIPT_UPDATE_WAIT)
+        }
+    });
+    match held {
+        Ok(Some(held)) => Some(held),
+        Ok(None) => {
+            tracing::warn!(
+                "Another Turu has been updating scripts for {} s: going on without waiting",
+                SCRIPT_UPDATE_WAIT.as_secs()
+            );
+            None
+        }
+        Err(e) => {
+            tracing::warn!("Scripts: no lock across Turu's processes ({e}); downloading anyway");
+            None
+        }
+    }
 }
 
 /// The repository path of a script given relative to the scripts folder (`farm/GoldFarm`,
@@ -1514,9 +1549,18 @@ pub fn follow_settings_file(adopt: bool) {
     }
 }
 
-/// The settings with `--monitor`, `--report-to` and `TURU_MONITOR_PUSH_KEY` applied.
+/// The settings with `--monitor`, `--report-to` and `TURU_MONITOR_PUSH_KEY` applied, and without a
+/// window, the monitor's election ([`start_headless_monitor_election`]).
 fn monitor_settings(settings: &turu_bot::settings::AppSettings) -> turu_bot::settings::AppSettings {
     let mut settings = settings.clone();
+    if steps_down_from_monitor(&settings) {
+        settings.monitor_enabled = false;
+        if settings.monitor_report_to.trim().is_empty()
+            && let Some(url) = elected_monitor_url()
+        {
+            settings.monitor_report_to = url;
+        }
+    }
     let flag = |slot: &Mutex<Option<String>>| slot.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if let Some(addr) = flag(&MONITOR_FLAG) {
         settings.monitor_enabled = true;
@@ -1533,6 +1577,15 @@ fn monitor_settings(settings: &turu_bot::settings::AppSettings) -> turu_bot::set
         .filter(|k| !k.trim().is_empty())
     {
         settings.monitor_report_key = key;
+    }
+    // Turu: reporting with no push key given, the data folder's: the key of a monitor on this
+    // folder (several accounts on one server or volume), so they need no key copied. A monitor
+    // elsewhere refuses it, as it would no key.
+    if !settings.monitor_report_to.trim().is_empty() && settings.monitor_report_key.trim().is_empty() {
+        match turu_bot::monitor::server::load_push_key(&bot().paths) {
+            Ok(key) => settings.monitor_report_key = key,
+            Err(e) => tracing::warn!("Report To: no push key given, and couldn't read monitor-push-key: {e}"),
+        }
     }
     settings
 }
@@ -1622,6 +1675,9 @@ fn apply_monitor_now(settings: &turu_bot::settings::AppSettings, generation: u64
     match Server::start((ip, port).into(), key, push_key, hub, VERSION.into(), control) {
         Ok(server) => {
             tracing::info!("Web monitor on http://{}", server.addr());
+            if headless() && MONITOR_LOCK.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+                write_monitor_address(server.addr().port());
+            }
             monitor.server = Some(server);
             monitor.running = wanted;
         }
@@ -1753,6 +1809,113 @@ pub fn start_monitor_election() {
     if let Err(e) = spawned {
         tracing::warn!("Couldn't start the monitor's election: {e}");
     }
+}
+
+/// Turu: several windowless Turus on one data folder (one per account on a server) with Options >
+/// Application's Enable Web Monitor on: one serves the web monitor, the one holding the monitor's
+/// lock, and the others report to it ([`monitor_settings`]), so nobody has to turn it off in all
+/// but one or copy a push key. When that one ends another takes the lock (tried every 3 s) and
+/// serves. A process given `--monitor` serves whatever happens (it takes the lock when it's free,
+/// so the others step down); one given `--report-to` reports where it says. Called by
+/// `--headless` before [`start_monitor`].
+pub fn start_headless_monitor_election() {
+    let bot = bot();
+    let flag = MONITOR_FLAG.lock().unwrap_or_else(|e| e.into_inner()).is_some();
+    if !headless() || !(flag || bot.settings.read().monitor_enabled) {
+        return;
+    }
+    let dir = turu_bot::shared_job::dir(&bot.paths.root);
+    let take = move || match turu_bot::shared_job::try_hold(&dir, "monitor") {
+        Ok(Some(held)) => {
+            *MONITOR_LOCK.lock().unwrap_or_else(|e| e.into_inner()) = Some(held);
+            true
+        }
+        Ok(None) => false,
+        Err(e) => {
+            tracing::warn!("The monitor's lock: {e}");
+            false
+        }
+    };
+    // Tried here first, so the first `start_monitor` already knows.
+    if take() || flag {
+        return;
+    }
+    tracing::info!("Another Turu on this data folder serves the web monitor: reporting to it");
+    let spawned = std::thread::Builder::new()
+        .name("Turu Monitor Election".into())
+        .spawn(move || {
+            let mut reporting_to = elected_monitor_url();
+            loop {
+                std::thread::sleep(Duration::from_secs(3));
+                if take() {
+                    tracing::info!("This Turu serves the web monitor now");
+                    start_monitor();
+                    return;
+                }
+                // The one serving started after this one, or another took over.
+                let url = elected_monitor_url();
+                if url != reporting_to {
+                    reporting_to = url;
+                    start_monitor();
+                }
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("Couldn't start the monitor's election: {e}");
+    }
+}
+
+/// Windowless, elected by Enable Web Monitor rather than `--monitor`: steps down unless it holds
+/// the monitor's lock ([`start_headless_monitor_election`]).
+fn steps_down_from_monitor(settings: &turu_bot::settings::AppSettings) -> bool {
+    headless()
+        && settings.monitor_enabled
+        && MONITOR_FLAG.lock().unwrap_or_else(|e| e.into_inner()).is_none()
+        && MONITOR_LOCK.lock().unwrap_or_else(|e| e.into_inner()).is_none()
+}
+
+/// Where the elected web monitor said it serves (`jobs/monitor-address.json`, beside its lock).
+fn monitor_address_file() -> PathBuf {
+    turu_bot::shared_job::dir(&bot().paths.root).join("monitor-address.json")
+}
+
+/// The elected web monitor's URL, if it runs on this computer: Docker's containers share a data
+/// folder but not a network, so one in another container is reported to only with `--report-to`.
+fn elected_monitor_url() -> Option<String> {
+    let text = std::fs::read_to_string(monitor_address_file()).ok()?;
+    let address: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let port = address["port"].as_u64()?;
+    (address["host"].as_str() == Some(raw_hostname())).then(|| format!("http://127.0.0.1:{port}"))
+}
+
+/// The elected web monitor tells the others where it serves.
+fn write_monitor_address(port: u16) {
+    let text = serde_json::json!({ "host": raw_hostname(), "port": port }).to_string();
+    let file = monitor_address_file();
+    let temp = file.with_extension(format!("{}.tmp", std::process::id()));
+    if let Err(e) = std::fs::write(&temp, text).and_then(|()| std::fs::rename(&temp, &file)) {
+        tracing::warn!(
+            "Couldn't tell the other Turus where the web monitor is ({}): {e}",
+            file.display()
+        );
+    }
+}
+
+/// This computer's (or container's) own host name, as the system has it: not Options' machine
+/// name, which the shared `settings.json` gives every process alike.
+fn raw_hostname() -> &'static str {
+    static NAME: OnceLock<String> = OnceLock::new();
+    NAME.get_or_init(|| {
+        std::fs::read_to_string("/proc/sys/kernel/hostname")
+            .ok()
+            .or_else(|| std::env::var("COMPUTERNAME").ok())
+            .or_else(|| {
+                let output = std::process::Command::new("hostname").output().ok()?;
+                Some(String::from_utf8_lossy(&output.stdout).into_owned())
+            })
+            .map(|name| name.trim().to_owned())
+            .unwrap_or_default()
+    })
 }
 
 /// `--client=<address>`: the shell to connect to; this process runs one tab without a window and

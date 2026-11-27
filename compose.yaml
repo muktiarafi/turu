@@ -27,7 +27,7 @@ services:
   # A second account: its own env file, the same data folder, reporting to main's monitor.
   # alt:
   #   <<: *turu
-  #   env_file: docker/alt.env       # with TURU_REPORT_TO=http://main:9021 and TURU_MONITOR_PUSH_KEY
+  #   env_file: docker/alt.env       # with TURU_REPORT_TO=http://main:9021 (the key: the volume's)
   #   ports:
   #     - "127.0.0.1:9092:9091"
 

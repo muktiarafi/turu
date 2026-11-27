@@ -198,6 +198,29 @@ fn keeps_the_token_in_a_private_file() {
 }
 
 #[test]
+fn turus_starting_at_once_agree_on_one_token() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("monitor-push-key");
+    let start = std::sync::Arc::new(std::sync::Barrier::new(8));
+    let tokens: Vec<String> = (0..8)
+        .map(|_| {
+            let (file, start) = (file.clone(), start.clone());
+            std::thread::spawn(move || {
+                start.wait();
+                turu_bot::control_api::saved_token(&file).unwrap()
+            })
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .map(|t| t.join().unwrap())
+        .collect();
+    let saved = std::fs::read_to_string(&file).unwrap();
+    assert!(tokens.iter().all(|t| *t == saved), "{tokens:?} / {saved}");
+    // No temp file is left beside it.
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
+
+#[test]
 fn gear_routes_need_a_login() {
     let (_bot, base) = start();
     let (status, body) = call("GET", &format!("{base}/gear"), Some(TOKEN), None);

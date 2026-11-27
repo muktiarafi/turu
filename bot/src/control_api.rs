@@ -342,25 +342,57 @@ pub fn new_token() -> Result<String, String> {
 }
 
 /// The token in `path`, or a new one written there, readable by its owner only.
+///
+/// Turu: several Turus on one data folder may start at once, each finding no token: the new one
+/// is written whole to a file of this process's own and linked into place only if nobody did
+/// first; the others read the one that was. (Writing in place, two could each keep a token of
+/// their own: a web monitor and the reporters on its folder disagreeing on the push key.)
 pub fn saved_token(path: &Path) -> Result<String, String> {
-    if let Ok(token) = std::fs::read_to_string(path)
-        && token.trim().len() >= MIN_TOKEN
-    {
-        return Ok(token.trim().to_owned());
+    let read = || {
+        std::fs::read_to_string(path)
+            .ok()
+            .map(|token| token.trim().to_owned())
+            .filter(|token| token.len() >= MIN_TOKEN)
+    };
+    if let Some(token) = read() {
+        return Ok(token);
     }
     let token = new_token()?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
+    let mut temp = path.as_os_str().to_owned();
+    temp.push(format!(".{}.{}.tmp", std::process::id(), &token[..8]));
+    let temp = std::path::PathBuf::from(temp);
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    let mut file = options
-        .open(path)
-        .map_err(|e| format!("{}: {e}", path.display()))?;
-    std::io::Write::write_all(&mut file, token.as_bytes()).map_err(|e| e.to_string())?;
-    Ok(token)
+    let written = options
+        .open(&temp)
+        .and_then(|mut file| std::io::Write::write_all(&mut file, token.as_bytes()));
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&temp);
+        return Err(format!("{}: {e}", temp.display()));
+    }
+    let linked = std::fs::hard_link(&temp, path);
+    let result = match linked {
+        Ok(()) => Ok(token),
+        // Another process was first: its token, unless the file is one to replace (too short).
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => match read() {
+            Some(theirs) => Ok(theirs),
+            None => replace_with(&temp, path).map(|()| token),
+        },
+        // A file system without hard links: in place, as before.
+        Err(_) => replace_with(&temp, path).map(|()| token),
+    };
+    let _ = std::fs::remove_file(&temp);
+    result
+}
+
+/// Puts `temp` at `path`, over what's there.
+fn replace_with(temp: &Path, path: &Path) -> Result<(), String> {
+    std::fs::rename(temp, path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 struct Reply {

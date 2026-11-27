@@ -551,6 +551,8 @@ fn main() -> Result<(), Error> {
     if !runs_shell {
         turu::start_api();
     }
+    // Several windowless Turus on one data folder: one serves the web monitor, the others report.
+    turu::start_headless_monitor_election();
     turu::start_monitor();
     turu::start_client_updates();
     turu::start_perf_log((!turu::headless()).then(|| {

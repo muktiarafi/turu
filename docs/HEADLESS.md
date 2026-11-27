@@ -176,7 +176,9 @@ docker run --rm --env-file docker/main.env -v turu-data:/data turu --exit-on-scr
   the cgroup: the free memory beside it is the host's.
 * Several accounts: one service each, all on the `turu-data` volume (as "Several accounts"
   below), each with its own env file and host port; the others report to the first one's
-  monitor at `http://main:9021`. `compose.yaml` has one commented out.
+  monitor with `TURU_REPORT_TO=http://main:9021` (the push key comes from the shared volume).
+  Containers don't share a network, so the automatic choice below doesn't reach across them.
+  `compose.yaml` has one commented out.
 * Settings, options and playlists go in the volume: `docker compose cp daily.json
   main:/data/playlists/` (then `TURU_RUN_PLAYLIST=/data/playlists/daily.json`), or the control
   API and the web monitor as below.
@@ -189,20 +191,16 @@ docker run --rm --env-file docker/main.env -v turu-data:/data turu --exit-on-scr
 Run one instance per account, all with **one data folder** (as above) and each with **its own
 `TURU_API` port** (`9091`, `9092`, ...). The shared folder is how clients find each other:
 Butler's sync files, army scripts' sync logs and their private room number
-(`bot.army.roomNumber()`, a hash of the folder's path) all live there. Start the instances a
-few seconds apart, so they don't update the same scripts at once.
+(`bot.army.roomNumber()`, a hash of the folder's path) all live there. They can start at the
+same time: one downloads the scripts while the others wait for it.
 
-Have one serve the web monitor and the others report to it:
+**The web monitor:** turn on Enable Web Monitor in the shared `settings.json` (Options >
+Application > Monitor, or `"monitorEnabled": true`). The first instance to start serves it on
+that port; the others report to it, with the data folder's push key, and take over when it
+stops. Or give one instance `--monitor=127.0.0.1:9021` (it serves whatever the setting says,
+and the others with the setting on report to it). An instance given `--report-to` reports where
+it says; without `TURU_MONITOR_PUSH_KEY` it uses the data folder's `monitor-push-key`.
 
-```bash
-# The first account's env file:
-TURU_ARGS=--monitor=127.0.0.1:9021
-# The others' (the key file appears after the first one's first run):
-TURU_ARGS=--report-to http://127.0.0.1:9021
-TURU_MONITOR_PUSH_KEY=<contents of /var/lib/turu/monitor-push-key>
-```
-
-Leave Enable Web Monitor off in the shared `settings.json`, or every client tries to serve it.
 The reporters all show under the machine's name, one row per client (each run reports with
 an id of its own, so sharing the name and settings is fine). The machine gets one CPU and memory
 line for all of them ("Turu ×3"), with each process in its details; so do containers on one host,
@@ -374,7 +372,7 @@ Variables for measuring Turu (`TURU_PERF_LOG`, `TURU_PACKET_LOG`, `TURU_TAPE`, .
 | `--api=: ... expected an address` | `TURU_API` is empty in the systemd env file. |
 | Butler doesn't list the other accounts | They don't share the data folder, aren't logged in, or Butler is off. |
 | Army clients wait in different rooms | They don't share the data folder. |
-| `Web monitor: ...` address in use | Enable Web Monitor is on in the shared `settings.json`. |
+| `Web monitor: ...` address in use | Another program has the port, or two instances were given `--monitor` with one port. |
 | `Control API: ...` | The port is taken, or the token is under 32 characters. |
 | `Couldn't install Turu ...: couldn't replace ...` | The service's user can't write the program's folder. |
 | Clients overwrite each other's Ruffle log | It's one file per user (`~/.cache/ruffle/log`): use journald. |

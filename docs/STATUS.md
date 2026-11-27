@@ -959,6 +959,11 @@ memory budget (NVIDIA, AMD).
   SIGTERM and Ctrl+C quit cleanly (`turu::shut_down`, 2026-11-27): the playlist and script
   stopped, a logout, Butler and the tapes closed, status 0; a second signal or 8 s quits at once
   with status 1. Before, a signal ended the process where it stood.
+  Several on one data folder need no setup (2026-11-27): their startup script downloads take
+  turns (`script-update`'s lock), new keys are written whole and linked into place so all agree
+  (`control_api::saved_token`), Report To without a push key uses the folder's, and with Enable
+  Web Monitor on the first serves it and the others report to it (`jobs/monitor-address.json`,
+  same host only), one taking over when it ends (`start_headless_monitor_election`).
   In game it runs at a hidden tab's 2 FPS (`state.hidden_tab`, set in `app/src/headless.rs`;
   the login screen keeps full speed), and its player has no mouse (`set_mouse_in_stage(false)`).
   Ruffle starts with the mouse on the stage, and every update (about 50 a second, for timers and

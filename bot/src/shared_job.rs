@@ -40,6 +40,21 @@ pub fn try_hold(dir: &Path, name: &str) -> std::io::Result<Option<Held>> {
     }
 }
 
+/// Takes `name`'s lock, waiting up to `wait` while another process holds it; `None` if it still
+/// does then.
+pub fn hold_waiting(dir: &Path, name: &str, wait: Duration) -> std::io::Result<Option<Held>> {
+    let since = std::time::Instant::now();
+    loop {
+        if let Some(held) = try_hold(dir, name)? {
+            return Ok(Some(held));
+        }
+        if since.elapsed() >= wait {
+            return Ok(None);
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -162,5 +177,24 @@ mod tests {
         assert!(try_hold(dir.path(), "monitor").unwrap().is_none());
         drop(held);
         assert!(try_hold(dir.path(), "monitor").unwrap().is_some());
+    }
+
+    #[test]
+    fn a_waiting_hold_gets_the_lock_once_let_go_or_gives_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let held = try_hold(dir.path(), "script-update").unwrap().unwrap();
+        let short = Duration::from_millis(300);
+        assert!(
+            hold_waiting(dir.path(), "script-update", short)
+                .unwrap()
+                .is_none()
+        );
+        let letting_go = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            drop(held);
+        });
+        let waited = hold_waiting(dir.path(), "script-update", Duration::from_secs(10)).unwrap();
+        assert!(waited.is_some());
+        letting_go.join().unwrap();
     }
 }
