@@ -545,6 +545,13 @@ Android 11 doesn't). Now every `ModelClient` pauses while the activity is stoppe
 views, and its logs, again when it starts: the same check then gave the shell no CPU at all over
 20 s, and the Script Loader's log came back whole.
 
+A kill of the shell alone (not a crash, with a tab's process that started before it still running)
+is reported as such (`CrashReports.windowEndedAlone`): "Android closed Turu's window ...", a hint
+that the tabs kept running instead of the battery savers', no notice (the report is marked seen),
+and in Sentry an issue of its own (fingerprint `window-alone`, tag `window_alone`), to watch shrink
+after the release with the pause above. To try it: background Turu, then `adb shell run-as
+com.muktiarafi.turu kill -9 <the shell's pid>` and open it again.
+
 Frame interpolation (Options > Application > Frame Interpolation, off by default; saved as
 `mugetsu-interpolation.txt` in the data folder) is paced as on a desktop (`turu_frontend::pacing`):
 the engine loop (`engine::run_loop_paced`) calls `Screen::step` after each tick and at the times it

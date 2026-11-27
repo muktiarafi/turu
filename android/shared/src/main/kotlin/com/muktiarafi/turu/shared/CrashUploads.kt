@@ -133,9 +133,17 @@ object CrashUploads {
     /**
      * An exit Sentry doesn't catch itself (low memory, a kill), with the app's report attached.
      * `tabs`: the tabs open at the end and the most this run, when the tabs log had them;
-     * `process`: the process that ended (Turu's process tabs: `com.muktiarafi.turu:c1` for slot 1).
+     * `process`: the process that ended (Turu's process tabs: `com.muktiarafi.turu:c1` for slot 1);
+     * `windowAlone`: only the window's process ended, its tabs' went on ([CrashReports]).
      */
-    fun exit(reason: String, summary: String, report: File, tabs: Pair<Int, Int>? = null, process: String? = null) {
+    fun exit(
+        reason: String,
+        summary: String,
+        report: File,
+        tabs: Pair<Int, Int>? = null,
+        process: String? = null,
+        windowAlone: Boolean = false,
+    ) {
         if (!started) {
             return
         }
@@ -148,8 +156,11 @@ object CrashUploads {
                 scope.setTag("tabs_most", most.toString())
             }
             // One issue per exit reason: Sentry otherwise groups every exit by this call's stack,
-            // and a ColorOS CPU kill, low-memory kills and a start timeout became one issue.
-            scope.fingerprint = listOf("android-exit", reason)
+            // and a ColorOS CPU kill, low-memory kills and a start timeout became one issue. The
+            // window's process ending alone has its own (the tabs played on): what pausing its pages
+            // off screen should shrink (TURU-ANDROID-D's CPU kills, `ModelClient`).
+            if (windowAlone) scope.setTag("window_alone", "yes")
+            scope.fingerprint = if (windowAlone) listOf("android-exit", reason, "window-alone") else listOf("android-exit", reason)
             scope.addAttachment(Attachment(report.absolutePath, report.name, "text/plain"))
         }
     }

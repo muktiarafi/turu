@@ -5,6 +5,9 @@ import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Build
 import android.os.PowerManager
+import android.os.SystemClock
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -178,9 +181,11 @@ object CrashReports {
             "-" + reasonName(reason).lowercase(Locale.US)
         val trace = readTrace(exit)
         val tombstone = trace != null && reason == ApplicationExitInfo.REASON_CRASH_NATIVE
+        val windowAlone = windowEndedAlone(context, activities, exit)
+        val summary = summary(exit, windowAlone)
         val report = StringBuilder()
-        report.append(summary(exit)).append("\n\n")
-        hint(exit)?.let { report.append(it).append("\n\n") }
+        report.append(summary).append("\n\n")
+        (if (windowAlone) windowHint() else hint(exit))?.let { report.append(it).append("\n\n") }
         report.append("When: ").append(SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", Locale.US).format(Date(`when`)))
             .append('\n')
         report.append("Reason: ").append(reasonName(reason)).append(" (").append(reason)
@@ -232,19 +237,70 @@ object CrashReports {
         file.writeText(report.toString())
         // The list sorts by this: the exit's time, not the report's.
         file.setLastModified(`when`)
+        // Nothing to tell the person about when the tabs played on: listed, without the notice
+        // (`turu_frontend::crash_reports`' seen list).
+        if (windowAlone) markSeen(dir, file.name)
         // Sentry reports crashes and ANRs itself (with more detail); the rest goes from here.
         if (reason != ApplicationExitInfo.REASON_CRASH && reason != ApplicationExitInfo.REASON_CRASH_NATIVE &&
             reason != ApplicationExitInfo.REASON_ANR
         ) {
-            CrashUploads.exit(reasonName(reason), summary(exit), file, tabs, exit.processName)
+            CrashUploads.exit(reasonName(reason), summary, file, tabs, exit.processName, windowAlone)
         }
-        Log.w(TAG, "The last run ended: ${summary(exit)} ($file)")
+        Log.w(TAG, "The last run ended: $summary ($file)")
     }
 
-    private fun summary(exit: ApplicationExitInfo): String {
+    /**
+     * Whether Turu's window alone was closed: the activity's process (process tabs' shell) ended
+     * by a kill, not a crash, while a tab's process that started before it still runs. Android
+     * closes the shell, which has no foreground service, on its own in the background (2% of a core
+     * at most, TURU-ANDROID-D), and the tabs play on. Never in Turu Mas, which has one process.
+     */
+    private fun windowEndedAlone(context: Context, activities: ActivityManager, exit: ApplicationExitInfo): Boolean {
+        if (exit.processName != context.packageName) return false
+        when (exit.reason) {
+            ApplicationExitInfo.REASON_CRASH,
+            ApplicationExitInfo.REASON_CRASH_NATIVE,
+            ApplicationExitInfo.REASON_ANR,
+            ApplicationExitInfo.REASON_EXIT_SELF,
+            ApplicationExitInfo.REASON_INITIALIZATION_FAILURE,
+            -> return false
+        }
+        val tab = "${context.packageName}:c"
+        return activities.runningAppProcesses.orEmpty().any { process ->
+            process.processName.startsWith(tab) && (startedAt(process.pid) ?: Long.MAX_VALUE) < exit.timestamp
+        }
+    }
+
+    /** When process `pid` started (ms since the epoch), from `/proc/<pid>/stat`; null if unreadable. */
+    private fun startedAt(pid: Int): Long? = try {
+        val stat = File("/proc/$pid/stat").readText()
+        // After the name in parentheses: field 3 on; the start time is field 22, in clock ticks since boot.
+        val ticks = stat.substringAfterLast(')').trim().split(' ')[19].toLong()
+        val hz = Os.sysconf(OsConstants._SC_CLK_TCK).coerceAtLeast(1L)
+        val boot = System.currentTimeMillis() - SystemClock.elapsedRealtime()
+        boot + ticks * 1000 / hz
+    } catch (_: Exception) {
+        null
+    }
+
+    /** Adds report `name` to the list of those a notice was shown for. */
+    private fun markSeen(dir: File, name: String) {
+        try {
+            File(dir, ".seen").appendText("\n$name")
+        } catch (e: IOException) {
+            Log.w(TAG, "Couldn't mark $name seen", e)
+        }
+    }
+
+    /** The report's hint when only the window was closed ([windowEndedAlone]). */
+    private fun windowHint(): String =
+        "${app.name}'s tabs kept running: Android closed only its window in the background, which opens again " +
+            "when you come back. Nothing was lost."
+
+    private fun summary(exit: ApplicationExitInfo, windowAlone: Boolean = false): String {
         val description = exit.description
         val detail = if (!description.isNullOrEmpty()) " ($description)" else ""
-        val turu = app.name
+        val turu = if (windowAlone) "${app.name}'s window" else app.name
         return when (exit.reason) {
             ApplicationExitInfo.REASON_LOW_MEMORY -> "Android closed $turu to free memory: the phone ran low"
             ApplicationExitInfo.REASON_CRASH_NATIVE ->
