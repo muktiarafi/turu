@@ -25,7 +25,7 @@ pitfalls.
 **ruffle-aqw's `aqw` branch is 2 commits ahead of origin: push it before pushing Turu**, or
 Turu's submodule pointer names commits nobody else can fetch.
 
-Docs: `docs/HEADLESS.md` (farmrun, `TURU_PACKET_LOG`, `memory biggest:`), `docs/STATUS.md`
+Docs: `docs/DIAGNOSTICS.md` (farmrun, `TURU_PACKET_LOG`, `memory biggest:`), `docs/STATUS.md`
 (headless frame rate and mouse), `docs/ANDROID.md` (pointer while hidden).
 
 ## Monster-retention diagnostics (ruffle-aqw `cc12f1908`, extended)

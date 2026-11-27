@@ -10,7 +10,7 @@
 #
 # Defaults: script = scripts/evil/nsod/0NecroticSwordOfDoom.ts, 120 minutes.
 # Env: PERIOD (60), BUILD=0 to skip the cargo build, TURU_SYSTEM_ALLOC=1 for heap profilers
-# (the memory line's commit then reads ~0; see docs/HEADLESS.md).
+# (the memory line's commit then reads ~0; see docs/DIAGNOSTICS.md, "Memory").
 # Output: tools/memrun/out/<stamp>-<script>.log, then summarize.py prints the trend.
 set -euo pipefail
 

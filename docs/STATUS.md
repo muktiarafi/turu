@@ -733,7 +733,7 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   and its callback (and path, for `getGameObject` and its kin), with how long the caller waited
   and how long the player ran it (timed in `answer_flash_call`); each tab's player ticks too.
   Read with `GET /debug/perf`, or logged per tab with `TURU_PERF_LOG=<seconds>`
-  (`docs/HEADLESS.md`). The wait includes the queue on the player's thread, so a wait far above
+  (`docs/DIAGNOSTICS.md`). The wait includes the queue on the player's thread, so a wait far above
   the run time means that thread is busy with ticks or other tabs' calls. With a window, the log
   also has a `main thread` line (`app/src/thread_perf.rs`): idle, drawing (the movie and its GPU
   wait, getting the window's next picture, the UI, submit and present), the games and bot calls,
@@ -1087,7 +1087,7 @@ memory budget (NVIDIA, AMD).
 - **Tests from recorded game sessions** are proposed in `docs/REPLAY_TESTS_PROPOSAL.md`: record a
   real run once, replay it in CI, and run every converted script against a fake world seeded
   from a recording. The recorder (phase 1) is built and checked on a 20-minute headless farm
-  run: `TURU_TAPE` / `--record-tape` (docs/HEADLESS.md, "Recording a tape"). So is the
+  run: `TURU_TAPE` / `--record-tape` (docs/DIAGNOSTICS.md, "Recording a tape"). So is the
   scrubber (`turu-tape scrub`), checked on that run's tape, and the replay
   (`turu_bot::testing::ReplayHost`, 2026-11-27, `bot/tests/replay.rs`). Seven tapes recorded
   in game replay in the tests (`bot/tests/tapes/`: a quest loop, a merge buy, enhancement, bank
@@ -1107,7 +1107,7 @@ memory budget (NVIDIA, AMD).
   focus (no global hook) and not on Android
   (`docs/UI.md` has the full list).
 - **Release packaging** (`.github/workflows/release.yml`, from a `v*` tag) doesn't use a speed
-  profile (PGO): `tools/pgo/pgo.sh` records one of Turu's own by playing (docs/HEADLESS.md), but
+  profile (PGO): `tools/pgo/pgo.sh` records one of Turu's own by playing (docs/DIAGNOSTICS.md), but
   none is committed, and CI can't record one (it would need a game login). Measured once
   (2026-11-24, FarmerJoe on Galanoth, a profile from 15 min with a window and 15 headless): no gain
   that stands out from the run-to-run differences (headless 3% of a core with both; a window's

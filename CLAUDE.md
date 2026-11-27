@@ -7,7 +7,9 @@ a native shell (Android's, in Compose: the tabs, the rail and the daily windows)
 pass in `docs/UI.md` ("Native shells"), with every feature reachable and behaving the same.
 
 Read first: `docs/ARCHITECTURE.md` and `docs/STATUS.md` (what works, known gaps,
-tooling quirks). Continuing the Mugetsu 2.0.0 update or the process tabs (M6):
+tooling quirks). Continuing the tests from recorded game sessions (tapes, their replay, the world
+fake and the draft run, the virtual clock): `docs/REPLAY_TESTS_HANDOVER.md`. Continuing the
+Mugetsu 2.0.0 update or the process tabs (M6):
 `docs/MUGETSU_2_M6_HANDOVER.md` (state, open items, decisions, traps). The Android port: `docs/ANDROID_HANDOVER.md` (start here: state,
 branches, setup, testing, pitfalls), `docs/ANDROID_PROPOSAL.md` (plan) and `docs/ANDROID.md`
 (build, run); what of Turu's UI is native Android there, and why: `docs/ANDROID_NATIVE_UI.md`. Native
@@ -17,7 +19,8 @@ Turu Mas, the Android app on Adobe AIR: `docs/TURU_MAS.md` (build, release,
 license; how it came about: `docs/AIR_PROPOSAL.md`). Reference: `docs/VIBESKUA_SPEC.md` (VibeSkua's
 behaviour, Flash bridge, API and UI, surveyed from its source), `docs/SCRIPTING.md`
 (writing scripts), `docs/UI.md`, `docs/HEADLESS.md` (running without a window: flags,
-service, monitoring; keep it in step with the startup flags and the control API).
+service, monitoring; keep it in step with the startup flags and the control API), `docs/DIAGNOSTICS.md`
+(measuring Turu: perf and memory logs, farmrun, tapes, PGO).
 
 ## Layout
 
@@ -81,7 +84,7 @@ CI runs all five crates (`turu_bot`, `turu`, `turu_frontend`, `turu_egui`, `turu
 
 Release builds: Mugetsu's `../mugetsu/source/build-*.sh` flow (dist profile, PGO) applies;
 on macOS the feature set above is the one Mugetsu uses (Metal, fontconfig loaded at runtime).
-A PGO profile of Turu's own, recorded by the bot playing: `tools/pgo/pgo.sh` (docs/HEADLESS.md).
+A PGO profile of Turu's own, recorded by the bot playing: `tools/pgo/pgo.sh` (docs/DIAGNOSTICS.md).
 Data lives in `dirs::data_dir()/Turu` (override with `TURU_DATA_DIR`).
 
 ## Rules that keep it working

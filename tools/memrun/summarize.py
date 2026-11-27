@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Summarizes a memrun log (tools/memrun/run.sh): Turu's `memory:` lines over time, their
-growth per hour after the warm-up, and which of docs/HEADLESS.md's causes the trend points at.
+growth per hour after the warm-up, and which of docs/DIAGNOSTICS.md's causes the trend points at.
 Writes <log>.csv beside the log.
 
     python3 tools/memrun/summarize.py tools/memrun/out/<run>.log [--warmup MIN]
@@ -113,7 +113,7 @@ def main():
             print(f"  {k:>9}: {v:+,.1f} {units.get(k, 'MB')}/h")
 
     first, last = steady[0], steady[-1]
-    print("\nReading it (docs/HEADLESS.md):")
+    print("\nReading it (docs/DIAGNOSTICS.md):")
     g = lambda k: growth.get(k) or 0.0
     if g("rss") < 20 and g("heap") < 20:
         print("  - Flat (< 20 MB/h): no growth worth chasing in this run.")

@@ -156,8 +156,19 @@ Android. A process with a game holds one `Player` and its `Bot` (`frontend/src/p
   `SlotShell.kt`). Each tab is a slot: a foreground service in a process of its own (`:c1` ...
   `:c9`) running one engine, which draws into the surface the activity hands it. Shell and slots
   speak the same messages over Binder.
+* **The desktop's flags.** `--shell` is the window (every start of Turu's window is the shell,
+  Army > Accounts' "In its own window" ones included): its first tab gets the other startup flags
+  but `--api`, `--monitor` and `--report-to`, which the shell keeps. The shell runs the web
+  monitor and Report To over every tab; each client gets a control API of its own on a free local
+  port, and the shell's `--api` serves the same routes over the tabs, passing each request on to
+  the tab's (`/tabs` lists them; a tab whose client is starting again answers
+  `game_not_running`). `--client=<address>` runs one tab without a window and draws it for the
+  shell at `<address>`, saying hello with `TURU_SHELL_TOKEN` (set by the shell); it quits when
+  the shell closes. `TURU_SHELL_TEST=<file>` scripts the shell for tests (`wait`, `open`,
+  `select`, `close`, `kill`, `click`, `dump`; `shell/src/lib.rs` lists them all).
+  `--in-process` is ignored since M6.
 * **`--headless`** (`app/src/headless.rs`) is one process, one tab, with no shell, window or
-  GPU: the null renderer and UI, the loop on the main thread.
+  GPU: the null renderer and UI, the loop on the main thread (docs/HEADLESS.md).
 * **Turu Mas** is the exception: AIR runs the game, and one process keeps several bots through
   `turu_frontend`'s tab list (`turu::TABS`, `air/ane/rust/src/clients.rs`).
 
