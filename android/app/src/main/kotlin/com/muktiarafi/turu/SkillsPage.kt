@@ -352,7 +352,7 @@ private fun EditTab(view: SkillsView, panel: SkillsPanel, modifier: Modifier, on
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
             LabeledRow("Skill timeout", "Longest wait for one skill") {
-                NumberBox(view.timeout, 0, 5000, "ms") { panel.editor(EditorChange(timeout = it.toLong())) }
+                NumberBox(view.timeout, 0, 5000, "ms") { panel.editor(EditorChange(timeout = it)) }
             }
             SwitchRow("Reset on target change", "Start the sequence again when the target changes or is lost", view.resetOnTarget) {
                 panel.editor(EditorChange(resetOnTarget = it))

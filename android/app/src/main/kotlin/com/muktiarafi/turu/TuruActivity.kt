@@ -366,6 +366,17 @@ class TuruActivity : GameActivity() {
         if (extras.containsKey("closeTab")) shell.asShown(TabRequest.close_tab(extras.getInt("closeTab").toUInt()))
     }
 
+    override fun onStart() {
+        super.onStart()
+        ModelClient.setShown(true)
+    }
+
+    override fun onStop() {
+        // Off screen, the pages read nothing from the tabs (see ModelClient).
+        ModelClient.setShown(false)
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         // Process tabs: the slots post their alerts only while the app isn't on screen.

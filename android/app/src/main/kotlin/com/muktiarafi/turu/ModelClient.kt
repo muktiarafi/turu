@@ -12,6 +12,8 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.concurrent.thread
 
 /**
@@ -21,6 +23,12 @@ import kotlin.concurrent.thread
  * The slot's address and token come from its hello (`slots::NativeTab`). A slot that restarts
  * says hello from a new port: the shell makes a new client for it. Callbacks run on the main
  * thread.
+ *
+ * Every client pauses while the app isn't on screen ([setShown]): no stream, no reads. The shell's
+ * main thread applying a busy tab's views and log lines (5 a second) took 10-15% of a core in the
+ * background, and Android closes a cached process over 2% (Sentry TURU-ANDROID-D, `process: main`
+ * since process tabs). Back on screen, a client reads its views again and calls [onResume], where a
+ * client of logs reads them again (the lines of the pause weren't streamed).
  */
 class ModelClient(
     private val api: String,
@@ -29,6 +37,7 @@ class ModelClient(
     private val logs: List<String>,
     private val onView: (model: String, json: String) -> Unit,
     private val onLog: (kind: String, time: String, text: String) -> Unit,
+    private val onResume: () -> Unit = {},
 ) {
     private val models = models.map { it.name }
     @Volatile private var stopped = false
@@ -37,23 +46,44 @@ class ModelClient(
     private val actions = Executors.newSingleThreadExecutor { Thread(it, "Turu Model Actions") }
 
     fun start() {
+        // Started off screen (a tab's hello in the background): its first pass is a return too.
+        val startHides = LOCK.withLock {
+            live.add(this)
+            if (shown) hides else -1
+        }
         thread(name = "Turu Models") {
-            while (!stopped) {
+            var seenHides = startHides
+            while (awaitShown()) {
+                // Off screen since the last pass (even briefly): what it missed is read again.
+                if (hides != seenHides) {
+                    seenHides = hides
+                    main.post { if (!stopped) onResume() }
+                }
                 try {
                     for (model in models) fetch(model)
                     listen()
                 } catch (e: Exception) {
-                    if (!stopped) Log.w(TAG, "Models at $api: $e")
+                    if (!stopped && shown) Log.w(TAG, "Models at $api: $e")
                 }
-                if (!stopped) Thread.sleep(1000)
+                if (!stopped && shown) Thread.sleep(1000)
             }
+            LOCK.withLock { live.remove(this) }
         }
     }
 
     fun stop() {
         stopped = true
+        LOCK.withLock { SHOWN.signalAll() }
         runCatching { events?.disconnect() }
         actions.shutdown()
+    }
+
+    /** Waits while the app is off screen; false once stopped. */
+    private fun awaitShown(): Boolean {
+        LOCK.withLock {
+            while (!shown && !stopped) SHOWN.await()
+        }
+        return !stopped
     }
 
     private fun open(path: String, method: String = "GET"): HttpURLConnection =
@@ -70,7 +100,7 @@ class ModelClient(
         events = connection
         BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
             var event = ""
-            while (!stopped) {
+            while (!stopped && shown) {
                 val line = reader.readLine() ?: return
                 when {
                     line.startsWith("event: ") -> event = line.removePrefix("event: ")
@@ -179,6 +209,35 @@ class ModelClient(
 
     companion object {
         const val TAG = "turu-models"
+
+        private val LOCK = ReentrantLock()
+
+        /** Signalled when the app comes on screen or a client stops. */
+        private val SHOWN = LOCK.newCondition()
+
+        /** Whether the app is on screen ([setShown]). */
+        @Volatile private var shown = true
+
+        /** How many times the app left the screen. */
+        @Volatile private var hides = 0
+
+        /** The clients started and not stopped (guarded by [LOCK]). */
+        private val live = mutableSetOf<ModelClient>()
+
+        /**
+         * The app came on screen or left it (the activity started or stopped): off screen, every
+         * client lets go of its stream and waits; back on, it reads its views again.
+         */
+        fun setShown(on: Boolean) {
+            val clients = LOCK.withLock {
+                if (!on && shown) hides++
+                shown = on
+                SHOWN.signalAll()
+                live.toList()
+            }
+            // The streams block in a read: closing them ends it.
+            if (!on) clients.forEach { runCatching { it.events?.disconnect() } }
+        }
 
         /** Actions out and answers in; an answer may carry fields a newer slot added. */
         private val JSON = Json { ignoreUnknownKeys = true }

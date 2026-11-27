@@ -534,6 +534,17 @@ hit-tested the whole display list for it on every update, about 50 a second what
 rate, which was 75% of the player's time at 2 FPS (measured with `--headless`, which runs the
 same loop; not yet measured on a phone).
 
+Since process tabs, TURU-ANDROID-D's kills are of the shell (`process: main`, "cached in the
+background", 20 MB): 160 of them on 0.4.0, on Android 11, 13 and 15 (realme, Xiaomi), at about 7%
+of a core against a limit of 2%. The shell has no foreground service, so Android's own check of
+cached processes applies to it. Its pages kept reading the tab on screen in the background: with a
+script writing 5 log lines a second, the shell took 15% of a core off screen, 11% on its main
+thread putting the lines and views into Compose's state (measured on the emulator with the shell
+kept thawed, `adb shell am unfreeze --sticky <pid>`: Android 14 and later freeze a cached process,
+Android 11 doesn't). Now every `ModelClient` pauses while the activity is stopped, and reads its
+views, and its logs, again when it starts: the same check then gave the shell no CPU at all over
+20 s, and the Script Loader's log came back whole.
+
 Frame interpolation (Options > Application > Frame Interpolation, off by default; saved as
 `mugetsu-interpolation.txt` in the data folder) is paced as on a desktop (`turu_frontend::pacing`):
 the engine loop (`engine::run_loop_paced`) calls `Screen::step` after each tick and at the times it

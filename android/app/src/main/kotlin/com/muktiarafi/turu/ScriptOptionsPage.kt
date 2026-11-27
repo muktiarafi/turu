@@ -184,7 +184,7 @@ fun ScriptOptionsPage(state: ShellState, panel: ScriptOptionsPanel, fullWindow: 
             PageBar("Script Options", onBack = { if (view?.editing == true) cancel() else state.back() }) {
                 FullWindowMenu("The same options, with a picker under each item option", fullWindow) { close ->
                     if (!view?.savedIn.isNullOrEmpty()) {
-                        DropdownMenuItem(text = { Text(view!!.savedIn, color = Turu.Muted) }, enabled = false, onClick = {})
+                        DropdownMenuItem(text = { Text(view.savedIn, color = Turu.Muted) }, enabled = false, onClick = {})
                     }
                     DropdownMenuItem(
                         text = { Text("Reset to defaults…") },

@@ -122,6 +122,8 @@ class PacketPanel<V : Any, A>(private val model: ModelApi<V, A>, private val rea
                     .onFailure { Log.e(ModelClient.TAG, "/models/${model.name} doesn't decode: $it") }
             },
             onLog = { _, time, text -> append("$time $text") },
+            // Back on screen: the lines written meanwhile weren't streamed.
+            onResume = { if (readsLog) reloadLog() },
         ).also { c ->
             c.start()
             if (readsLog) c.readLog("packet", 0) { read -> lines.clear(); read.takeLast(KEEP).forEach { (t, x) -> lines.add("$t $x") } }

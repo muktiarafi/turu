@@ -64,14 +64,21 @@ class TabModels {
             logs = listOf("script", "debug"),
             onView = ::decode,
             onLog = { kind, time, text -> log(kind)?.let { append(it, time, text) } },
+            // Back on screen: the lines written meanwhile weren't streamed.
+            onResume = { client?.let(::readLogs) },
         ).also { client ->
             client.start()
-            for (kind in listOf("script", "debug")) {
-                client.readLog(kind, 0) { lines ->
-                    val list = log(kind) ?: return@readLog
-                    list.clear()
-                    lines.takeLast(KEEP).forEach { list.add(it) }
-                }
+            readLogs(client)
+        }
+    }
+
+    /** Reads the script and client logs whole. */
+    private fun readLogs(client: ModelClient) {
+        for (kind in listOf("script", "debug")) {
+            client.readLog(kind, 0) { lines ->
+                val list = log(kind) ?: return@readLog
+                list.clear()
+                lines.takeLast(KEEP).forEach { list.add(it) }
             }
         }
     }
