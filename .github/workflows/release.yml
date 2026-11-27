@@ -353,11 +353,13 @@ jobs:
         with:
           targets: aarch64-linux-android
 
-      # Ruffle's playerglobal and Gradle (AGP 9 wants JDK 17 or newer).
+      # Ruffle's playerglobal and Gradle (AGP 9 wants JDK 17 or newer). Gradle's downloads are
+      # cached: Maven Central turns runners away now and then (429 Too Many Requests).
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
+          cache: gradle
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -478,6 +480,7 @@ jobs:
           java-version: |
             17
             21
+          cache: gradle
 
       # Downloading the AIR SDK accepts its license (docs/TURU_MAS.md, "The AIR SDK's license"):
       # free tier, so the app starts with the SDK's splash screen. Sets AIR_HOME.
@@ -530,9 +533,22 @@ jobs:
           echo "MAS_KEYSTORE=$RUNNER_TEMP/turu-mas.p12" >> "$GITHUB_ENV"
 
       # Line tables in the library (for Sentry to read crash reports' frames); the APK's copy is
-      # stripped of them by air/ane/build.sh.
+      # stripped of them by air/ane/build.sh. Tried again when Gradle couldn't download what it
+      # needs (Maven Central's 429 Too Many Requests, which failed two runs on 2026-11-27): the
+      # Gradle build comes first, so a try costs seconds.
       - name: Build
-        run: AIR_JAVA_HOME="$JAVA_HOME_17_X64" air/app/build.sh --no-install
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            if AIR_JAVA_HOME="$JAVA_HOME_17_X64" air/app/build.sh --no-install 2>&1 | tee "$RUNNER_TEMP/build.log"; then
+              exit 0
+            fi
+            if [[ $attempt == 3 ]] || ! grep -qE 'Could not (GET|HEAD|resolve)|status code 429' "$RUNNER_TEMP/build.log"; then
+              exit 1
+            fi
+            echo "::warning::Gradle couldn't download its dependencies (try $attempt); trying again in a minute"
+            sleep 60
+          done
         env:
           TURU_VERSION: ${{ needs.version.outputs.version }}
           CFG_RELEASE_CHANNEL: ${{ needs.version.outputs.channel }}

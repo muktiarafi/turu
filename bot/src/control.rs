@@ -569,7 +569,17 @@ mod tests {
         name: &str,
         f: impl FnOnce() + Send + 'static,
     ) -> std::thread::JoinHandle<()> {
-        let joining = control.participate_for_new_thread();
+        spawn_in(control.participate_for_new_thread(), name, f)
+    }
+
+    /// Runs `f` on a participant thread in a place taken earlier. A test with several
+    /// participants takes every place before it starts any: the first to start would otherwise
+    /// wait alone and move the time on before the others are counted.
+    fn spawn_in(
+        joining: Joining,
+        name: &str,
+        f: impl FnOnce() + Send + 'static,
+    ) -> std::thread::JoinHandle<()> {
         std::thread::Builder::new()
             .name(name.into())
             .spawn(move || {
@@ -603,11 +613,15 @@ mod tests {
         let control = virtual_control();
         let start = control.now();
         let log = Arc::new(Mutex::new(Vec::new()));
-        let threads: Vec<_> = [5u64, 2, 9]
+        let places: Vec<_> = [5u64, 2, 9]
             .into_iter()
-            .map(|secs| {
+            .map(|secs| (secs, control.participate_for_new_thread()))
+            .collect();
+        let threads: Vec<_> = places
+            .into_iter()
+            .map(|(secs, place)| {
                 let (c, log) = (control.clone(), log.clone());
-                spawn(&control, "sleeper", move || {
+                spawn_in(place, "sleeper", move || {
                     c.sleep(Duration::from_secs(secs)).unwrap();
                     log.lock().push((secs, c.now().since(start).as_secs()));
                 })
@@ -630,6 +644,7 @@ mod tests {
             let woke_at = Arc::new(Mutex::new(None));
             let (c, at) = (control.clone(), woke_at.clone());
             let mark = control.mark();
+            let firer_place = control.participate_for_new_thread();
             let waiter = spawn(&control, "waiter", move || {
                 let fired = c
                     .sleep_until(start + Duration::from_secs(1000), Topics::SIGNALS, &mark)
@@ -638,7 +653,7 @@ mod tests {
                 *at.lock() = Some(c.now().since(start));
             });
             let c = control.clone();
-            let firer = spawn(&control, "firer", move || {
+            let firer = spawn_in(firer_place, "firer", move || {
                 c.sleep(Duration::from_secs(1)).unwrap();
                 c.fire(Topics::SIGNALS);
                 c.sleep(Duration::from_secs(100)).unwrap();

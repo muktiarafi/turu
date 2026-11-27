@@ -9,6 +9,7 @@
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::time::{Duration, Instant};
 use turu_bot::player_packets::Direction;
@@ -96,9 +97,15 @@ impl FlashHost for QuestGame {
     }
 }
 
-/// A folder of its own for `name`.
+/// A folder of its own for `name`, and for this call: several tests replay the same tape, and
+/// `cargo test` runs them at once in one process.
 fn temp(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("turu-test-replay-{name}-{}", std::process::id()));
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "turu-test-replay-{name}-{}-{n}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
