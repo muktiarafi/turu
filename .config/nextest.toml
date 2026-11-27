@@ -13,6 +13,12 @@ slow-timeout = { period = "30s", terminate-after = 4 }
 filter = 'test(the_core_story_tape_replays)'
 slow-timeout = { period = "60s", terminate-after = 5 }
 
+# The draft smoke run (docs/REPLAY_TESTS_PROPOSAL.md, phase 4): ignored, by hand or nightly, as long
+# as its drafts take.
+[[profile.default.overrides]]
+filter = 'test(draft_smoke)'
+slow-timeout = { period = "60s", terminate-after = 240 }
+
 [profile.ci]
 # Report every failing test, not only the first.
 fail-fast = false

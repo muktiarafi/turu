@@ -5,7 +5,8 @@ the recorder, checked in game (see "As built, phase 1"). Phase 2 done (2026-11-2
 and the replay (see "As built, phase 2"), with the first tape recorded in game committed and
 replayed by the tests ("The first tape"). Phase 3 done (2026-11-27, "Phase 3"): a merge buy,
 enhancement, bank moves, relogin, CoreStory and a kill farm on tape, each replayed by the tests.
-Phases 4 and 5 aren't built. Would touch `bot/src/flash.rs` (`Flash::call`), `bot/src/events.rs`
+Phase 4 built (2026-11-27, "Phase 4 so far"): the world fake, the draft smoke run and its nightly
+workflow; the first nightly run on GitHub hasn't happened. Phase 5 isn't built. Would touch `bot/src/flash.rs` (`Flash::call`), `bot/src/events.rs`
 (`on_flash_call`), `bot/src/player_packets.rs` (`on_socket`), a new `bot/src/tape/` (format,
 recorder, scrubber), `bot/src/testing.rs` (the replay host and the world fake), `bot/tests/`
 (`replay.rs`, `draft_smoke.rs`, `tapes/`), `docs/HEADLESS.md` (the switch) and a nightly
@@ -482,6 +483,66 @@ tapes leave unchecked is listed in those entries: nested merges and the other bu
 other enhancement calls, the auto-relogin after a disconnect, `questProgression`'s recovery. STATUS.md's relogin, enhancement and CoreStory
 entries point at their tapes; the bank has no entry of its own.
 
+## Phase 4 so far
+
+`turu_bot::testing::WorldFake` (`bot/src/world_fake.rs`), `bot/tests/draft_smoke.rs` (an ignored
+test, `draft_smoke_sample`), `.github/workflows/drafts-nightly.yml` (each night, and by hand with
+a filter). Tests of the fake: `world_fake::tests`.
+
+**The world fake** answers reads from what the game answered on a tape (by default
+`kill_farm`: a level-100 character with a full inventory and bank), up to the tape's script's end
+(not the client's logout at exit, which the first try took as the world). Single reads by path,
+the paths inside `getMany`'s answers, `isNull`, and `snapshot` as the game answered it (its parts
+aren't all on the tape as reads of their own); a path inside a value the tape has whole is looked
+up inside it. Any other read gets its answer for the same arguments, else the latest one for the
+same callback and first argument (a path, a game function), else `"null"`. The rules, each added
+because the sample of drafts needed it:
+
+- `setGameObject` sets the path (numbers written as Flash writes them).
+- Joining a map (the `tfer` packet) sets the map, cell and pad; a jump sets the cell and pad.
+- A cooldown (`world.lock.<action>`) the tape never read is free.
+- Loading quests (`world.showQuests`) puts each one into `world.questTree`, shaped like a quest
+  the tape has, with its ID, a name, a slot of its own at value 1 (not done, but unlocked: a
+  repeatable quest's slot of -1 read as done, so every story "completed" at once), and one
+  placeholder item to turn in and one reward (`BuyScrolls` reads `rewards[0]`). A quest slot's
+  value the tape never read is 0, never another slot's (it was, and every quest read as done).
+- Accepting a quest marks it in progress; turning it in ends that.
+- Loading a shop fills `world.shopinfo`: the tape's when it is that shop, else an empty one with
+  its ID.
+
+**The run:** each draft with a `main` (Core files are libraries) on a bot of its own, `ActionDelay`
+0, started silently, for `DRAFT_SECS` (8); `DRAFT_JOBS` (6, 8 nightly) at once. It fails when a
+draft throws or can't start; it passes when one ends or is still running at its budget. The report
+(`target/draft-smoke.txt`) gives each draft's outcome, its last three log lines and its last
+twelve calls at the budget (before Stop runs its handlers). `DRAFT_FILTER` takes a comma-separated
+list of path parts, for a pull request's changed scripts. The harness is one test with workers,
+not one test per draft: the per-test time limit is lifted for it in `.config/nextest.toml`, and a
+draft that hangs is stopped at its budget like any other.
+
+**First full run** (local, 2026-11-27, 1,639 marked files, 8 s, 10 at once): 25 minutes, about
+9 s a draft on one worker (a draft's setup takes 1.5 to 2 s). 1,314 still running at the budget,
+308 finished, 17 failed: 16 Core libraries with no `main` (now skipped) and `farm/BuyScrolls.ts`
+reading the fake's quest rewards, which had none (now it has one). So no draft throws in its first
+8 s. Of those that finished early:
+
+- 32 Lone Wolf ultras stop on "Private room number 0 is invalid": the tape's bot options have the
+  private room number 0, as a user's could.
+- 29 merges stop on "The bot fetched 0 items to farm": the fake's empty shop. Real shop contents
+  come only from a tape of that shop.
+- The rest stop on the character's own state, as they should: membership, an item not owned, army
+  players or account names missing from the options, a daily already done.
+
+The story drafts get into their quests ("Doing Quest: [9897]"), the farms into their hunts, the
+merges up to their shop.
+
+**What it can't catch:** a draft that runs but is wrong (integer division, the wrong quest ID),
+anything past 8 s, and code behind the fake's gaps (shop contents, monsters that die and drop,
+items arriving): decision 4 or a tape of that flow covers those.
+
+**Not done:** the first nightly run on GitHub (the workflow isn't pushed); a pull-request job for
+changed scripts (the filter is ready); monsters that die and drops (no draft needed them to get
+past setup, since a hunt waiting for its drop counts as running).
+
 ## Phases
 
 No time estimates: each phase ends when its "Done when" holds.
@@ -492,7 +553,7 @@ No time estimates: each phase ends when its "Done when" holds.
 | **1. Recorder** | The tape format, the recorder at the three entry points, the writer thread, redaction, `TURU_TAPE` / `--record-tape`, HEADLESS.md. | A headless farmrun on a quiet server writes a tape. Its size per hour is measured. A test with a fake login finds no secret in it. Recording costs no measurable player time in `/debug/perf`. |
 | **2. Scrubber and replay** | `tape::scrub`, `ReplayHost`, strict mode, the failure message, `bot/tests/replay.rs` with the first tape (a quest turn-in loop, like `ensure_complete.rs`'s, recorded for real). | CI replays it. Changing the quest ID the script sends makes it fail with a message that names both IDs. The scrubbed tape holds no name from the recording account. |
 | **3. Core flows on tape** | One tape each, in this order: a merge buy (SynderesMerge), `enhanceItem`, bank moves, CoreStory's `mapItemQuest` then `killQuest`, a relogin on a quiet server, then a kill farm with drops (the first with busy background threads, which settles decision 7). | Each replays in CI, and its "unverified in game" line in STATUS.md is rewritten to point at its tape. |
-| **4. World fake and draft smoke** | `WorldFake` seeded from a phase 3 tape; `draft_smoke.rs` with one test per draft (nextest's `slow-timeout` is per test and ended the spike's single test), or its own nextest profile; the nightly workflow; pull requests run only the changed scripts. | Every draft runs nightly. The first night's failures are sorted into script fixes (in `muktiarafi/turu-scripts`) and fake gaps. The time per draft is recorded here. |
+| **4. World fake and draft smoke** | `WorldFake` seeded from a phase 3 tape; `draft_smoke.rs` (one test with workers, its time limit lifted in `.config/nextest.toml`); the nightly workflow; pull requests run only the changed scripts. | Every draft runs nightly. The first night's failures are sorted into script fixes (in `muktiarafi/turu-scripts`) and fake gaps. The time per draft is recorded here. |
 | **5. Recording for bug reports** (optional) | Diagnostics > Record Session (both shells), scrubbing on save. | A user can attach a scrubbed tape to an issue, and a developer can replay it. |
 
 Phases 1 and 2 are the core of it. Phase 3 is where the value accrues, and it grows one tape at

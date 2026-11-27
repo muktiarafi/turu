@@ -1,0 +1,62 @@
+name: Drafts nightly
+
+# The draft smoke run (docs/REPLAY_TESTS_PROPOSAL.md, phase 4): every converted script not yet
+# read through by hand runs for 8 seconds against a fake world seeded from a recorded tape
+# (bot/tests/draft_smoke.rs). It fails when a draft throws or can't start; the report
+# (target/draft-smoke.txt) is kept as an artifact either way. About 25 minutes.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: "Only drafts whose path contains one of these (comma-separated); empty: all"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drafts-nightly
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  drafts:
+    name: Run every draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      # scripts/ (turu-scripts): the drafts.
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: drafts-nightly
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Run the drafts
+        env:
+          DRAFT_EVERY: "1"
+          DRAFT_SECS: "8"
+          DRAFT_JOBS: "8"
+          DRAFT_FILTER: ${{ inputs.filter }}
+        run: cargo nextest run --locked -p turu_bot draft_smoke --run-ignored only --no-capture
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: draft-smoke
+          path: target/draft-smoke.txt
+          if-no-files-found: ignore

@@ -53,6 +53,7 @@ pub mod testing;
 pub mod updates;
 pub mod vitals;
 pub mod webhooks;
+pub mod world_fake;
 
 pub use error::{BotError, BotResult};
 pub use host::{FlashArg, FlashHost, HostError};

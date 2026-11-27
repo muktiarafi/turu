@@ -17,6 +17,7 @@ pub mod redact;
 pub mod replay;
 pub mod scrub;
 
+pub(crate) use recorder::arg_json;
 pub use recorder::{Recorder, finish_all};
 pub use scrub::{scrub, scrub_file};
 

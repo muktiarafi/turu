@@ -1069,7 +1069,12 @@ memory budget (NVIDIA, AMD).
   `seasonal/`, 395 in `other/`, 343 in `story/`, the rest in 13 other folders) are drafts cs2ts
   made (a line under their header says so) that type-check and load but weren't read through by
   hand; expect C#/TS differences the types don't show (integer division, culture-dependent
-  formats, async C# rewritten as handlers).
+  formats, async C# rewritten as handlers). Each one with a `main` (1,623 of the 1,639 marked
+  files; the rest are Core libraries) now runs for 8 s against a fake world seeded from a tape
+  (2026-11-27, `bot/tests/draft_smoke.rs`, nightly in `.github/workflows/drafts-nightly.yml`):
+  none throws or fails to start in that time. That checks they load and get past their setup into
+  their own code (the story drafts start their quests); it doesn't check that what they do is
+  right, nor anything past 8 s.
   `bot.map.cellPlayers` reads each player's `world.uoTree` cell (VibeSkua tracks them from
   packets). Nothing is left to port but what is
   skipped on purpose: the Ultras' `TestZone`, `Templates`, the unused `Prototypes`, the generator, and the

@@ -22,6 +22,7 @@ mod core_story;
 mod core_tasks;
 mod cosmetics;
 mod counter_attack;
+mod draft_smoke;
 mod engine_a_api;
 mod engine_a_packets;
 mod engine_b_items;
