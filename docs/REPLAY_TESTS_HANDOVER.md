@@ -17,7 +17,7 @@ and replay it in CI against the same script; and run every converted script ("dr
 | 1. Recorder | Done, checked in game (`bot/src/tape/recorder.rs`, `TURU_TAPE`, `--record-tape`). |
 | 2. Scrubber and replay | Done. `turu-tape scrub`, `turu_bot::testing::ReplayHost`. |
 | 3. Core flows on tape | Done. Seven tapes in `bot/tests/tapes/`, each with its script beside it. |
-| 4. World fake and draft smoke | Built: `WorldFake` (with monsters, drops, quests, merge shops and the bank), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. Not yet seen running on GitHub. |
+| 4. World fake and draft smoke | Built: `WorldFake` (with monsters, drops, quests, shops, the bank and equipping), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. Not yet seen running on GitHub. |
 | Decision 2 (virtual clock) | Done: `ScriptControl`'s clock, real unless a test makes it virtual. |
 | 5. Recording from Diagnostics | Not built. |
 
@@ -129,7 +129,9 @@ A script that changes what it sends needs its tape recorded again: remove the ol
    The merge drafts now buy (226 purchases) and farm their materials. ~~Shops that sell
    outright.~~ Done (proposal, "Shops that sell outright"): every `buyItem` with a written-out
    shop and item stocks that shop, `SHOP_EXTRAS` the names built at run time; purchases 473 in 168
-   drafts. Left: equipping (`KathoolDepths_LW`'s Vigil), and shops bought from by `req.name`.
+   drafts. Left: shops bought from by `req.name`. ~~Equipping.~~ Done (proposal, "Equipping"):
+   `equipItem`, `world.equipUseableItem` and `unequipItem` change `bEquip`; Kathool fights. Left:
+   potion auras (`hasActiveAura` after a potion).
 3. ~~Per-draft options.~~ Done: `DRAFT_OPTIONS` in the draft run (proposal, "Options per draft").
    ~~The Army's partners.~~ Done (proposal, "The Army's partners"): the ultras sync through their
    setup into their fights, and three finish. What stops them now is mostly the account (a

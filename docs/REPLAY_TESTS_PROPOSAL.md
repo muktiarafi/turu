@@ -690,6 +690,19 @@ moves to its gold farm; `DarkScroll` buys what its steps need and is at step 8 a
 ("Vigil could not be equipped"); `FirePlaneWarMerge` and `CyseroMerge` buy their materials by
 `req.name` from shops whose items the source doesn't name.
 
+**Equipping.** The fake equipped nothing: the `equipItem` packet and `world.equipUseableItem` (a
+potion, a scroll, Kathool's Vigil) left the item's `bEquip` as the tape had it, so every
+`isEquipped` check after an equip failed ("Vigil could not be equipped. The fight cannot start.").
+Now both put the inventory item on and take off what was in its slot (`sES`), as the client does on
+the server's answer, keeping the tape's spelling of the flag; `unequipItem` takes it off.
+
+Full run (2026-11-28), compared draft by draft: no "could not be equipped" left (6 before), no
+error. `KathoolDepths_LW` equips its Vigil, fights and publishes COMPLETE; `ArmyNightmareCarnax_LW`
+gets into its fight cycle; `0AllUltras_LW` spends longer on Ezrajal (30 s, 25 before) now that its
+items go on, so its budget ends before the house step it stopped at; `other/LoreBowl` ended this
+time (the 10 s real cap). Left: a used potion is "not verified after use", since the fake gives no
+aura (`hasActiveAura`); the drafts log it and go on.
+
 **Pull requests:** CI's "Changed drafts" job (`ci.yml`) runs the drafts a pull request's scripts
 change. `tools/drafts/changed.sh <base>` compares the scripts submodule's commit on the base branch
 with the pull request's and prints `skip`, `DRAFT_FILTER=<paths>` or `DRAFT_EVERY=16`: the changed

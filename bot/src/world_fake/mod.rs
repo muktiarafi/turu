@@ -5,9 +5,9 @@
 //! `getGameObject` path, the paths inside `getMany`'s answers, `isNull`, and every other read by
 //! its name and arguments. On top is an overlay that sends change, through a short list of rules:
 //! `setGameObject` sets the path, joining a map (the `tfer` packet) moves you there, a jump moves
-//! you to the cell, a bank move (`bankToInv`, `bankFromInv`, `bankSwapInv`) moves the item. Batched
-//! reads (`snapshot`, `getMany`, ...) are built from the single ones, as turu.swf builds them from
-//! the game.
+//! you to the cell, a bank move (`bankToInv`, `bankFromInv`, `bankSwapInv`) moves the item, an
+//! equip (`equipItem`, `world.equipUseableItem`) puts it on. Batched reads (`snapshot`, `getMany`,
+//! ...) are built from the single ones, as turu.swf builds them from the game.
 //!
 //! It is a model, so it is wrong in places: its job is only to get a draft past its setup into its
 //! own code. Each rule is there because a draft needed it; the answers come from the tape, not
@@ -367,6 +367,35 @@ impl WorldFake {
             let step = if to == BANK { 1 } else { -1 };
             self.set(BANK_COUNT, json!((count + step).max(0)));
         }
+    }
+
+    /// Puts an inventory item on (`on`) or takes it off, as the client does on the server's
+    /// `equipItem` / `unequipItem` answer: on, it takes the place of what was in its slot (`sES`).
+    fn equip(&self, id: i64, on: bool) {
+        let path = Self::container(false);
+        let Some(Value::Array(mut items)) = self.get(path) else {
+            return;
+        };
+        let Some(slot) = items
+            .iter()
+            .find(|i| sim::num(&i["ItemID"]) == Some(id))
+            .map(|i| i["sES"].clone())
+        else {
+            return;
+        };
+        // The tape's own spelling of the flag (`false`, `0` or `"0"`).
+        let flag = |item: &Value, value: bool| match &item["bEquip"] {
+            Value::Bool(_) => json!(value),
+            Value::String(_) => json!(if value { "1" } else { "0" }),
+            _ => json!(i64::from(value)),
+        };
+        for item in &mut items {
+            let this = sim::num(&item["ItemID"]) == Some(id);
+            if this || (on && item["sES"] == slot) {
+                item["bEquip"] = flag(item, this && on);
+            }
+        }
+        self.set(path, Value::Array(items));
     }
 
     /// `inventoryHasSpaceFor(item, quantity, purchase, outgoing)`, as turu.swf answers it: a stack
@@ -760,6 +789,12 @@ impl WorldFake {
             // A map item: what the quests in progress still need.
             "callGameFunction" if text(0) == "world.getMapItem" => self.give_quest_items(),
             "callGameFunction" if text(0) == "sfc.sendString" => self.packet(text(1)),
+            // A potion or scroll: the game sends `equipItem` for it.
+            "callGameFunction" if text(0) == "world.equipUseableItem" => {
+                if let Some(item) = args.get(1).and_then(|a| sim::num(&a["ItemID"])) {
+                    self.equip(item, true);
+                }
+            }
             _ => {}
         }
     }
@@ -784,6 +819,16 @@ impl WorldFake {
                     if let Some(from) = from {
                         self.move_item(from, Some(BANK), item);
                     }
+                }
+            }
+            Some("equipItem") => {
+                if let Some(item) = id(5) {
+                    self.equip(item, true);
+                }
+            }
+            Some("unequipItem") => {
+                if let Some(item) = id(5) {
+                    self.equip(item, false);
                 }
             }
             Some("bankSwapInv") => {
@@ -1088,6 +1133,55 @@ mod tests {
 
     fn ask(world: &WorldFake, name: &str, args: Vec<FlashArg>) -> String {
         world.call(name, args).unwrap()
+    }
+
+    #[test]
+    fn equipping_takes_the_slots_place_and_keeps_the_tapes_spelling() {
+        let world = from_lines(vec![
+            call(0, "getGameObject", json!(["world.curRoom"]), "7"),
+            call(
+                1,
+                "getGameObject",
+                json!(["world.myAvatar.items"]),
+                r#"[{"ItemID":1,"sName":"Healer","sES":"ar","bEquip":true},
+                    {"ItemID":2,"sName":"Rogue","sES":"ar","bEquip":false},
+                    {"ItemID":3,"sName":"Vigil","sES":"mi","bEquip":false},
+                    {"ItemID":4,"sName":"Staff","sES":"Weapon","bEquip":true}]"#,
+            ),
+        ]);
+        let worn = || -> Vec<String> {
+            let items: Vec<Value> = serde_json::from_str(&ask(
+                &world,
+                "getGameObject",
+                vec!["world.myAvatar.items".into()],
+            ))
+            .unwrap();
+            items
+                .iter()
+                .filter(|i| i["bEquip"] == json!(true))
+                .map(|i| i["sName"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        let send = |packet: &str| {
+            ask(
+                &world,
+                "callGameFunction",
+                vec!["sfc.sendString".into(), packet.into()],
+            );
+        };
+
+        send("%xt%zm%equipItem%7%2%");
+        assert_eq!(worn(), ["Rogue", "Staff"]);
+        // A potion goes on through the game's function, not the packet.
+        let vigil = FlashArg::Object([("ItemID".to_owned(), FlashArg::from(3.0))].into());
+        ask(
+            &world,
+            "callGameFunction",
+            vec!["world.equipUseableItem".into(), vigil],
+        );
+        assert_eq!(worn(), ["Rogue", "Vigil", "Staff"]);
+        send("%xt%zm%unequipItem%7%4%");
+        assert_eq!(worn(), ["Rogue", "Vigil"]);
     }
 
     #[test]
