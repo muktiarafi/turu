@@ -11,6 +11,7 @@
 //! }
 //! ```
 
+pub use crate::api::army::ArmyStandIn;
 pub use crate::tape::replay::{ReplayFailure, ReplayHost, ReplayOptions, ReplayReport};
 pub use crate::world_fake::{ShopStock, WorldFake};
 

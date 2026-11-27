@@ -26,6 +26,7 @@
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use turu_bot::script::{self, ScriptStatus};
 use turu_bot::testing::{ShopStock, WorldFake};
@@ -45,7 +46,7 @@ const KNOWN_FAKE_GAPS: &[(&str, &str)] = &[(
 /// Option values set before a draft starts, where its defaults would stop it at once: the drafts
 /// whose path holds one of the texts, the option's name, its value as JSON, and why. Each is set
 /// wherever a matching draft declares that name, in its options or in a group (`0AllUltras_LW`
-/// keeps its own under "Setup"), and saved to its options file (in this run's data folder); a
+/// keeps its own under "Setup"), and saved to its options file (in the draft's own data folder); a
 /// draft that doesn't declare it skips it. An entry that none of the matching drafts run declares
 /// fails the run, so the list can't go stale.
 const DRAFT_OPTIONS: &[(&[&str], &str, &str, &str)] = &[
@@ -77,6 +78,52 @@ const ROSTER: &[&str] = &[
 const ROSTER_WHY: &str = "CoreLoneWolf stops the bot unless every name is given, none twice, the \
                           account's among them (the fake's player is \"Questwalker\"); \
                           CoreArmyLite's scripts stop with fewer than 4";
+
+/// The roster's other players ([`DRAFT_OPTIONS`]' `player2` to `player7`), whom [`Partners`] plays.
+const PARTNERS: [&str; 6] = [
+    "Wanderer2",
+    "Wanderer3",
+    "Wanderer4",
+    "Wanderer5",
+    "Wanderer6",
+    "Wanderer7",
+];
+
+/// The rest of a draft's army: a draft runs alone, as the roster's first player, the one who
+/// leads. Without it, an army draft waits for the others until its budget.
+///
+/// - `CoreLoneWolf`'s sync log: when the draft appends its own `READY` (after its `RESET`) or
+///   `ARRIVED` (after its `STEP`), each partner appends the same line with its own name, so the
+///   draft writes `START` and `CONTINUE` and goes on. The lines are the draft's own, so they keep
+///   to its protocol version, session and step. Names off the draft's roster are ignored by it.
+/// - A barrier (`bot.army.barrier`, CoreArmySync's `WaitForArmy`): the others are there.
+///
+/// Not played: the signals one player sends another in a fight (`sendArmySignal`,
+/// `hasArmySignal`), which are each ultra's own choreography.
+struct Partners;
+
+impl turu_bot::testing::ArmyStandIn for Partners {
+    fn answer(&self, _name: &str, line: &str) -> Vec<String> {
+        let parts: Vec<&str> = line.split('|').collect();
+        let name_at = match (parts.first(), parts.len()) {
+            (Some(&"READY"), 5) => 3,
+            (Some(&"ARRIVED"), 5) => 4,
+            _ => return Vec::new(),
+        };
+        PARTNERS
+            .iter()
+            .map(|partner| {
+                let mut theirs = parts.clone();
+                theirs[name_at] = partner;
+                theirs.join("|")
+            })
+            .collect()
+    }
+
+    fn at_barrier(&self, _name: &str, _count: usize) -> bool {
+        true
+    }
+}
 
 /// Sets the loaded draft's [`DRAFT_OPTIONS`]: the indexes of the entries it declares, or why one
 /// was refused.
@@ -318,7 +365,15 @@ fn run_one(
         .unwrap_or(path)
         .display()
         .to_string();
-    let bot = Bot::new();
+    // A data folder of its own: drafts that run at once share no options file or army log
+    // (`0AllUltras_LW` syncs under its ultras' own log names).
+    static DRAFTS: AtomicUsize = AtomicUsize::new(0);
+    let bot = Bot::with_paths(turu_bot::paths::Paths {
+        root: crate::common::data_dir()
+            .join("drafts")
+            .join(DRAFTS.fetch_add(1, Ordering::Relaxed).to_string()),
+    });
+    bot.army.set_stand_in(Some(Arc::new(Partners)));
     if let Ok(options) = serde_json::from_value(world.header.options.clone()) {
         *bot.options.write() = options;
     }
@@ -383,7 +438,21 @@ fn run_one(
     }
     let log = bot.logs.script.text();
     let lines: Vec<&str> = log.lines().collect();
-    let failed = lines.iter().position(|l| l.contains(" failed:"));
+    // The engine's own lines for a throw: the script's (`Script <file> failed:`), a handler's or
+    // a listener's (bot/js/turu.ts: caught, and the script goes on). Not a script's own log line
+    // that says something failed ("Scroll of Enrage preparation failed: ...") before it stops.
+    let file = path
+        .file_name()
+        .map(|f| f.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let thrown = format!("Script {file} failed:");
+    let failed = lines.iter().position(|l| {
+        // "[12:00:00] <the engine's text>"; a script's Core.logger line has a second time.
+        let text = l.split_once("] ").map_or(*l, |(_, rest)| rest);
+        text.starts_with(&thrown)
+            || (text.starts_with("Handler \"") && text.contains("\" failed: "))
+            || (text.starts_with('"') && text.contains("\" listener failed: "))
+    });
     let (kind, detail) = match failed {
         _ if running => ("running", String::new()),
         Some(at) => (

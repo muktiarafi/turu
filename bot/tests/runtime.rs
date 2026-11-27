@@ -934,6 +934,49 @@ bot.army.barrier("bar-{pid}", 2, 10000, "{member}")"#
     assert_eq!(lines.len(), 60, "no update lost");
 }
 
+/// Answers each "ready:<name>" line with Bob's, and is always at the barrier.
+struct Bob;
+
+impl turu_bot::testing::ArmyStandIn for Bob {
+    fn answer(&self, _name: &str, line: &str) -> Vec<String> {
+        line.strip_prefix("ready:")
+            .map(|_| vec!["ready:Bob".to_owned()])
+            .unwrap_or_default()
+    }
+
+    fn at_barrier(&self, _name: &str, count: usize) -> bool {
+        count == 2
+    }
+}
+
+#[test]
+fn a_stand_in_army_answers_in_the_call_on_a_bot_of_its_own() {
+    // Emptied first: the folder is named after the process, and a reused ID keeps its lines.
+    let root = temp_dir("army-stand-in").join("alone");
+    let _ = std::fs::remove_dir_all(&root);
+    let bot = Bot::with_paths(turu_bot::paths::Paths { root });
+    bot.set_host(Some(Arc::new(FakeGame)));
+    bot.army.set_stand_in(Some(Arc::new(Bob)));
+    // On a virtual clock a wait takes no real time: Bob's line must be there before any.
+    bot.control.set_virtual();
+    let source = r#"bot.army.appendLog("Sync", "ready:Alice");
+bot.army.appendLog("Sync", "go");
+[bot.army.readLog("Sync"), bot.army.barrier("Bar", 2, 0, "Alice")]"#;
+    let result = script::run_snippet(&bot, source, |_| {}).unwrap();
+    let result: serde_json::Value = serde_json::from_str(&result).unwrap();
+    assert_eq!(
+        result,
+        serde_json::json!([["ready:Alice", "ready:Bob", "go"], true])
+    );
+    // Its logs are its own folder's: a bot on the shared one has none of them.
+    let other = Bot::new();
+    assert!(
+        turu_bot::api::army::read_log(&other, "Sync")
+            .unwrap()
+            .is_empty()
+    );
+}
+
 #[test]
 fn a_run_without_the_window_says_which_options_it_uses() {
     let bot = Bot::new();

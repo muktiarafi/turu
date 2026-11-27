@@ -142,9 +142,15 @@ pub struct Bot {
 }
 
 impl Bot {
+    /// A bot on the data folder ([`paths::Paths::new`]).
     pub fn new() -> Arc<Self> {
+        Self::with_paths(paths::Paths::new())
+    }
+
+    /// A bot on a data folder of its own (`paths.root`), for a test that runs several bots at
+    /// once and keeps their files apart (the draft run: each draft's options and army logs).
+    pub fn with_paths(paths: paths::Paths) -> Arc<Self> {
         let control = Arc::new(ScriptControl::default());
-        let paths = paths::Paths::new();
         let options = paths.load_options().unwrap_or_default();
         let settings = paths.load_settings().unwrap_or_default();
         let settings_base = serde_json::to_value(&settings).unwrap_or_default();

@@ -67,7 +67,11 @@ UTC). The "Changed drafts" job runs only on pull requests, so it hasn't run eith
   the last calls at the budget and, if it ran out of real time, the clock's report.
   `KNOWN_FAKE_GAPS` lists drafts that fail for the fake's sake (now only `story/TowerOfDoom.ts`).
   `DRAFT_OPTIONS` sets the option values a draft can't start without (the Lone Wolf ultras' room
-  number, a roster for them and two Army dailies); the rest run with their defaults.
+  number, a roster for them and two Army dailies); the rest run with their defaults. Each draft
+  has a data folder of its own (`Bot::with_paths`), and `Partners` plays the rest of its army
+  through `bot.army.set_stand_in` (`testing::ArmyStandIn`): it answers the draft's own
+  `CoreLoneWolf` READY and ARRIVED lines inside its `appendLog`, on the bot's clock, and lets
+  barriers through. Fight signals between players aren't played.
   `tools/drafts/changed.sh` picks a pull request's drafts for CI.
 
 ## Running things
@@ -122,9 +126,10 @@ A script that changes what it sends needs its tape recorded again: remove the ol
    and materials from its source (`shop_catalog`), and the fake sells them (proposal, "Shops").
    The merge drafts now buy (226 purchases) and farm their materials.
 3. ~~Per-draft options.~~ Done: `DRAFT_OPTIONS` in the draft run (proposal, "Options per draft").
-   The 32 Lone Wolf ultras and two Army dailies now get past their option checks, then wait for
-   their Army partners. **Next there:** the partners' side of the sync (`CoreLoneWolf`'s READY
-   and ARRIVED records in its `bot.army` log), so the ultras get into their fights.
+   ~~The Army's partners.~~ Done (proposal, "The Army's partners"): the ultras sync through their
+   setup into their fights, and three finish. What stops them now is mostly the account (a
+   SpellCrafting rank, classes it doesn't own). Left: the fight signals between players
+   (`hasArmySignal`), each ultra's own; only worth it for an ultra whose fight code needs testing.
 4. **Monsters no script names** (TowerOfDoom's floors find theirs by cell). A generic monster when
    the catalog has none is cheap but is guessing; only for drafts that need it.
 5. **Correctness (decision 4).** The smoke run catches throws, not wrong behaviour. Comparing a

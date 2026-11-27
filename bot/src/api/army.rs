@@ -34,20 +34,44 @@ const BARRIER_TICK_MS: u64 = 250;
 /// An arrival not renewed for this long is a member that left (a crash, a closed client).
 const BARRIER_STALE_SECS: u64 = 15;
 
-/// The army logs this client holds locked with `bot.army.withLock`, by name. Dropping a file
-/// unlocks it; the script's end drops them all.
+/// The army logs this client holds locked with `bot.army.withLock`, by name (dropping a file
+/// unlocks it; the script's end drops them all), and the [`ArmyStandIn`] a test gave it.
 #[derive(Default)]
-pub struct ArmyLocks(Mutex<HashMap<String, File>>);
+pub struct ArmyLocks {
+    locks: Mutex<HashMap<String, File>>,
+    stand_in: Mutex<Option<Arc<dyn ArmyStandIn>>>,
+}
 
 impl ArmyLocks {
     fn holds(&self, name: &str) -> bool {
-        self.0.lock().contains_key(name)
+        self.locks.lock().contains_key(name)
     }
 
     /// Unlocks every log (the script stopped, maybe inside `withLock`).
     pub fn release_all(&self) {
-        self.0.lock().clear();
+        self.locks.lock().clear();
     }
+
+    /// Lets `stand_in` play the rest of the army (`None`: no one does, as in production).
+    pub fn set_stand_in(&self, stand_in: Option<Arc<dyn ArmyStandIn>>) {
+        *self.stand_in.lock() = stand_in;
+    }
+
+    fn stand_in(&self) -> Option<Arc<dyn ArmyStandIn>> {
+        self.stand_in.lock().clone()
+    }
+}
+
+/// The other members of an army, played by a test (the draft run: a script that leads an army,
+/// run alone). It answers inside this client's own call, on the script's thread, so its answers
+/// keep to the bot's clock (a real-time thread answering would let a virtual clock run through
+/// the wait first).
+pub trait ArmyStandIn: Send + Sync {
+    /// The lines the others append to the log `name` right after this client appended `line`,
+    /// under the same lock. Not called for these lines themselves.
+    fn answer(&self, name: &str, line: &str) -> Vec<String>;
+    /// Whether the others are at the barrier `name` already, so it lets this client through.
+    fn at_barrier(&self, name: &str, count: usize) -> bool;
 }
 
 /// `army/<name>.log` in the data folder, which every client of this machine shares (C# puts it
@@ -91,7 +115,15 @@ fn read_log_in(dir: &Path, name: &str) -> BotResult<Vec<String>> {
 
 /// Appends a line (C# `WriteLog`). One `write` call, so lines from several clients don't mix.
 pub fn append_log(bot: &Bot, name: &str, line: &str) -> BotResult<()> {
-    locked(bot, name, |dir| append_log_in(dir, name, line))
+    let stand_in = bot.army.stand_in();
+    locked(bot, name, |dir| {
+        append_log_in(dir, name, line)?;
+        // The rest of the army a test plays answers at once, under the same lock.
+        for answer in stand_in.map(|s| s.answer(name, line)).unwrap_or_default() {
+            append_log_in(dir, name, &answer)?;
+        }
+        Ok(())
+    })
 }
 
 fn append_log_in(dir: &Path, name: &str, line: &str) -> BotResult<()> {
@@ -196,12 +228,12 @@ pub fn lock(bot: &Bot, name: &str) -> BotResult<()> {
         )));
     }
     let file = acquire(&bot.paths.army_dir(), name, |ms| bot.sleep(ms))?;
-    bot.army.0.lock().insert(name.to_owned(), file);
+    bot.army.locks.lock().insert(name.to_owned(), file);
     Ok(())
 }
 
 pub fn unlock(bot: &Bot, name: &str) {
-    bot.army.0.lock().remove(name);
+    bot.army.locks.lock().remove(name);
 }
 
 fn unix_now() -> u64 {
@@ -338,6 +370,13 @@ pub fn barrier(
         )));
     }
     let count = usize::try_from(count.max(1)).unwrap_or(1);
+    if bot
+        .army
+        .stand_in()
+        .is_some_and(|s| s.at_barrier(name, count))
+    {
+        return Ok(true);
+    }
     let dir = bot.paths.army_dir();
     let started = Instant::now();
     let lock_name = format!("{name}.barrier");

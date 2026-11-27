@@ -643,7 +643,7 @@ hand, not a draft) `skip`.
 defaults, except for the values a draft can't start without. Each entry names the drafts (path
 parts), the option, its value and why; it is set wherever a matching draft declares the name, in its
 options or a group (`0AllUltras_LW` keeps its own under "Setup"), before Start, with
-`bot.scripts.set_option_value` (saved to the run's own data folder). An entry that none of the
+`bot.scripts.set_option_value` (saved to the draft's own data folder, below). An entry that none of the
 drafts it matches declares fails the run, as `KNOWN_FAKE_GAPS` does. Today:
 
 - `PrivateRoomNumber` 1001 for the Lone Wolf ultras (`ultraslw/`): `CoreLoneWolf` stops the bot
@@ -655,15 +655,55 @@ drafts it matches declares fails the run, as `KNOWN_FAKE_GAPS` does. Today:
   than 4 players). `CoreLoneWolf` wants every name it declares given, none twice, and the account
   among them.
 
-With them (2026-11-27), every Lone Wolf ultra gets past its checks to "Waiting for Army players"
-(60 to 235 s on its clock, where before it stopped at 0 s after 8 calls), and the two Army dailies
-make about 1,000 calls before their own wait for the other members. They still go no further:
-past that point needs the other players' sync records (`CoreLoneWolf`'s READY and ARRIVED lines
-in its `bot.army` log, or `CoreArmyLite`'s), which nothing in the draft run writes. All 1,623
+With them alone, every Lone Wolf ultra got past its checks and then waited for its partners
+("Waiting for Army players") until its budget.
+
+**The Army's partners.** A draft runs alone, as the roster's first player, the one who leads; the
+rest of its army is played by `Partners` in `draft_smoke.rs`, through a seam in the engine
+(`bot.army.set_stand_in`, the trait `testing::ArmyStandIn`):
+
+- It answers inside the draft's own `bot.army.appendLog`, on the script's thread and under the
+  log's lock, so on the bot's clock. A thread answering in real time would be too late: the leader
+  polls with `bot.sleep`, which on a virtual clock takes no time, and would play its whole budget
+  before the first answer.
+- `CoreLoneWolf`'s sync log: when the draft appends its own `READY` (after its `RESET`) or
+  `ARRIVED` (after its `STEP`), each partner (`Wanderer2` to `Wanderer7`, the roster's names)
+  appends the same line with its own name. So the leader writes `START` and `CONTINUE` and goes on.
+  The lines are the draft's own, so they keep to its protocol version, session and step, and the
+  leader ignores names off its roster. The leader checks only a token's form, so the partners'
+  copies of its own token pass.
+- `bot.army.barrier` (CoreArmySync's `WaitForArmy`, the Army dailies): the others are there.
+- Not played: the signals one player sends another in a fight (`sendArmySignal`, `hasArmySignal`,
+  38 waits), each ultra's own choreography; a draft that waits for one waits until its budget.
+
+Each draft also runs on a data folder of its own (`Bot::with_paths`), so drafts that run at once
+share no options file or army log: `0AllUltras_LW` syncs under its ultras' own log names, and a
+collision would end one of them on "Army sync session was replaced", a clean stop the run would
+pass. The full run got faster for it (156 s against 191 s).
+
+Getting further showed that the run took any log line with " failed:" for a throw: 13 ultras
+logged "Scroll of Enrage preparation failed: SpellCrafting rank 5 is required." before stopping
+themselves. It now looks for the engine's own lines: `Script <file> failed:`, and a handler's or a
+listener's throw (`bot/js/turu.ts` logs those and goes on). A full run printing every other line
+with " failed:" found only those 13. A throw while Stop ends a draft at its budget still counts as
+"running": `good/blod/.../BlindingBroadswordofDestiny.ts` throws "cannot read property 'name' of
+undefined" there (`CoreBLOD`'s `getBaseWeapon` takes `.find(...)!` on a shop list Stop cut short),
+before this change as after. One real throw:
+`TheEncroachingShadows_LW` runs `VoidFlibbitiestgibbet_LW` as its child with six players, and the
+child read `player7` from the parent's "Setup", which has none (C#'s `Config.Get` gives null, Turu's
+refuses). Fixed in the script by reading it through `configOr`, as `UltraGeneral` was.
+
+Now (2026-11-27) no ultra waits for its partners: they sync through their setup steps, and three
+(Ezrajal, Engineer, Champion Drakath) and `0AllUltras_LW`'s first fight publish `COMPLETE`; the
+others stop on what the account lacks (SpellCrafting rank 5 for the Scroll of Enrage, classes it
+doesn't own: King's Echo, Dragon of Time, Chunin) or are still fighting at the budget. The two
+Army dailies farm until their budget. The same outcomes with 1 and 10 drafts at once, but for two
+drafts whose last wait crosses their budget (ended at 79 and 110 s on their clocks with one at
+once, seen still running at it with ten: the run looks every 50 ms of real time). All 1,623
 drafts: no error, the one known gap.
 
-**Not done:** the first nightly run and the first "Changed drafts" run on GitHub; the Army
-partners' side of the sync, so the ultras get into their fights.
+**Not done:** the first nightly run and the first "Changed drafts" run on GitHub; the fight
+signals between partners.
 
 ## Decision 2: the virtual clock
 
