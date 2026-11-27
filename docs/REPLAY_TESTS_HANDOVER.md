@@ -71,7 +71,9 @@ UTC). The "Changed drafts" job runs only on pull requests, so it hasn't run eith
   has a data folder of its own (`Bot::with_paths`), and `Partners` plays the rest of its army
   through `bot.army.set_stand_in` (`testing::ArmyStandIn`): it answers the draft's own
   `CoreLoneWolf` READY and ARRIVED lines inside its `appendLog`, on the bot's clock, and lets
-  barriers through. Fight signals between players aren't played.
+  barriers through. Fight signals between players aren't played. The run takes part in each
+  draft's clock and waits until exactly the budget, so a draft stops at 60.0 s on any machine; a
+  throw counts even when the draft was still running then (proposal, "The budget, exactly").
   `tools/drafts/changed.sh` picks a pull request's drafts for CI.
 
 ## Running things
@@ -165,6 +167,10 @@ A script that changes what it sends needs its tape recorded again: remove the ol
   a script can reach.
 - **A loop that polls without sleeping holds virtual time still** unless calls cost time:
   `ScriptControl::spend` charges 1 ms per Flash call on a virtual clock.
+- **Watching a virtual clock from outside it is imprecise.** A test thread that reads
+  `control.now()` between real-time sleeps sees it jump seconds at a time (it runs about 130 times
+  faster). To stop a script at a virtual moment, take part in the clock and `wait_until` it; ask
+  Stop before letting go of the clock (the draft run's `run_one`).
 - **The app keeps `serde_json`'s key order (`preserve_order`, from Ruffle's dependencies); the
   engine's tests don't.** JSON text an engine call builds differs in key order between a recording
   and a replay: the replay compares it by content.

@@ -685,10 +685,7 @@ Getting further showed that the run took any log line with " failed:" for a thro
 logged "Scroll of Enrage preparation failed: SpellCrafting rank 5 is required." before stopping
 themselves. It now looks for the engine's own lines: `Script <file> failed:`, and a handler's or a
 listener's throw (`bot/js/turu.ts` logs those and goes on). A full run printing every other line
-with " failed:" found only those 13. A throw while Stop ends a draft at its budget still counts as
-"running": `good/blod/.../BlindingBroadswordofDestiny.ts` throws "cannot read property 'name' of
-undefined" there (`CoreBLOD`'s `getBaseWeapon` takes `.find(...)!` on a shop list Stop cut short),
-before this change as after. One real throw:
+with " failed:" found only those 13. One real throw:
 `TheEncroachingShadows_LW` runs `VoidFlibbitiestgibbet_LW` as its child with six players, and the
 child read `player7` from the parent's "Setup", which has none (C#'s `Config.Get` gives null, Turu's
 refuses). Fixed in the script by reading it through `configOr`, as `UltraGeneral` was.
@@ -697,10 +694,29 @@ Now (2026-11-27) no ultra waits for its partners: they sync through their setup 
 (Ezrajal, Engineer, Champion Drakath) and `0AllUltras_LW`'s first fight publish `COMPLETE`; the
 others stop on what the account lacks (SpellCrafting rank 5 for the Scroll of Enrage, classes it
 doesn't own: King's Echo, Dragon of Time, Chunin) or are still fighting at the budget. The two
-Army dailies farm until their budget. The same outcomes with 1 and 10 drafts at once, but for two
-drafts whose last wait crosses their budget (ended at 79 and 110 s on their clocks with one at
-once, seen still running at it with ten: the run looks every 50 ms of real time). All 1,623
-drafts: no error, the one known gap.
+Army dailies farm until their budget. All 1,623 drafts: no error, the one known gap.
+
+**The budget, exactly.** The run looked at a draft's clock every 50 ms of real time, and a
+virtual clock runs about 130 times faster: a draft played 60 to 66 s, more on a fast machine than
+a slow one. So a throw a few seconds past the budget was caught or not by chance
+(`good/blod/.../BlindingBroadswordofDestiny.ts` throws at 62 s: "running" in one run, a failure
+in the next), and two drafts ended or were still running at it depending on how many ran at once.
+Now the run takes part in the draft's clock (`bot.control.participate()`, before Start) and waits
+until the budget with `wait_until`: the clock can't pass a participant's deadline before it looks,
+so every draft stops at 60.0 s. It asks Stop while it still holds the clock, then lets go so the
+stop handlers' waits can run. A ticker on a real-time thread (`notify` every 20 ms) wakes the wait
+to see a draft that ended or the real-time cap. The report's clock time is read at the budget, not
+after the stop handlers.
+
+A throw now counts even when the draft was still running at its budget (it threw as the run was
+stopping it), where "running" won before. A throw after Stop isn't one: the engine ends that run
+as stopped (`run_error`: `bot.should_exit()`), as VibeSkua drops any exception once `StopScript`
+set `_stoppedByScript`; a handler's or listener's throw is only counted when logged before Stop.
+The same outcomes and clock times with 1 and 10 drafts at once (calls differ by 2 in one draft of
+37). A few drafts that make 40,000 to 50,000 calls need about 9.5 s of real time for 60 s of play,
+so with 10 at once they reach the real-time cap first ("running", with the clock's report). With
+the exact budget the full run has fewer kills (8,290 against 9,223): drafts no longer play on past
+60 s.
 
 **Not done:** the first nightly run and the first "Changed drafts" run on GitHub; the fight
 signals between partners.

@@ -26,7 +26,7 @@
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use turu_bot::script::{self, ScriptStatus};
 use turu_bot::testing::{ShopStock, WorldFake};
@@ -40,7 +40,7 @@ const MARK: &str = "not yet read through by hand";
 const KNOWN_FAKE_GAPS: &[(&str, &str)] = &[(
     "story/TowerOfDoom.ts",
     "it finds each floor's monster by its cell (r10), never by name, so the monster catalog \
-     (built from scripts that name them) has none for towerofdoom2 to 10; floor 1 passes",
+         (built from scripts that name them) has none for towerofdoom2 to 10; floor 1 passes",
 )];
 
 /// Option values set before a draft starts, where its defaults would stop it at once: the drafts
@@ -394,6 +394,11 @@ fn run_one(
     bot.scripts.load(path);
     let started = Instant::now();
     let clock_start = bot.control.now();
+    // The run takes part in the draft's clock: it waits until the budget, and the clock can't
+    // pass a participant's deadline while it hasn't looked, so a draft stops at exactly its
+    // budget however fast the machine is (looking at the clock every 50 ms of real time, a draft
+    // got a few seconds further on one machine than another, and threw past its budget or not).
+    let participant = bot.control.participate();
     let options_set = set_draft_options(&bot, &script);
     if let Err(e) = options_set.clone().and_then(|_| script::start_silent(&bot)) {
         return Outcome {
@@ -414,23 +419,44 @@ fn run_one(
         };
     }
     // On its clock's budget, or a real one: a draft that keeps a thread busy holds the clock still.
-    while bot.scripts.is_running()
-        && bot.control.now().since(clock_start) < budget
-        && started.elapsed() < real_cap
-    {
-        std::thread::sleep(Duration::from_millis(50));
-    }
+    // The ticker wakes the wait to look at the draft's end and the real time.
+    let ticking = Arc::new(AtomicBool::new(true));
+    let ticker = {
+        let (ticking, control) = (ticking.clone(), bot.control.clone());
+        std::thread::spawn(move || {
+            while ticking.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(20));
+                control.notify();
+            }
+        })
+    };
+    let _ = bot.control.wait_until(Some(clock_start + budget), || {
+        !bot.scripts.is_running() || started.elapsed() >= real_cap
+    });
     let running = bot.scripts.is_running();
+    // How far it played: its budget, or less when it ended or held the clock (not its stop
+    // handlers' time).
+    let played = bot.control.now().since(clock_start);
     // Where it was at the budget, before Stop runs its handlers.
     let recent = fake.recent();
     // Out of real time before its clock's budget: who held the clock still.
-    let clock = if running && bot.control.now().since(clock_start) < budget {
+    let clock = if running && played < budget {
         bot.control.clock_report()
     } else {
         String::new()
     };
+    // The log as far as the draft got on its own: a handler that throws while Stop ends the run
+    // is Stop's doing, not the draft's.
+    let logged_before_stop = bot.logs.script.text().lines().count();
+    // Stop before letting go of the clock: let go first and the draft would play on past its
+    // budget until Stop reached it. Then the clock runs for its stop handlers.
     if running {
         script::stop(&bot);
+    }
+    drop(participant);
+    ticking.store(false, Ordering::Release);
+    let _ = ticker.join();
+    if running {
         let until = Instant::now() + Duration::from_secs(5);
         while bot.scripts.is_running() && Instant::now() < until {
             std::thread::sleep(Duration::from_millis(50));
@@ -441,20 +467,23 @@ fn run_one(
     // The engine's own lines for a throw: the script's (`Script <file> failed:`), a handler's or
     // a listener's (bot/js/turu.ts: caught, and the script goes on). Not a script's own log line
     // that says something failed ("Scroll of Enrage preparation failed: ...") before it stops.
+    // A throw counts even when the draft was still running at its budget: it threw on its own
+    // while the run was asking it to stop. A throw after Stop isn't one: the engine ends that
+    // run as stopped, as VibeSkua does (`_stoppedByScript`); a handler's is only counted before.
     let file = path
         .file_name()
         .map(|f| f.to_string_lossy().into_owned())
         .unwrap_or_default();
     let thrown = format!("Script {file} failed:");
-    let failed = lines.iter().position(|l| {
+    let failed = lines.iter().enumerate().position(|(i, l)| {
         // "[12:00:00] <the engine's text>"; a script's Core.logger line has a second time.
         let text = l.split_once("] ").map_or(*l, |(_, rest)| rest);
         text.starts_with(&thrown)
-            || (text.starts_with("Handler \"") && text.contains("\" failed: "))
-            || (text.starts_with('"') && text.contains("\" listener failed: "))
+            || (i < logged_before_stop
+                && ((text.starts_with("Handler \"") && text.contains("\" failed: "))
+                    || (text.starts_with('"') && text.contains("\" listener failed: "))))
     });
     let (kind, detail) = match failed {
-        _ if running => ("running", String::new()),
         Some(at) => (
             "error",
             lines[at..]
@@ -464,6 +493,7 @@ fn run_one(
                 .collect::<Vec<_>>()
                 .join(" | "),
         ),
+        None if running => ("running", String::new()),
         None if bot.scripts.status() == ScriptStatus::Error => ("error", "status Error".into()),
         None => ("finished", String::new()),
     };
@@ -476,7 +506,7 @@ fn run_one(
         detail,
         calls: fake.calls(),
         secs: started.elapsed().as_secs_f64(),
-        clock_secs: bot.control.now().since(clock_start).as_secs_f64(),
+        clock_secs: played.as_secs_f64(),
         kills: stats.kills,
         accepted: stats.quests_accepted,
         completed: stats.quests_completed,
