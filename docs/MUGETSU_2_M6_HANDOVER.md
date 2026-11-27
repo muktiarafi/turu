@@ -23,11 +23,14 @@ Two pieces of work landed together on `main`:
 | Repo | Branch | Tip | Notes |
 |---|---|---|---|
 | `muktiarafi/ruffle-aqw` | `aqw` | `121290d8d` | Force-pushed (new history): Ruffle `f22d29d9` + `chore: Apply Mugetsu 2.0.0 patches` (`56ff8f071`) + 32 Turu commits. PR #1 shows merged. `aqw`'s branch protection was put back as it was (force pushes off). |
-| `muktiarafi/ruffle-aqw` | `aqw-2.0` | `121290d8d` | Same as `aqw`; can be deleted. |
+| `muktiarafi/ruffle-aqw` | `aqw-2.0` | `121290d8d` | Same as `aqw` then; deleted from ruffle-aqw since (2026-11-28). The frozen line for this base will be `aqw-2.0.0`, made when the next base replaces `aqw` (ruffle-aqw's CONTRIBUTING.md, "Branches and tags"). |
 | `muktiarafi/turu` | `main` | `e8d0213a4` | 13 commits from `14724433f` to `e8d0213a4` (list below). |
 
 Local only (in this checkout's `ruffle/`): `aqw-1.6-backup` (the old `aqw`, Mugetsu 1.6.0) and
-`aqw-2.0-before-m6-cleanup` (`aqw-2.0` before the two thread-state commits were dropped).
+`aqw-2.0-before-m6-cleanup` (`aqw-2.0` before the two thread-state commits were dropped). They
+held the ruffle-aqw commits that 36 of Turu's older commits pin; since 2026-11-28 ruffle-aqw has
+them too, as the frozen branch `aqw-1.6.0` and the tag `archive/aqw-2.0-before-m6-cleanup`, and
+the first release tag, `aqw-2.0.0-1`, is on `aqw`'s `882183aa5`.
 
 **CI:** green for `e8d0213a4` (https://github.com/muktiarafi/turu/actions/runs/44096883886):
 format, clippy, tests and the host SWF, all on Ubuntu, so the app compiles and its tests pass on
@@ -177,8 +180,9 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
      `ui_field.rs` and `saf.rs` (only slots run the engine).
    (The web monitor and client update checks are fine: the slots elect one of them to run both,
    `turu::start_monitor_election`.)
-7. **Cleanups**: delete `aqw-2.0` on ruffle-aqw and the two local backup branches once `main`'s
-   CI is green; `app/src/mugetsu.rs` `log_folder` is unused (warning from before).
+7. **Cleanups**: `app/src/mugetsu.rs` `log_folder` is unused (warning from before). Keep
+   ruffle-aqw's published branches and tags: it no longer drops published history. The two local
+   backup branches are pushed (above) and can go.
 
 ## Decisions taken (and why)
 
@@ -204,9 +208,12 @@ loaded), the refresh rate reaching a slot, the cursor shapes on screen.
   find or load main class macromedia.asc.embedding.ScriptCompiler". Fix: `cargo clean -p asc -p
   build_playerglobal` in that target.
 - **Pushing:** SSH to GitHub fails in these sessions; push over HTTPS with gh's credential
-  helper (the agent memory `github-push-auth`). ruffle-aqw's `aqw` is protected (linear history,
-  checks "Rebased on aqw" and "Check", no force pushes): a rebuilt history needs the protection
-  relaxed and put back, with the user's yes.
+  helper (the agent memory `github-push-auth`). ruffle-aqw's `aqw` is protected
+  (a pull request, checks "Rebased on aqw" and "Check", no force pushes, admins not held to it).
+  A new base no longer needs a force push: it joins `aqw` with one `git merge -s ours`
+  (ruffle-aqw's CONTRIBUTING.md, "Updating"), so `aqw` stopped requiring a linear history
+  (2026-11-28); the "Rebased on aqw" check keeps pull requests linear. The frozen `aqw-*` lines
+  have the ruleset "Frozen bases (aqw-*)": the same rules plus linear history, admins bypass.
 - **Three-way merging `desktop/` into `app/`** (`git merge-file` with Mugetsu 1.6's file as base)
   gives clean-looking merges that interleave unrelated code; read every merged region.
 - **Kotlin and Rust bindings** (`android/src/java.rs`) are checked only when the app starts

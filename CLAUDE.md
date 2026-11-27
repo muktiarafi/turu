@@ -47,10 +47,14 @@ Sibling checkouts used as references (read-only): `../VibeSkua` (C# source of tr
 behaviour: `Skua.Core/Scripts/*.cs`, `Skua.AS3/skua/src`), `../Scripts` (the C# scripts we
 port), `../mugetsu` (patch source).
 
-Updating Ruffle or Mugetsu happens in ruffle-aqw: re-apply Mugetsu on the new Ruffle there, format
-it before re-applying Turu's commits (ruffle-aqw's `.github/CONTRIBUTING.md`), tag it, bump
-`ruffle/`, then port what changed in ruffle-aqw's `desktop/` into `app/`
-(`git -C ruffle diff <old>..<new> -- desktop`). Keep the root `Cargo.toml`'s
+ruffle-aqw's published history is never rewritten: other projects depend on it, and Turu's own
+old commits pin its commits. `aqw` only fast-forwards; no force push, on any branch or tag there
+(ruffle-aqw's `.github/CONTRIBUTING.md`, "Branches and tags").
+Updating Ruffle or Mugetsu happens in ruffle-aqw: freeze the old base as `aqw-<base>`, build the
+new base on a work branch (Mugetsu re-applied on the new Ruffle, formatted before re-applying
+Turu's commits), join the old `aqw` in with `git merge -s ours`, fast-forward `aqw` to it and tag
+the release (CONTRIBUTING.md, "Updating"), bump `ruffle/`, then port what changed in ruffle-aqw's
+`desktop/` into `app/` (`git -C ruffle diff <old>..<new> -- desktop`). Keep the root `Cargo.toml`'s
 `[workspace.dependencies]`, `[patch.crates-io]` and profiles in step with `ruffle/Cargo.toml`
 (Cargo reads patches and profiles only from the root workspace).
 
