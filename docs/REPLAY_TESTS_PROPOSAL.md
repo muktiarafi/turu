@@ -743,6 +743,26 @@ named after its potion except for those in the run's `POTION_AURAS` (CoreLoneWol
 Full run (2026-11-28): the same outcome for every draft, no error, no "not verified after use"
 (2 before); the potions log "applied". Kills 9,866 (9,870): skill 5 no longer hits.
 
+**What you wear, read alone.** `ThirdErrand` still took 14 s of real time for its 60 s. Timing each
+stage of its calls: the fake answered all 41,620 in 0.3 s; the rest was 13,345 reads of the whole
+inventory (89 KB each, 1.2 GB in all), parsed into items (5 s), written for the script (4.7 s) and
+parsed again in JS. Each read costs about 1 ms here, and 4 to 10 ms of the game's thread on a real
+client. They came from `CoreAdvanced.gearStore`, which the loop calls on every pass (as the C#
+does) and which read the inventory five times to find what you wear: once itself, once in each
+of `currentClassEnh` and the cape, helm and weapon specials. The loop passes 2,668 times because
+the fake's placeholder quest never takes the Nulgath's mask, so the hunt ends at once; in the game
+it would kill each time.
+
+`bot.inventory.equippedItems` reads only the items with `bEquip` set (turu.swf's
+`selectArrayObjectsWhere`, as `player.currentClass` does), and `gearStore` and CoreAdvanced's
+`currentClassEnh` and specials use it. `ThirdErrand` takes 1.6 s, with the same calls and the same
+progress. CoreBots' `setOptions` and `enhanceEquipped` still read the whole inventory, once a run
+or a restore: the tapes recorded those reads, and a replay refuses one it wasn't given.
+
+Full run (2026-11-28): the same outcome for every draft, no error, none cut by the real-time cap
+(`ThirdErrand` before), in 87 to 97 s (108). Kills 9,866, as before. The slowest are
+`CraggleRockREP` and `CragsGemMerge` (6 to 7 s).
+
 **Pull requests:** CI's "Changed drafts" job (`ci.yml`) runs the drafts a pull request's scripts
 change. `tools/drafts/changed.sh <base>` compares the scripts submodule's commit on the base branch
 with the pull request's and prints `skip`, `DRAFT_FILTER=<paths>` or `DRAFT_EVERY=16`: the changed

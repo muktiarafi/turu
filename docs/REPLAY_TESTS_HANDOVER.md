@@ -123,9 +123,10 @@ A script that changes what it sends needs its tape recorded again: remove the ol
 
 ## Next steps, in the order recommended
 
-1. **Push `main`, then look at CI and the first nightly.** Sort any nightly failure into a
-   script fix (in `muktiarafi/turu-scripts`) or a fake gap (`KNOWN_FAKE_GAPS` with the reason).
-   Branch protection on `main` doesn't require the new jobs; that is the owner's setting.
+1. ~~Push `main`, then look at CI and the first nightly.~~ Done: CI and the nightly pass. Sort a
+   later nightly failure into a script fix (in `muktiarafi/turu-scripts`) or a fake gap
+   (`KNOWN_FAKE_GAPS` with the reason). Branch protection on `main` doesn't require the new jobs;
+   that is the owner's setting.
 2. ~~Shop contents, so merges buy.~~ Done: the draft run reads each merge script's shop, items
    and materials from its source (`shop_catalog`), and the fake sells them (proposal, "Shops").
    The merge drafts now buy (226 purchases) and farm their materials. ~~Shops that sell
@@ -149,9 +150,10 @@ A script that changes what it sends needs its tape recorded again: remove the ol
 5. **Correctness (decision 4).** The smoke run catches throws, not wrong behaviour. Comparing a
    draft's sends with VibeSkua's for the same script needs a packet log from VibeSkua on Windows.
 6. ~~The real-time cap.~~ Done (proposal, "The real-time cap"): the `draft` profile; outcomes are
-   the same with 6 and 12 at once. Left: `ThirdErrand` still needs 17 s of real time for its 60 s
-   (0.4 ms a call), mostly reading the inventory, which the engine parses and writes as JSON again
-   for the script on each read.
+   the same with 6 and 12 at once. `ThirdErrand` takes 1.6 s for its 60 s now that
+   `CoreAdvanced.gearStore` reads only what you wear (`bot.inventory.equippedItems`; proposal,
+   "What you wear, read alone"). Left: the fake's placeholder quests never take what a script
+   hunts for them, so a loop like `thirdErrand`'s passes without killing.
 7. **Smaller:** phase 5 (Diagnostics > Record Session, scrubbing on save); moving the few
    genuinely timer-bound engine tests (Butler follow, relogin, `gear`'s bank equip) onto the
    virtual clock (each needs `bot.control.participate()` on the test thread and fakes that reply on

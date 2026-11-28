@@ -187,6 +187,10 @@ fn item_checks_send_a_filter_and_check_its_answer() {
     // The equipped class: `bEquip` true and `sType` Class (Warrior is a class, not worn).
     assert_eq!(call(&bot, "player.currentClass", json!([])), json!("Rogue"));
     // (`currentClass` first asks whether you're logged in.)
+    // What you wear: only the items with `bEquip` set.
+    let worn = call(&bot, "inventory.equippedItems", json!([]));
+    assert_eq!(worn.as_array().map(Vec::len), Some(1), "{worn}");
+    assert_eq!(worn[0]["name"], json!("Rogue"));
     let calls = game.calls.lock();
     assert!(
         calls

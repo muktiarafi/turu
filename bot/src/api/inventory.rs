@@ -17,6 +17,16 @@ pub fn inventory_items(bot: &Bot) -> BotResult<Vec<ItemBase>> {
     items(bot, Container::Inventory)
 }
 
+/// The inventory items you wear: `bEquip` true, read without copying the whole inventory.
+pub fn equipped_items(bot: &Bot) -> BotResult<Vec<ItemBase>> {
+    matching_where(
+        bot,
+        Container::Inventory,
+        &[("bEquip", FlashArg::Bool(true))],
+        |i| i.equipped,
+    )
+}
+
 /// The equipped class's name.
 pub fn current_class(bot: &Bot) -> BotResult<Option<String>> {
     Ok(current_class_item(bot)?.map(|i| i.name))
@@ -691,6 +701,7 @@ pub fn dispatch(bot: &Arc<Bot>, module: &str, name: &str, args: Args) -> BotResu
                 None => false,
             })
         }
+        (Container::Inventory, "equippedItems") => ok(equipped_items(bot)?),
         (Container::Inventory, "favoritedItems") => ok(favorited_items(bot, true)?),
         (Container::Inventory, "unfavoritedItems") => ok(favorited_items(bot, false)?),
         (Container::Inventory, "bankAllItems") => ok(bank_all_items(

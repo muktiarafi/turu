@@ -816,6 +816,11 @@ export class Inventory extends ItemContainer {
     ensureToBank(item: string | number): boolean { return call("inventory.ensureToBank", item); }
     /** The item is one of your favourites (AQW's favourite star). False when you don't have it. */
     isFavorited(item: string | number): boolean { return call("inventory.isFavorited", item); }
+    /**
+     * The inventory items you wear. Cheaper than `items.filter((i) => i.equipped)`: only those
+     * items are read from the game, not the whole inventory.
+     */
+    get equippedItems(): InventoryItem[] { return call("inventory.equippedItems"); }
     /** The inventory items marked as favourites. */
     get favoritedItems(): InventoryItem[] { return call("inventory.favoritedItems"); }
     /** The inventory items not marked as favourites. */
