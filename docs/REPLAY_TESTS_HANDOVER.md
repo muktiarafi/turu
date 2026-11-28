@@ -135,7 +135,8 @@ A script that changes what it sends needs its tape recorded again: remove the ol
    The merge drafts now buy (226 purchases) and farm their materials. ~~Shops that sell
    outright.~~ Done (proposal, "Shops that sell outright"): every `buyItem` with a written-out
    shop and item stocks that shop, `SHOP_EXTRAS` the names built at run time; purchases 473 in 168
-   drafts. Left: shops bought from by `req.name` (`FirePlaneWarMerge`, `CyseroMerge`). ~~Equipping.~~ Done (proposal, "Equipping"):
+   drafts. ~~Shops bought from by `req.name`.~~ Done (proposal, "Buys by `req.name`"): read from
+   the `case` above them; purchases 521 in 174 drafts. ~~Equipping.~~ Done (proposal, "Equipping"):
    `equipItem`, `world.equipUseableItem` and `unequipItem` change `bEquip`; Kathool fights.
    ~~Potion auras.~~ Done (proposal, "Potion auras"): skill 5 drinks the slot's potion and its
    aura is on you (`POTION_AURAS` for the names that differ).

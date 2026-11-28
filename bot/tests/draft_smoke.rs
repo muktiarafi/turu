@@ -408,11 +408,30 @@ const POTION_AURAS: &[(&str, &str)] = &[
 ];
 const POTION_AURAS_FROM: &str = "scripts/ultraslw/CoreLoneWolf.ts";
 
+/// The labels of the `case` that code at `at` is under: the last one before it and those stacked
+/// on it (nothing but space between them), none when a `default:` comes after it. `labels` are
+/// the file's `case` labels in order: where each starts and ends, and its text.
+fn case_labels_before(text: &str, labels: &[(usize, usize, String)], at: usize) -> Vec<String> {
+    let Some(mut last) = labels.iter().rposition(|(_, end, _)| *end <= at) else {
+        return Vec::new();
+    };
+    if text[labels[last].1..at].contains("default:") {
+        return Vec::new();
+    }
+    let mut names = vec![labels[last].2.clone()];
+    while last > 0 && text[labels[last - 1].1..labels[last].0].trim().is_empty() {
+        last -= 1;
+        names.push(labels[last].2.clone());
+    }
+    names
+}
+
 /// Each merge shop's stock, by shop ID, from its merge script: the shop it names
 /// (`startBuyAllMerge("map", id, ...)`), the items its options list (`option.bool("29574",
 /// "Synderes' Cape of Doom", ...)`, the `Select` group's switches, named by item ID) and the
 /// materials it farms (`findIngredients`' `case "Synderes' Souvenir":`); and what any script buys
-/// outright (`buyItem(<map>, <shop>, "<name>" or <ID>)`, plus [`SHOP_EXTRAS`]), sold for nothing.
+/// outright (`buyItem(<map>, <shop>, "<name>" or <ID>)`, `req.name` under a `case "<name>":`,
+/// plus [`SHOP_EXTRAS`]), sold for nothing.
 /// A shop's contents reach the game only once it loads, so a tape can't supply them. Also the merge
 /// scripts it found nothing in, by what was missing.
 fn shop_catalog() -> (std::collections::HashMap<i64, ShopStock>, Vec<String>) {
@@ -427,6 +446,12 @@ fn shop_catalog() -> (std::collections::HashMap<i64, ShopStock>, Vec<String>) {
     // (`bot.map.name`).
     let bought = regex::Regex::new(&format!(
         r#"buyItem\(\s*(?:{TEXT}|[\w.]+)\s*,\s*(\d+)\s*,\s*(?:{TEXT}|(\d+)\s*[,)])"#
+    ))
+    .unwrap();
+    // `buyItem(<map>, <shop>, req.name, ...)` in a `findIngredients` case: `req.name` is the
+    // case's label (or one of the labels stacked on it, which fall through to it).
+    let by_req = regex::Regex::new(&format!(
+        r#"buyItem\(\s*(?:{TEXT}|[\w.]+)\s*,\s*(\d+)\s*,\s*req\.name\b"#
     ))
     .unwrap();
     let mut sold: std::collections::HashMap<i64, Vec<(i64, String)>> = Default::default();
@@ -476,6 +501,40 @@ fn shop_catalog() -> (std::collections::HashMap<i64, ShopStock>, Vec<String>) {
                     item.1
                 );
                 sold.entry(shop).or_default().push(item);
+            }
+        }
+        let labels: Vec<(usize, usize, String)> = case
+            .captures_iter(&text)
+            .map(|c| {
+                let m = c.get(0).unwrap();
+                (m.start(), m.end(), literal(&c, 1))
+            })
+            .collect();
+        for c in by_req.captures_iter(&text) {
+            let at = c.get(0).unwrap().start();
+            let Ok(shop) = c[4].parse::<i64>() else {
+                continue;
+            };
+            let names = case_labels_before(&text, &labels, at);
+            if names.is_empty() {
+                gaps.push(format!(
+                    "{}: buys req.name from shop {shop} under no case",
+                    file.strip_prefix(repo().join("scripts"))
+                        .unwrap_or(&file)
+                        .display()
+                ));
+            }
+            for name in names {
+                let stale = SHOP_EXTRAS.iter().any(|(s, extras, _)| {
+                    *s == shop && extras.iter().any(|n| n.eq_ignore_ascii_case(&name))
+                });
+                assert!(
+                    !stale,
+                    "SHOP_EXTRAS' {name} in shop {shop} is read from the source now: take it off"
+                );
+                sold.entry(shop)
+                    .or_default()
+                    .push((item_id_for(&name), name));
             }
         }
         let Some(id) = shop.captures(&text).and_then(|c| c[1].parse::<i64>().ok()) else {

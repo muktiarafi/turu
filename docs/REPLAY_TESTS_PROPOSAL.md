@@ -902,6 +902,21 @@ farming cycle 2 at its budget. Full run at 60 s (2026-11-28), kills per draft in
 5 drafts, no outcome changed, no error; `good/blod/FindingFragments.ts` sells its fragments and
 goes on to farm (9 kills, 0 before).
 
+**Buys by `req.name`.** `FirePlaneWarMerge` and `CyseroMerge` stopped on an empty shop ("Shop 2007
+has no items loaded"): they buy a material from a second shop as `buyItem("fireplanewar", 2007,
+req.name, quant)`, which the shop scan skipped, having no name to read. 112 buys in the merge
+scripts are written so, each in a `findIngredients` case, where `req.name` is the case's label:
+`case "ShadowFlame Flamberge":`, or one of the labels stacked on it (CyseroMerge's `case "Staked
+Steak":` falls through to `case "Basic Wooden Stake":`). The scan now stocks the shop with those
+labels (none under a `default:`; a buy under no case would be a gap line, and there are none).
+634 shops to 666, 434 items bought outright to 590.
+
+Full run (2026-11-28), compared draft by draft (kills and purchases): purchases 521 in 174 drafts
+(473 in 168), no outcome changed, no error. Eight drafts buy where they found an empty shop: Cysero
+its stakes, FirePlaneWar its flamberges and harps (11, and farms its embers), the two Naval Top
+Hat merges 15 and 16 (where they had hunted for one kill), FireWar, Mogloween, and the Darkwar and
+Nation war chests.
+
 **Not done:** the first nightly run and the first "Changed drafts" run on GitHub; the fight
 signals between partners.
 
