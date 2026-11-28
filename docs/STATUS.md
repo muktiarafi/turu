@@ -1094,7 +1094,8 @@ memory budget (NVIDIA, AMD).
   `.github/workflows/drafts-nightly.yml`). The fake world has monsters that die and drop what the
   draft asks for and quests that are turned in, so drafts get through their hunts and quests: all
   1,623 made 7,736 kills and turned in 3,160 quests between them. None throws or fails to start
-  but `story/TowerOfDoom.ts`, a gap in the fake (no monster for the floors no script names).
+  (since 2026-11-28 not even `story/TowerOfDoom.ts`, whose floor bosses no script names: the run
+  names them, `MONSTER_EXTRAS`).
   It found two port bugs, fixed in `ultrasv3/dependenciesultras/UltraGeneral.ts` (`Kolrv3` and
   `Masakadov3` read class options they don't declare, which C# allows). That checks they load and
   get into their own code (the story drafts do their quests); it doesn't check that what they do

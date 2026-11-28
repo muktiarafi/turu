@@ -17,7 +17,7 @@ and replay it in CI against the same script; and run every converted script ("dr
 | 1. Recorder | Done, checked in game (`bot/src/tape/recorder.rs`, `TURU_TAPE`, `--record-tape`). |
 | 2. Scrubber and replay | Done. `turu-tape scrub`, `turu_bot::testing::ReplayHost`. |
 | 3. Core flows on tape | Done. Seven tapes in `bot/tests/tapes/`, each with its script beside it. |
-| 4. World fake and draft smoke | Built and running: `WorldFake` (with monsters, drops, quests, shops, the bank, equipping and potions), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. All 1,612 drafts: no error, none cut by the real-time cap. |
+| 4. World fake and draft smoke | Built and running: `WorldFake` (with monsters, drops, quests, shops, the bank, equipping and potions), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. All 1,612 drafts: no error, no known gap, none cut by the real-time cap. |
 | Decision 2 (virtual clock) | Done: `ScriptControl`'s clock, real unless a test makes it virtual. |
 | 5. Recording from Diagnostics | Not built. |
 
@@ -63,7 +63,8 @@ requests; no run of it has been looked at yet.
   the last calls at the budget and, if it ran out of real time, the clock's report; a line names
   the drafts the real-time cap stopped. Run it with `--cargo-profile draft` (an optimized test
   build: proposal, "The real-time cap"), as CI does.
-  `KNOWN_FAKE_GAPS` lists drafts that fail for the fake's sake (now only `story/TowerOfDoom.ts`).
+  `KNOWN_FAKE_GAPS` lists drafts that fail for the fake's sake (none now). `MONSTER_EXTRAS` names
+  monsters a script finds without naming them (Tower of Doom's floor bosses).
   `DRAFT_OPTIONS` sets the option values a draft can't start without (the Lone Wolf ultras' room
   number, a roster for them and two Army dailies); the rest run with their defaults. Each draft
   has a data folder of its own (`Bot::with_paths`), and `Partners` plays the rest of its army
@@ -144,8 +145,9 @@ A script that changes what it sends needs its tape recorded again: remove the ol
    (`hasArmySignal`), each ultra's own; only worth it for an ultra whose fight code needs testing.
 4. ~~Monsters by map ID.~~ Done (proposal, "Monsters by map ID"): each map is as long as the
    highest map ID a script hunts or fights there by (`huntMonsterMapID`, the ultras' `...MapId`
-   constants). Left: `TowerOfDoom`, which reads the name of the monster it finds by cell (a known
-   gap); and `ArmyPrismatasGoldFarm_LW`'s "everyone ready" signal past 60 s. ~~The Void
+   constants). ~~`TowerOfDoom`.~~ Done (proposal, "Monsters no script names"): `MONSTER_EXTRAS`
+   names floors 2, 3, 7 and 8's bosses from the wiki. Left: `ArmyPrismatasGoldFarm_LW`'s
+   "everyone ready" signal past 60 s. ~~The Void
    bosses' bank move.~~ Done (proposal, "The bank"): the fake moves items to and from the bank,
    answers `loadBank` and `inventoryHasSpaceFor`; 37 more drafts end.
 5. **Correctness (decision 4).** The smoke run catches throws, not wrong behaviour. Comparing a

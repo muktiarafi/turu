@@ -853,6 +853,24 @@ so with 10 at once they reach the real-time cap first ("running", with the clock
 the exact budget the full run has fewer kills (8,290 against 9,223): drafts no longer play on past
 60 s.
 
+**Monsters no script names.** `story/TowerOfDoom.ts` (as the C#) joins `towerofdoom<n>` with
+the floor built at run time and fights whatever stands in cell r10 (`mapMonsters.find(m => m.cell
+=== "r10")`), farming "<its name> Defeated". The catalog reads monster names from the scripts'
+calls, and none names floors 2, 3, 7 or 8, so the fake had no monster there and `mob!.name`
+threw on floor 2. `MONSTER_EXTRAS` in the draft run now adds what a script finds without naming
+it: each of those floors' boss, the one monster of its kind on the floor's page of the AQW wiki
+(aqwwiki.wikidot.com, "Tower of Doom (n)"): Dread Arradia, Dread Moganth, Dread Warrior, Dread
+Avatar. Other scripts name the other floors' bosses (Dread Klunk, Creel, Dread Terror, Dread Fang,
+Slugbutter). On floor 4 the fake finds Dread Stranglerfish, the only monster scripts name there,
+where the game has Dread Kathool. The fake drops whatever the draft asks for, so the run would get
+through with any name; the real names make a report read like the game. Like `SHOP_EXTRAS`, the
+run fails once the source names one of them itself. `KNOWN_FAKE_GAPS` is empty now.
+
+Full run (2026-11-28), compared draft by draft, kills per draft included: the same outcome for
+every draft but `TowerOfDoom` (known before, now running: floors 1 to 6 done, fighting Dread
+Warrior at its budget, 6 kills where it had 1), no error. (One earlier "before" run counted 1,258
+drafts with kills, one more than the runs after it: noise, gone in the per-draft count.)
+
 **Not done:** the first nightly run and the first "Changed drafts" run on GitHub; the fight
 signals between partners.
 

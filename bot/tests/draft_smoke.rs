@@ -37,11 +37,7 @@ const MARK: &str = "not yet read through by hand";
 /// Drafts that fail because of a gap in the fake world, not a fault of their own, and why:
 /// reported as "known", not failing the run. A listed draft that passes fails the run, so the
 /// list can't go stale. A script fix goes in `muktiarafi/turu-scripts` instead.
-const KNOWN_FAKE_GAPS: &[(&str, &str)] = &[(
-    "story/TowerOfDoom.ts",
-    "it finds each floor's monster by its cell (r10), never by name, so the monster catalog \
-         (built from scripts that name them) has none for towerofdoom2 to 10; floor 1 passes",
-)];
+const KNOWN_FAKE_GAPS: &[(&str, &str)] = &[];
 
 /// Option values set before a draft starts, where its defaults would stop it at once: the drafts
 /// whose path holds one of the texts, the option's name, its value as JSON, and why. Each is set
@@ -197,6 +193,18 @@ fn drafts() -> Vec<PathBuf> {
     out
 }
 
+/// Monsters scripts find in a map without naming them, which [`monster_catalog`] can't read from
+/// the source: the map, the monsters' names (as the game spells them), and where they come from.
+const MONSTER_EXTRAS: &[(&str, &[&str], &str)] = &[
+    ("towerofdoom2", &["Dread Arradia"], TOWER_OF_DOOM),
+    ("towerofdoom3", &["Dread Moganth"], TOWER_OF_DOOM),
+    ("towerofdoom7", &["Dread Warrior"], TOWER_OF_DOOM),
+    ("towerofdoom8", &["Dread Avatar"], TOWER_OF_DOOM),
+];
+const TOWER_OF_DOOM: &str = "story/TowerOfDoom.ts joins `towerofdoom${Floor}` and fights the \
+    monster in cell r10, the floor's boss (each floor's page on aqwwiki.wikidot.com); other \
+    scripts name the other floors' monsters";
+
 /// Each map's monsters, by name, from the scripts' own calls: `huntMonster("map", "Monster"`,
 /// `killMonster("map", "cell", "pad", "Monster"`, `killQuest(id, "map", "Monster"` or a list.
 /// Monster names never reach the game's calls (a kill goes by ID), so the fake world can't learn
@@ -240,6 +248,16 @@ fn monster_catalog() -> (std::collections::HashMap<String, Vec<String>>, Vec<Str
                     list.push(name);
                 }
             }
+        }
+    }
+    for (map, names, _) in MONSTER_EXTRAS {
+        let list = catalog.entry((*map).to_owned()).or_default();
+        for name in *names {
+            assert!(
+                !list.iter().any(|n| n.eq_ignore_ascii_case(name)),
+                "MONSTER_EXTRAS' {name} in {map} is read from the source now: take it off"
+            );
+            list.push((*name).to_owned());
         }
     }
     let (needed, gaps) = monster_map_ids();
