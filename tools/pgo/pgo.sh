@@ -11,11 +11,12 @@
 # The login comes from turu-args.txt (ARGS to use another file), as in tools/farmrun/run.sh: the
 # password goes to Turu as TURU_PASSWORD, never on a command line. Use a spare account and a
 # quiet server (SERVER overrides the file's): the run logs in and plays for real, and refuses
-# Twilly, Artix and Alteon (nothing relogs on a crowded server).
+# Twilly, Artix and Alteon (nothing relogs on a crowded server) unless CROWDED_OK=1, for a run
+# that means to play among many players (an account sure to get in, a busy Battleon or Yulgar).
 #
 # Defaults: script = scripts/other/farmjoekits/0FarmerJoeDoAll.ts. Several scripts cover more:
 # combat, travel, shops, quests, a busy room.
-# Env: MINUTES (20 a run), MODES ("window headless": a window draws the game, headless covers
+# Env: MINUTES (20 a run; 0: until the script ends by itself), MODES ("window headless": a window draws the game, headless covers
 # the server build; a headless run draws nothing, so it says nothing about drawing), API
 # (127.0.0.1:9041), FEATURES (CLAUDE.md's feature set), TARGET (the host's triple).
 # Needs llvm-profdata matching rustc's LLVM: `rustup component add llvm-tools`.
@@ -75,7 +76,7 @@ run_one() {
   local mode="$1" script="$2" log pid flags=()
   log="$out/$(date +%Y%m%d-%H%M%S)-$mode-$(basename "$script" .ts).log"
   [[ "$mode" == headless ]] && flags+=(--headless)
-  echo "pgo: $mode, $(basename "$script"), $minutes min, server $server; log $log"
+  echo "pgo: $mode, $(basename "$script"), $( ((minutes == 0)) && echo "until it ends" || echo "$minutes min"), server $server; log $log"
   LLVM_PROFILE_FILE="$raw/turu-%p-%m.profraw" \
     "$gen_bin" ${flags[@]+"${flags[@]}"} --user "$user" --server "$server" --api="$api" \
     --run-script "$script" --exit-on-script-stop >>"$log" 2>&1 &
@@ -83,7 +84,7 @@ run_one() {
   trap 'stop "$pid"' INT TERM
 
   local end=$(($(date +%s) + minutes * 60))
-  while kill -0 "$pid" 2>/dev/null && (($(date +%s) < end)); do
+  while kill -0 "$pid" 2>/dev/null && ((minutes == 0 || $(date +%s) < end)); do
     sleep 5 || true
   done
   stop "$pid"
@@ -116,9 +117,17 @@ record() {
   TURU_PASSWORD="${TURU_PASSWORD:-$(arg --password)}"
   [[ -n "$user" && -n "$TURU_PASSWORD" ]] || { echo "No --user/--password in $args_file" >&2; exit 1; }
   case "$(tr '[:upper:]' '[:lower:]' <<<"$server")" in
-    "" | twilly | artix | alteon)
-      echo "pgo: name a quiet server (SERVER=..., or --server in $args_file), not '${server:-the default}'" >&2
+    "")
+      echo "pgo: name a server (SERVER=..., or --server in $args_file)" >&2
       exit 1
+      ;;
+    twilly | artix | alteon)
+      if [[ "${CROWDED_OK:-}" == 1 ]]; then
+        echo "pgo: $server is crowded: playing there as asked (CROWDED_OK=1)"
+      else
+        echo "pgo: name a quiet server (SERVER=..., or --server in $args_file), not '$server' (CROWDED_OK=1 to play there anyway)" >&2
+        exit 1
+      fi
       ;;
   esac
   export TURU_PASSWORD
