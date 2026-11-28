@@ -263,6 +263,13 @@ something lands or a gap closes. Read `CLAUDE.md` and `docs/ARCHITECTURE.md` fir
   time, always found each kept in use by the others. ruffle-aqw now tests libraries sharing a
   domain together (`Library::sweep_movie_libraries`). Re-measured over 50 joins: live movies flat
   at 21-29 (before: 29 -> 123 by the 40th join), heap flat (`docs/HEADLESS_MONITORING_HANDOFF.md`).
+  Players' gear piled up the same way (2026-11-28): AQW loads all of a map's players' gear into
+  one domain (`World.loaderD`), and a group bigger than a cycle's test bound (64) was left out,
+  so a busy town's gear stayed after leaving. Groups are now tested whole whatever their size.
+  Measured with the bound lowered to 16, Battleon twice then an empty room: 83 live SWFs before,
+  14 after (heap 118 -> 104 MB), the longest step at a cycle's end unchanged. Your own armour
+  keeps the domain it was loaded into (its clips are on stage), so the gear of that map's crowd
+  can stay while you wear it; Flash keeps a domain alive the same way.
   The allocator (mimalloc v3) kept ~170 MB resident beyond the live Rust heap, which its own
   purging never returned: purging at once (`MIMALLOC_PURGE_DELAY=0`) changed nothing, but a
   forced `mi_collect(true)` once a minute cut RSS from ~340 to ~250 MB at ~4 ms a call (debug
