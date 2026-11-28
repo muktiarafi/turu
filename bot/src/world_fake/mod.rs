@@ -6,8 +6,8 @@
 //! its name and arguments. On top is an overlay that sends change, through a short list of rules:
 //! `setGameObject` sets the path, joining a map (the `tfer` packet) moves you there, a jump moves
 //! you to the cell, a bank move (`bankToInv`, `bankFromInv`, `bankSwapInv`) moves the item, an
-//! equip (`equipItem`, `world.equipUseableItem`) puts it on, skill 5 drinks the potion slot's
-//! potion and puts its aura on you. Batched reads (`snapshot`, `getMany`, ...) are built from the
+//! equip (`equipItem`, `world.equipUseableItem`) puts it on, a sale (`sellItem`) takes the item,
+//! skill 5 drinks the potion slot's potion and puts its aura on you. Batched reads (`snapshot`, `getMany`, ...) are built from the
 //! single ones, as turu.swf builds them from the game.
 //!
 //! It is a model, so it is wrong in places: its job is only to get a draft past its setup into its
@@ -71,6 +71,8 @@ pub struct WorldFake {
     materials: HashMap<i64, String>,
     /// Purchases made, for a report.
     purchases: Mutex<u64>,
+    /// Sales made, for a report.
+    sales: Mutex<u64>,
     /// The potion in the potion slot (`world.equipUseableItem`), by item ID.
     potion: Mutex<Option<i64>>,
     /// The auras used potions put on you, by name, with when (Unix ms).
@@ -163,6 +165,7 @@ impl WorldFake {
             shops: HashMap::new(),
             materials: HashMap::new(),
             purchases: Mutex::default(),
+            sales: Mutex::default(),
             potion: Mutex::default(),
             auras: Mutex::default(),
             potion_auras: HashMap::new(),
@@ -592,6 +595,11 @@ impl WorldFake {
         *self.purchases.lock()
     }
 
+    /// How many sales went through.
+    pub fn sales(&self) -> u64 {
+        *self.sales.lock()
+    }
+
     /// The last calls (up to 12), oldest first, each as `name(args) -> answer`.
     pub fn recent(&self) -> Vec<String> {
         self.recent.lock().iter().cloned().collect()
@@ -782,6 +790,41 @@ impl WorldFake {
         })));
     }
 
+    /// A sale (`%xt%zm%sellItem%<room>%<item ID>%<quantity>%<char item ID>%`): up to `quantity` of
+    /// the inventory item go, with the server's `sellItem` answer (what's left in `iQtyNow`). An
+    /// item not held gets no answer. The gold stays as it was: no tape has a sale's price, and a
+    /// made-up one would be a guess (`intAmount` 0).
+    fn sell(&self, id: i64, quantity: i64) {
+        let path = Self::container(false);
+        let mut items = match self.get(path) {
+            Some(Value::Array(items)) => items,
+            _ => return,
+        };
+        let Some(item) = items
+            .iter()
+            .find(|i| sim::num(&i["ItemID"]) == Some(id))
+            .cloned()
+        else {
+            return;
+        };
+        let held = sim::num(&item["iQty"]).unwrap_or(1);
+        let sold = quantity.clamp(0, held);
+        if sold == 0 {
+            return;
+        }
+        sim::take_item(&mut items, id, sold);
+        self.set(path, Value::Array(items));
+        *self.sales.lock() += 1;
+        self.queue(sim::pext(json!({
+            "cmd": "sellItem",
+            "CharItemID": item.get("CharItemID").cloned().unwrap_or(json!(id)),
+            "iQty": sold,
+            "iQtyNow": held - sold,
+            "intAmount": 0,
+            "bCoins": item.get("bCoins").cloned().unwrap_or(json!(0)),
+        })));
+    }
+
     /// `selectArrayObjectsWhere(path, filter)`: the items of `path` whose fields match the
     /// filter's, as turu.swf matches them; `None` when the call isn't that shape.
     fn select_where(&self, args: &[FlashArg]) -> Option<String> {
@@ -923,6 +966,11 @@ impl WorldFake {
             Some("unequipItem") => {
                 if let Some(item) = id(5) {
                     self.equip(item, false);
+                }
+            }
+            Some("sellItem") => {
+                if let (Some(item), Some(quantity)) = (id(5), id(6)) {
+                    self.sell(item, quantity);
                 }
             }
             Some("bankSwapInv") => {
@@ -1299,6 +1347,36 @@ mod tests {
         )
         .unwrap();
         assert!(aura.with_times(crate::gear::now_ms() as i64).remaining_time > 1700);
+    }
+
+    #[test]
+    fn a_sale_takes_the_items_and_answers() {
+        let world = from_lines(vec![call(
+            0,
+            "getGameObject",
+            json!(["world.myAvatar.items"]),
+            r#"[{"ItemID":5,"CharItemID":50,"sName":"Elemental Binding","iQty":100,"bCoins":0}]"#,
+        )]);
+        let bot = Bot::new();
+        world.attach(&bot);
+        // Whether the bot heard the server's answer to this sale (`bot.wait.forItemSell`).
+        let sell = |packet: &str| -> bool {
+            bot.state.lock().signals.item_sold = false;
+            ask(
+                &world,
+                "callGameFunction",
+                vec!["sfc.sendString".into(), packet.into()],
+            );
+            bot.state.lock().signals.item_sold
+        };
+
+        assert!(sell("%xt%zm%sellItem%7%5%40%50%"));
+        assert_eq!(held_by_name(&world, "Elemental Binding")[0]["iQty"], 60);
+        // More than held sells what's held, and the item is gone; selling it again isn't answered.
+        assert!(sell("%xt%zm%sellItem%7%5%100%50%"));
+        assert!(held_by_name(&world, "Elemental Binding").is_empty());
+        assert!(!sell("%xt%zm%sellItem%7%5%1%50%"));
+        assert_eq!(world.sales(), 2);
     }
 
     #[test]

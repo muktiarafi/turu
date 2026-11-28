@@ -17,7 +17,7 @@ and replay it in CI against the same script; and run every converted script ("dr
 | 1. Recorder | Done, checked in game (`bot/src/tape/recorder.rs`, `TURU_TAPE`, `--record-tape`). |
 | 2. Scrubber and replay | Done. `turu-tape scrub`, `turu_bot::testing::ReplayHost`. |
 | 3. Core flows on tape | Done. Seven tapes in `bot/tests/tapes/`, each with its script beside it. |
-| 4. World fake and draft smoke | Built and running: `WorldFake` (with monsters, drops, quests, shops, the bank, equipping and potions), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. All 1,612 drafts: no error, no known gap, none cut by the real-time cap. |
+| 4. World fake and draft smoke | Built and running: `WorldFake` (with monsters, drops, quests, shops, sales, the bank, equipping and potions), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. All 1,612 drafts: no error, no known gap, none cut by the real-time cap. |
 | Decision 2 (virtual clock) | Done: `ScriptControl`'s clock, real unless a test makes it virtual. |
 | 5. Recording from Diagnostics | Not built. |
 
@@ -54,12 +54,12 @@ requests; no run of it has been looked at yet.
   virtual clock. `committed_tapes_hold_no_secrets` guards every committed tape.
 - **Virtual clock** (`bot/src/control.rs`): `ClockTime`, `ScriptControl::now`, `set_virtual`,
   `participate`, `wait_until`, `spend`. Unit tests there, including the woken-waiter race.
-- **World fake** (`bot/src/world_fake/mod.rs` for reads from the tape, shops, the bank, equipping
+- **World fake** (`bot/src/world_fake/mod.rs` for reads from the tape, shops, sales, the bank, equipping
   and potions, `sim.rs` for monsters, drops, quests and the shops' items): see the proposal's "Phase 4 so far" for each rule
   and why it exists.
 - **Draft run** (`bot/tests/draft_smoke.rs`, ignored): every draft with a `main` for 60 s of play
   on a virtual clock (10 s real at most), several at once; the report (`target/draft-smoke.txt`)
-  has a `progress` line (kills, quests accepted, turned in, purchases) and, per draft, the last log lines,
+  has a `progress` line (kills, quests accepted, turned in, purchases, sales) and, per draft, the last log lines,
   the last calls at the budget and, if it ran out of real time, the clock's report; a line names
   the drafts the real-time cap stopped. Run it with `--cargo-profile draft` (an optimized test
   build: proposal, "The real-time cap"), as CI does.
@@ -149,7 +149,7 @@ A script that changes what it sends needs its tape recorded again: remove the ol
    constants). ~~`TowerOfDoom`.~~ Done (proposal, "Monsters no script names"): `MONSTER_EXTRAS`
    names floors 2, 3, 7 and 8's bosses from the wiki. ~~`ArmyPrismatasGoldFarm_LW`'s "everyone
    ready" signal.~~ Done (proposal, "Signals every player sends"): it gets through its cycle's
-   gate. Left: the fake sells nothing, so it stops on "Elemental Binding failed to sell" (151 s). ~~The Void
+   gate, sells its bindings (proposal, "Sales") and farms cycle 2 at 600 s. ~~The Void
    bosses' bank move.~~ Done (proposal, "The bank"): the fake moves items to and from the bank,
    answers `loadBank` and `inventoryHasSpaceFor`; 37 more drafts end.
 5. **Correctness (decision 4).** The smoke run catches throws, not wrong behaviour. Comparing a

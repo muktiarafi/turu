@@ -890,6 +890,18 @@ With 600 s of play it now gets through cycle 1's gate and ends by itself at 151 
 Binding failed to sell": the fake answers no sale. Full run at 60 s (2026-11-28), kills per draft
 included: no outcome or kill count changed (the gate comes after 60 s), no error.
 
+**Sales.** The fake answered no `sellItem` packet, so every `Core.sellItem` retried five times
+and gave up ("Elemental Binding failed to sell", "Blinding Light Fragments failed to sell"). Now a
+sale takes up to the quantity from the inventory item and answers as the server does (`sellItem`,
+with `iQty` sold and `iQtyNow` left), so the bot hears it (`bot.wait.forItemSell`); an item not
+held gets no answer. The gold stays as it was (`intAmount` 0): no tape has a sale's price, and the
+fake doesn't guess one. The report's `progress` line counts sales.
+
+With 600 s of play `ArmyPrismatasGoldFarm_LW` sells its 100 bindings at the end of cycle 1 and is
+farming cycle 2 at its budget. Full run at 60 s (2026-11-28), kills per draft included: 5 sales in
+5 drafts, no outcome changed, no error; `good/blod/FindingFragments.ts` sells its fragments and
+goes on to farm (9 kills, 0 before).
+
 **Not done:** the first nightly run and the first "Changed drafts" run on GitHub; the fight
 signals between partners.
 

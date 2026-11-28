@@ -559,11 +559,12 @@ struct Outcome {
     /// How far it got on its (virtual) clock.
     clock_secs: f64,
     /// What it got done, by the engine's counters: kills, quests accepted, quests turned in; and
-    /// by the fake's, purchases.
+    /// by the fake's, purchases and sales.
     kills: u64,
     accepted: u64,
     completed: u64,
     bought: u64,
+    sold: u64,
     last_log: String,
     /// The last calls into the fake.
     recent: Vec<String>,
@@ -644,6 +645,7 @@ fn run_one(
             accepted: 0,
             completed: 0,
             bought: 0,
+            sold: 0,
             last_log: String::new(),
             recent: Vec::new(),
             clock: String::new(),
@@ -743,6 +745,7 @@ fn run_one(
         accepted: stats.quests_accepted,
         completed: stats.quests_completed,
         bought: fake.purchases(),
+        sold: fake.sales(),
         last_log: {
             let mut meaningful: Vec<&str> = lines
                 .iter()
@@ -878,7 +881,7 @@ fn draft_smoke_sample() {
     let did = |f: fn(&Outcome) -> u64| outcomes.iter().map(f).sum::<u64>();
     let with = |f: fn(&Outcome) -> u64| outcomes.iter().filter(|o| f(o) > 0).count();
     report.push_str(&format!(
-        "progress: {} kills ({} drafts), {} quests accepted ({}), {} turned in ({}), {} purchases ({})\n",
+        "progress: {} kills ({} drafts), {} quests accepted ({}), {} turned in ({}), {} purchases ({}), {} sales ({})\n",
         did(|o| o.kills),
         with(|o| o.kills),
         did(|o| o.accepted),
@@ -887,6 +890,8 @@ fn draft_smoke_sample() {
         with(|o| o.completed),
         did(|o| o.bought),
         with(|o| o.bought),
+        did(|o| o.sold),
+        with(|o| o.sold),
     ));
     // Stopped by the real-time cap before their budget: how far they got depends on the machine.
     let cut: Vec<String> = outcomes
