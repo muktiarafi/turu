@@ -130,6 +130,7 @@ impl WorldFake {
             answers.insert(key(name, args), answer.clone());
             by_name.insert(loose_key(name, args), answer.clone());
         }
+        seed_from_login(&tape.lines[..end], &mut paths);
         // The monsters of the map the tape was in, as the game listed them last.
         let seed: Vec<Monster> = answers
             .iter()
@@ -394,6 +395,7 @@ impl WorldFake {
             self.set(path, Value::Array(items));
         };
         take(from, None);
+        let item_coins = item["bCoins"].clone();
         let mut moved = item;
         moved["bBank"] = json!(if to == BANK { 1 } else { 0 });
         // A stack already there grows; the item keeps its quantity otherwise.
@@ -403,7 +405,9 @@ impl WorldFake {
             moved["iQty"] = json!(total);
         }
         take(to, Some(moved));
-        if let Some(count) = self.get(BANK_COUNT).as_ref().and_then(sim::num) {
+        // An AC item takes no bank slot.
+        let coins = matches!(&item_coins, Value::Bool(true)) || sim::num(&item_coins) == Some(1);
+        if !coins && let Some(count) = self.get(BANK_COUNT).as_ref().and_then(sim::num) {
             let step = if to == BANK { 1 } else { -1 };
             self.set(BANK_COUNT, json!((count + step).max(0)));
         }
@@ -1314,6 +1318,39 @@ fn loose_key(name: &str, args: &[Value]) -> String {
     }
 }
 
+/// What the client keeps from the server's login packets that the tape never read as a path of
+/// its own: `world.myAvatar.objData`'s slot counts from `initUserData` (`iBagSlots`, `iBankSlots`,
+/// `iHouseSlots`, ...: they reach the tape only there), and `world.myAvatar.iBankCount` (the bank's items that take
+/// a slot: not AC ones), counted from the bank the tape read. A path the tape read keeps its read.
+fn seed_from_login(lines: &[Line], paths: &mut HashMap<String, Value>) {
+    let data = lines.iter().rev().find_map(|line| {
+        let Line::Received { text, .. } = line else {
+            return None;
+        };
+        let packet: Value = serde_json::from_str(text).ok()?;
+        let data = &packet["b"]["o"];
+        (data["cmd"] == "initUserData" && data["data"].is_object()).then(|| data["data"].clone())
+    });
+    // Only the slot counts: another field can set off what the tape never did (`CharID` lets
+    // `player.webBadges` fetch the account's badges from AQW's site).
+    if let Some(Value::Object(fields)) = data {
+        for (field, value) in fields.into_iter().filter(|(f, _)| f.ends_with("Slots")) {
+            paths
+                .entry(format!("world.myAvatar.objData.{field}"))
+                .or_insert(value);
+        }
+    }
+    if !paths.contains_key(BANK_COUNT)
+        && let Some(Value::Array(bank)) = paths.get(BANK)
+    {
+        let taking = bank
+            .iter()
+            .filter(|i| !(i["bCoins"] == json!(true) || sim::num(&i["bCoins"]) == Some(1)))
+            .count();
+        paths.insert(BANK_COUNT.to_owned(), json!(taking));
+    }
+}
+
 fn parse(raw: &str) -> Value {
     serde_json::from_str(raw.trim()).unwrap_or(Value::Null)
 }
@@ -1557,6 +1594,43 @@ mod tests {
         )
         .unwrap();
         assert!(aura.with_times(crate::gear::now_ms() as i64).remaining_time > 1700);
+    }
+
+    #[test]
+    fn slot_counts_come_from_the_login_and_the_bank_count_from_the_bank() {
+        let world = from_lines(vec![
+            Line::Received {
+                n: 0,
+                t: 0,
+                socket: 1,
+                text: json!({ "b": { "o": { "cmd": "initUserData", "data": {
+                    "iBankSlots": 120, "iBagSlots": 90, "intGold": 5, "CharID": 7,
+                } } } })
+                .to_string(),
+            },
+            call(
+                1,
+                "getGameObject",
+                json!(["world.bankinfo.items"]),
+                r#"[{"ItemID":1,"sName":"Cog","bCoins":0},{"ItemID":2,"sName":"Cape","bCoins":1},
+                    {"ItemID":3,"sName":"Gear","bCoins":false}]"#,
+            ),
+            // A path the tape read keeps its read.
+            call(
+                2,
+                "getGameObject",
+                json!(["world.myAvatar.objData.intGold"]),
+                "40",
+            ),
+        ]);
+        let read = |path: &str| ask(&world, "getGameObject", vec![path.into()]);
+        assert_eq!(read("world.myAvatar.objData.iBankSlots"), "120");
+        assert_eq!(read("world.myAvatar.objData.iBagSlots"), "90");
+        assert_eq!(read("world.myAvatar.objData.intGold"), "40");
+        // Nothing but the slot counts.
+        assert_eq!(read("world.myAvatar.objData.CharID"), "null");
+        // The AC cape takes no slot.
+        assert_eq!(read("world.myAvatar.iBankCount"), "2");
     }
 
     #[test]

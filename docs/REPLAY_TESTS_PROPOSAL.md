@@ -964,6 +964,24 @@ time per call. One draft is cut by the real-time cap: `SunkenTreasureQuestReward
 `iBankCount` null), so each finds the bank full after reading the whole inventory and house (8.4 s
 alone, 10 s beside eleven others).
 
+**Slot counts from the login.** The fake answered null for `world.myAvatar.objData.iBankSlots`
+and `world.myAvatar.iBankCount`: neither was read on the tape. The slot counts reach a tape only
+in the server's `initUserData` packet, which the client copies into `objData`; the bank count is
+the bank's items that take a slot. So CoreBots' `toBank` found the bank full and, every 5 loops,
+read the whole inventory and house for each of `SunkenTreasureQuestRewards`' 26 real rewards to
+say so (8.4 s alone, cut at the real-time cap beside eleven others). The fake now takes the slot
+counts (`iBagSlots`, `iBankSlots`, `iHouseSlots`, ...) from the tape's last `initUserData` and
+counts `iBankCount` from the bank the tape read, leaving out AC items (which take no slot, here
+482 of 517, so 35 of 120 slots used), wherever the tape has no read of its own; a bank move keeps
+the count, AC items again left out. Only the slot counts: seeding every `objData` field gave the
+fake a `CharID`, and 22 badge drafts fetched their badges from account.aq.com
+(`player.webBadges`, refused with 429) until it was taken out.
+
+Full run (2026-11-28), compared draft by draft: no error, none cut by the real-time cap (one
+before), one outcome changed: `GoatRep` buys and goes on to its quest where it stopped on a full
+house. `SunkenTreasureQuestRewards` banks its rewards and plays its 60 s in 5.9 s beside the
+others. The run takes 133 s.
+
 **Not done:** the first nightly run and the first "Changed drafts" run on GitHub; the fight
 signals between partners.
 

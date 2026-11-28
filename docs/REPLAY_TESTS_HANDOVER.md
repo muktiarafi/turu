@@ -17,7 +17,7 @@ and replay it in CI against the same script; and run every converted script ("dr
 | 1. Recorder | Done, checked in game (`bot/src/tape/recorder.rs`, `TURU_TAPE`, `--record-tape`). |
 | 2. Scrubber and replay | Done. `turu-tape scrub`, `turu_bot::testing::ReplayHost`. |
 | 3. Core flows on tape | Done. Seven tapes in `bot/tests/tapes/`, each with its script beside it. |
-| 4. World fake and draft smoke | Built and running: `WorldFake` (with monsters, drops, quests, shops, sales, the bank, equipping and potions), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. All 1,612 drafts: no error, no known gap; one cut by the real-time cap (`SunkenTreasureQuestRewards`, the bank-slot gap). |
+| 4. World fake and draft smoke | Built and running: `WorldFake` (with monsters, drops, quests, shops, sales, the bank, equipping and potions), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. All 1,612 drafts: no error, no known gap, none cut by the real-time cap. |
 | Decision 2 (virtual clock) | Done: `ScriptControl`'s clock, real unless a test makes it virtual. |
 | 5. Recording from Diagnostics | Not built. |
 
@@ -84,7 +84,7 @@ requests; no run of it has been looked at yet.
 cargo nextest run -p turu_bot replay::                       # the replays, a second or two each
 cargo nextest run -p turu_bot world_fake control::tests      # the fake's and the clock's tests
 DRAFT_EVERY=8 cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture   # ~200 drafts, ~20 s
-DRAFT_EVERY=1 cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture   # all 1,612, ~140 s
+DRAFT_EVERY=1 cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture   # all 1,612, ~135 s
 DRAFT_FILTER=story/doomwood,farm/BuyScrolls cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture
 tools/drafts/changed.sh origin/main                          # which drafts a branch's scripts change
 ```
@@ -162,9 +162,8 @@ A script that changes what it sends needs its tape recorded again: remove the ol
    `CoreAdvanced.gearStore` reads only what you wear (`bot.inventory.equippedItems`; proposal,
    "What you wear, read alone"). ~~Placeholder quests.~~ Done (proposal, "Real quests"): loaded
    quests are AQW's, turn-ins take what they require, and `ThirdErrand` farms (13 kills, 14
-   turn-ins, 0.2 s). Left: the fake answers no bank slots (`iBankSlots`, `iBankCount` null), so
-   CoreBots' `toBank` finds the bank full and `SunkenTreasureQuestRewards` (26 real rewards) is cut
-   by the real-time cap at about 52 s of its 60.
+   turn-ins, 0.2 s). ~~Bank slots.~~ Done (proposal, "Slot counts from the login"): the bank has
+   room, `SunkenTreasureQuestRewards` banks its rewards and plays its 60 s in 6 s.
 7. **Smaller:** phase 5 (Diagnostics > Record Session, scrubbing on save); moving the few
    genuinely timer-bound engine tests (Butler follow, relogin, `gear`'s bank equip) onto the
    virtual clock (each needs `bot.control.participate()` on the test thread and fakes that reply on
@@ -214,6 +213,10 @@ A script that changes what it sends needs its tape recorded again: remove the ol
 - **Headless runs at 2 frames a second**, so `gotoAndPlay("Login")` takes half a second: a `login`
   sent at once was lost and every scripted relogin failed in game. Relogins now wait for the login
   screen (`servers::log_out_and_in`).
+- **A fake value can set off a network call.** Seeding every `objData` field from the login gave
+  the fake a `CharID`, and 22 badge drafts fetched their badges from account.aq.com
+  (`player.webBadges`; it answered 429). The fake seeds only what a draft needs; check a full
+  run's errors for an HTTP status after giving the fake a new value.
 - **Inputs outside Flash:** the server list (HTTP) and the CoreBots Options file are noted on the
   tape; anything else a script reads from outside the game will need the same.
 - **Startup scripts started before the player loaded**, so a bare `map.join` did nothing; startup
