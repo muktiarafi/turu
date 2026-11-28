@@ -1,6 +1,6 @@
 # Tests from recorded game sessions: handover
 
-For whoever continues (a person or an agent). It says where things stand on 2026-11-27, what is
+For whoever continues (a person or an agent). It says where things stand on 2026-11-28, what is
 left, what was decided and why, and the traps hit on the way. Read `CLAUDE.md` first. The design
 and the full record are in `docs/REPLAY_TESTS_PROPOSAL.md` (its "As built" sections, "Phase 3",
 "Phase 4 so far" and "Decision 2: the virtual clock"); this file is the short way in.
@@ -17,25 +17,21 @@ and replay it in CI against the same script; and run every converted script ("dr
 | 1. Recorder | Done, checked in game (`bot/src/tape/recorder.rs`, `TURU_TAPE`, `--record-tape`). |
 | 2. Scrubber and replay | Done. `turu-tape scrub`, `turu_bot::testing::ReplayHost`. |
 | 3. Core flows on tape | Done. Seven tapes in `bot/tests/tapes/`, each with its script beside it. |
-| 4. World fake and draft smoke | Built: `WorldFake` (with monsters, drops, quests, shops, the bank, equipping and potions), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. Not yet seen running on GitHub. |
+| 4. World fake and draft smoke | Built and running: `WorldFake` (with monsters, drops, quests, shops, the bank, equipping and potions), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. All 1,612 drafts: no error, none cut by the real-time cap. |
 | Decision 2 (virtual clock) | Done: `ScriptControl`'s clock, real unless a test makes it virtual. |
 | 5. Recording from Diagnostics | Not built. |
 
-**Published:**
+**Published:** everything, as of these tips (2026-11-28):
 
 | Repo | Branch | Tip | Notes |
 |---|---|---|---|
-| `muktiarafi/turu` | `main` | `12f8829ab` | Everything up to the fake's monsters, combat, drops and turn-ins. |
-| `muktiarafi/turu-scripts` | `main` | `0b1ba4d` | The `UltraGeneral` fix the draft run found. |
-| `muktiarafi/ruffle-aqw` | `aqw` | `882183aa5` | Pushed with it; not part of this work (a readback fix from another session). |
+| `muktiarafi/turu` | `main` | `c52bb619a` | The whole replay work, through `bot.inventory.equippedItems`. |
+| `muktiarafi/turu-scripts` | `main` | `02efb1e` | `gearStore` reading what you wear, with its fallback for older Turu releases. |
+| `muktiarafi/ruffle-aqw` | `aqw` | `74577cb7a` | Not part of this work (another session's). |
 
-**Local only, on `main`:** `e57b38d99` (HEADLESS.md split), `20d2aa453` (the fix for CI: a world
-fake test compared JSON text, and CI builds with `serde_json`'s `preserve_order`), and the merge
-shops (uncommitted). CI on `main` failed on that one test since `9dbfc7a75`; everything else
-passed.
-
-**Not yet looked at:** the first nightly draft run (`.github/workflows/drafts-nightly.yml`, 03:17
-UTC). The "Changed drafts" job runs only on pull requests, so it hasn't run either.
+CI on `main` passed at `34b58d4db` (the last run looked at), and so did the nightly draft run
+(`.github/workflows/drafts-nightly.yml`, 03:17 UTC). The "Changed drafts" job runs only on pull
+requests; no run of it has been looked at yet.
 
 ## The pieces
 
@@ -58,8 +54,8 @@ UTC). The "Changed drafts" job runs only on pull requests, so it hasn't run eith
   virtual clock. `committed_tapes_hold_no_secrets` guards every committed tape.
 - **Virtual clock** (`bot/src/control.rs`): `ClockTime`, `ScriptControl::now`, `set_virtual`,
   `participate`, `wait_until`, `spend`. Unit tests there, including the woken-waiter race.
-- **World fake** (`bot/src/world_fake/mod.rs` for reads from the tape, shops and the bank, `sim.rs` for
-  monsters, drops, quests and the shops' items): see the proposal's "Phase 4 so far" for each rule
+- **World fake** (`bot/src/world_fake/mod.rs` for reads from the tape, shops, the bank, equipping
+  and potions, `sim.rs` for monsters, drops, quests and the shops' items): see the proposal's "Phase 4 so far" for each rule
   and why it exists.
 - **Draft run** (`bot/tests/draft_smoke.rs`, ignored): every draft with a `main` for 60 s of play
   on a virtual clock (10 s real at most), several at once; the report (`target/draft-smoke.txt`)
@@ -83,11 +79,16 @@ UTC). The "Changed drafts" job runs only on pull requests, so it hasn't run eith
 ```bash
 cargo nextest run -p turu_bot replay::                       # the replays, a second or two each
 cargo nextest run -p turu_bot world_fake control::tests      # the fake's and the clock's tests
-DRAFT_EVERY=8 DRAFT_JOBS=10 cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture   # ~200 drafts, ~20 s
-DRAFT_EVERY=1 DRAFT_JOBS=10 cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture   # all 1,623, ~2 min
+DRAFT_EVERY=8 cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture   # ~200 drafts, ~20 s
+DRAFT_EVERY=1 cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture   # all 1,612, ~90 s
 DRAFT_FILTER=story/doomwood,farm/BuyScrolls cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture
 tools/drafts/changed.sh origin/main                          # which drafts a branch's scripts change
 ```
+
+`DRAFT_JOBS` stays at its default (6) locally; CI uses one per core. More drafts than cores only
+slows each one, and a slow draft hits the 10 s real-time cap. To check a change, run all the drafts
+before and after and compare each draft's section (finished, running, error, known) in
+`target/draft-smoke.txt`; keep a copy of the "before" report, since each run writes over it.
 
 **Recording a tape** (in game; read "Rules for recording" first):
 
@@ -132,7 +133,7 @@ A script that changes what it sends needs its tape recorded again: remove the ol
    The merge drafts now buy (226 purchases) and farm their materials. ~~Shops that sell
    outright.~~ Done (proposal, "Shops that sell outright"): every `buyItem` with a written-out
    shop and item stocks that shop, `SHOP_EXTRAS` the names built at run time; purchases 473 in 168
-   drafts. Left: shops bought from by `req.name`. ~~Equipping.~~ Done (proposal, "Equipping"):
+   drafts. Left: shops bought from by `req.name` (`FirePlaneWarMerge`, `CyseroMerge`). ~~Equipping.~~ Done (proposal, "Equipping"):
    `equipItem`, `world.equipUseableItem` and `unequipItem` change `bEquip`; Kathool fights.
    ~~Potion auras.~~ Done (proposal, "Potion auras"): skill 5 drinks the slot's potion and its
    aura is on you (`POTION_AURAS` for the names that differ).
@@ -202,3 +203,15 @@ A script that changes what it sends needs its tape recorded again: remove the ol
 - **Startup scripts started before the player loaded**, so a bare `map.join` did nothing; startup
   now waits for the player to load.
 - **macOS has no `timeout` command**; and a background run you stop leaves no report.
+- **A slow draft is usually the engine, not the fake.** Time the fake's answers first (wrap
+  `WorldFake::call`, temporarily): in `ThirdErrand` they were 0.3 s of 14. The rest was whole-inventory
+  reads, parsed into items, written for the script and parsed again in JS (about 1 ms each for an
+  89 KB inventory). Fewer reads helped; a faster parse wouldn't have (`equippedItems`).
+- **Tapes pin the reads a core script makes.** A replay refuses a read its tape never answered, so
+  changing what `CoreBots.setOptions` or `CoreAdvanced.enhanceEquipped` read breaks the tapes that
+  run them (`selectArrayObjectsWhere(... {"bEquip":true})` broke five). Keep such reads as they
+  are, or record those tapes again.
+- **Scripts must load in older Turu releases** (`scripts/CONTRIBUTING.md`): users download scripts
+  without updating Turu. A script using an API member added for this work falls back when the
+  member is missing (`CoreAdvanced`'s `equippedItems()`). Check it by removing the member from
+  `bot/js/turu.ts` for one run.
