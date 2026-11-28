@@ -755,8 +755,9 @@ it would kill each time.
 
 `bot.inventory.equippedItems` reads only the items with `bEquip` set (turu.swf's
 `selectArrayObjectsWhere`, as `player.currentClass` does), and `gearStore` and CoreAdvanced's
-`currentClassEnh` and specials use it. `ThirdErrand` takes 1.6 s, with the same calls and the same
-progress. CoreBots' `setOptions` and `enhanceEquipped` still read the whole inventory, once a run
+`currentClassEnh` and specials use it, falling back to the whole inventory filtered on Turu
+releases without it (scripts must load in older releases). `ThirdErrand` takes 1.6 s, with the same
+calls and the same progress; on a runtime without the member, 13.6 s and the same again. CoreBots' `setOptions` and `enhanceEquipped` still read the whole inventory, once a run
 or a restore: the tapes recorded those reads, and a replay refuses one it wasn't given.
 
 Full run (2026-11-28): the same outcome for every draft, no error, none cut by the real-time cap
