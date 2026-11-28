@@ -180,8 +180,12 @@ pub(super) fn requirements(quest: &Value) -> Vec<Requirement> {
                 id,
                 name: item["sName"].as_str().unwrap_or_default().to_owned(),
                 quantity: quantities.get(&id).copied().unwrap_or(1),
-                // Quest items are temporary unless the game says otherwise.
-                temp: item["bTemp"].as_bool().unwrap_or(true) || item["bTemp"] == json!(1),
+                // Quest items are temporary unless the game says otherwise (`false`, `0`, "0").
+                temp: match &item["bTemp"] {
+                    Value::Bool(temp) => *temp,
+                    Value::Null => true,
+                    other => num(other) != Some(0),
+                },
             })
         })
         .collect()
@@ -280,9 +284,10 @@ pub(super) fn deliver(bot: Option<std::sync::Arc<Bot>>, events: Vec<(String, Vec
 
 /// What a shop sells ([`super::WorldFake::with_shops`]): from a merge script, its items by ID and
 /// name, and the names of the materials its script farms. Item `n` is merged from material `n`
-/// (in turn), one of it, given the ID [`id_for`] its name: a kill drops that material when the
-/// script asks for it by name or by that ID. `sold`: items scripts buy outright (`buyItem`), by ID
-/// and name, for nothing, in any quantity.
+/// (in turn), one of it, given the ID of the quest item of that name (`WorldFake::with_quests`),
+/// else the ID [`id_for`] its name: a kill drops that material when the script asks for it by name
+/// or by that ID. `sold`: items scripts buy outright (`buyItem`), by ID and name, for nothing, in
+/// any quantity (an ID made from the name also becomes a quest item's).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ShopStock {
     pub items: Vec<(i64, String)>,
@@ -293,7 +298,8 @@ pub struct ShopStock {
 /// A shop as the game's `loadShop` fills `world.shopinfo`, its items shaped after one recorded in
 /// game (`merge_buy`'s): no quest, token, level, reputation or membership requirement, free (a
 /// level-16 tape has little gold), and the item's materials in `turnin`.
-pub(super) fn shop(id: i64, stock: &ShopStock) -> Value {
+/// `material_id` gives a material its ID (a quest's, or [`id_for`] its name).
+pub(super) fn shop(id: i64, stock: &ShopStock, material_id: impl Fn(&str) -> i64) -> Value {
     let merged = stock.items.len();
     // One entry per item: a merge item a script also buys by name keeps its merge entry.
     let sold = stock.sold.iter().filter(|(item_id, name)| {
@@ -312,7 +318,7 @@ pub(super) fn shop(id: i64, stock: &ShopStock) -> Value {
                 Vec::new()
             } else {
                 let material = &stock.materials[i % stock.materials.len()];
-                vec![json!({ "ItemID": id_for(material), "sName": material, "iQty": 1 })]
+                vec![json!({ "ItemID": material_id(material), "sName": material, "iQty": 1 })]
             };
             json!({
                 "ItemID": item_id,

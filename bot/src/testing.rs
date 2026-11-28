@@ -13,7 +13,7 @@
 
 pub use crate::api::army::ArmyStandIn;
 pub use crate::tape::replay::{ReplayFailure, ReplayHost, ReplayOptions, ReplayReport};
-pub use crate::world_fake::{ShopStock, WorldFake, item_id_for};
+pub use crate::world_fake::{Quests, ShopStock, WorldFake, item_id_for};
 
 use crate::flash::parse_bool;
 use crate::host::FlashArg;

@@ -29,7 +29,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use turu_bot::script::{self, ScriptStatus};
-use turu_bot::testing::{ShopStock, WorldFake, item_id_for};
+use turu_bot::testing::{Quests, ShopStock, WorldFake, item_id_for};
 use turu_bot::{Bot, tape};
 
 const MARK: &str = "not yet read through by hand";
@@ -637,7 +637,20 @@ struct Outcome {
 struct Catalogs {
     monsters: std::collections::HashMap<String, Vec<String>>,
     shops: std::collections::HashMap<i64, ShopStock>,
+    quests: Arc<Quests>,
 }
+
+/// The real quests ([`QUESTS`]): their names, requirements and rewards, which the fake gives the
+/// quests a draft loads in place of placeholders.
+fn quests() -> Arc<Quests> {
+    let file = std::fs::File::open(repo().join(QUESTS)).expect(QUESTS);
+    let quests = serde_json::from_reader(flate2::read::GzDecoder::new(file)).expect(QUESTS);
+    Quests::new(quests)
+}
+
+/// AQW's quests, cut down from a quest cache in VibeSkua's format by `tools/drafts/quests.py`
+/// (run it again for quests AQW added since).
+const QUESTS: &str = "bot/tests/world/quests.json.gz";
 
 fn run_one(
     world: &tape::Tape,
@@ -668,6 +681,7 @@ fn run_one(
         WorldFake::from_tape(world)
             .with_monsters(catalog.monsters.clone())
             .with_shops(catalog.shops.clone())
+            .with_quests(catalog.quests.clone())
             .with_potion_auras(
                 POTION_AURAS
                     .iter()
@@ -880,7 +894,13 @@ fn draft_smoke_sample() {
         }
     }
     let (monsters, monster_gaps) = monster_catalog();
-    let catalog = Arc::new(Catalogs { monsters, shops });
+    let quests = quests();
+    println!("quests: {} real ones from {QUESTS}", quests.len());
+    let catalog = Arc::new(Catalogs {
+        monsters,
+        shops,
+        quests,
+    });
     // A script that fights by map ID in a map it doesn't name (`mapName`): its IDs go unused.
     for gap in &monster_gaps {
         println!("monster catalog gap: map IDs and no mapName in {gap}");

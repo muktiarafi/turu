@@ -17,7 +17,7 @@ and replay it in CI against the same script; and run every converted script ("dr
 | 1. Recorder | Done, checked in game (`bot/src/tape/recorder.rs`, `TURU_TAPE`, `--record-tape`). |
 | 2. Scrubber and replay | Done. `turu-tape scrub`, `turu_bot::testing::ReplayHost`. |
 | 3. Core flows on tape | Done. Seven tapes in `bot/tests/tapes/`, each with its script beside it. |
-| 4. World fake and draft smoke | Built and running: `WorldFake` (with monsters, drops, quests, shops, sales, the bank, equipping and potions), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. All 1,612 drafts: no error, no known gap, none cut by the real-time cap. |
+| 4. World fake and draft smoke | Built and running: `WorldFake` (with monsters, drops, quests, shops, sales, the bank, equipping and potions), `bot/tests/draft_smoke.rs`, the nightly workflow and the pull-request job. All 1,612 drafts: no error, no known gap; one cut by the real-time cap (`SunkenTreasureQuestRewards`, the bank-slot gap). |
 | Decision 2 (virtual clock) | Done: `ScriptControl`'s clock, real unless a test makes it virtual. |
 | 5. Recording from Diagnostics | Not built. |
 
@@ -56,7 +56,9 @@ requests; no run of it has been looked at yet.
   `participate`, `wait_until`, `spend`. Unit tests there, including the woken-waiter race.
 - **World fake** (`bot/src/world_fake/mod.rs` for reads from the tape, shops, sales, the bank, equipping
   and potions, `sim.rs` for monsters, drops, quests and the shops' items): see the proposal's "Phase 4 so far" for each rule
-  and why it exists.
+  and why it exists. Real quests (names, requirements, rewards) come from
+  `bot/tests/world/quests.json.gz`, cut from a VibeSkua-format `QuestData.json` by
+  `tools/drafts/quests.py` (run it again on a newer cache for quests AQW added).
 - **Draft run** (`bot/tests/draft_smoke.rs`, ignored): every draft with a `main` for 60 s of play
   on a virtual clock (10 s real at most), several at once; the report (`target/draft-smoke.txt`)
   has a `progress` line (kills, quests accepted, turned in, purchases, sales) and, per draft, the last log lines,
@@ -82,7 +84,7 @@ requests; no run of it has been looked at yet.
 cargo nextest run -p turu_bot replay::                       # the replays, a second or two each
 cargo nextest run -p turu_bot world_fake control::tests      # the fake's and the clock's tests
 DRAFT_EVERY=8 cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture   # ~200 drafts, ~20 s
-DRAFT_EVERY=1 cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture   # all 1,612, ~90 s
+DRAFT_EVERY=1 cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture   # all 1,612, ~140 s
 DRAFT_FILTER=story/doomwood,farm/BuyScrolls cargo nextest run --cargo-profile draft -p turu_bot draft_smoke --run-ignored only --no-capture
 tools/drafts/changed.sh origin/main                          # which drafts a branch's scripts change
 ```
@@ -158,8 +160,11 @@ A script that changes what it sends needs its tape recorded again: remove the ol
 6. ~~The real-time cap.~~ Done (proposal, "The real-time cap"): the `draft` profile; outcomes are
    the same with 6 and 12 at once. `ThirdErrand` takes 1.6 s for its 60 s now that
    `CoreAdvanced.gearStore` reads only what you wear (`bot.inventory.equippedItems`; proposal,
-   "What you wear, read alone"). Left: the fake's placeholder quests never take what a script
-   hunts for them, so a loop like `thirdErrand`'s passes without killing.
+   "What you wear, read alone"). ~~Placeholder quests.~~ Done (proposal, "Real quests"): loaded
+   quests are AQW's, turn-ins take what they require, and `ThirdErrand` farms (13 kills, 14
+   turn-ins, 0.2 s). Left: the fake answers no bank slots (`iBankSlots`, `iBankCount` null), so
+   CoreBots' `toBank` finds the bank full and `SunkenTreasureQuestRewards` (26 real rewards) is cut
+   by the real-time cap at about 52 s of its 60.
 7. **Smaller:** phase 5 (Diagnostics > Record Session, scrubbing on save); moving the few
    genuinely timer-bound engine tests (Butler follow, relogin, `gear`'s bank equip) onto the
    virtual clock (each needs `bot.control.participate()` on the test thread and fakes that reply on
@@ -175,7 +180,11 @@ A script that changes what it sends needs its tape recorded again: remove the ol
   `event_waits`) stay real. One committed tape (`chute_quest`) also replays on the real clock.
 - **CoreBots' Twilly fallback stays as in C#**; tapes keep off it (above).
 - **Turn-ins in the fake always succeed**: scripts wait for their items themselves; a strict check
-  would only strand quests the fake can't supply.
+  would only strand quests the fake can't supply. They take what the quest requires, of what you
+  hold, and a quest reads "completable" (`status` `"c"`) only when you hold it all.
+- **Real quests from a committed file** (the owner's choice, 2026-11-28): every quest's ID, name,
+  requirements and rewards, gzipped (about 400 KB), so a local run and CI answer the same; not the
+  local data folder's cache, not a download.
 - **Monster names come from the scripts**, not tapes: they never cross the Flash boundary. So do
   monster map IDs (a map holds monsters up to the highest a script uses there); a monster only an
   ID names is "Stand-in <n>".
@@ -190,7 +199,9 @@ A script that changes what it sends needs its tape recorded again: remove the ol
   through instant sleeps (the relogin ran 10 virtual seconds in 100 ms and tripped the stall
   check); a real-time cache goes stale on no time (`SHARED_READ` gave 300 tries one snapshot). The
   `ClockTime` type catches mixing only where the clock is used: grep `Instant::now()` near any wait
-  a script can reach.
+  a script can reach. The Quest Thread kept its 2 s accept and 3 s turn-in cooldowns as `Instant`s,
+  so on a virtual clock a registered quest stayed "just accepted" for a whole draft and was never
+  turned in; they are on the bot's clock now.
 - **A loop that polls without sleeping holds virtual time still** unless calls cost time:
   `ScriptControl::spend` charges 1 ms per Flash call on a virtual clock.
 - **Watching a virtual clock from outside it is imprecise.** A test thread that reads

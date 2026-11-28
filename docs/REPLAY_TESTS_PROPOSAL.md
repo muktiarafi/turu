@@ -917,6 +917,53 @@ its stakes, FirePlaneWar its flamberges and harps (11, and farms its embers), th
 Hat merges 15 and 16 (where they had hunted for one kill), FireWar, Mogloween, and the Darkwar and
 Nation war chests.
 
+**Real quests.** A quest a draft loaded was a placeholder: one temporary "Item for quest <n>" to
+turn in and one "Reward of quest <n>". A script hunting a real item for it never had that item
+taken: `ThirdErrand`'s loop (hunt Nulgath's Mask, let the registered quest turn it in for a
+Darkon's Receipt) found the mask held and passed 2,668 times in 60 s without a kill. Four things
+were in the way, each found by tracing that one draft:
+
+- **The quest's items.** VibeSkua's quest cache (`QuestData.json`, 19 MB, the format Tools >
+  Loader reads) has every quest's requirements and rewards. `tools/drafts/quests.py` cuts it to
+  ID, name, requirements and rewards (`ItemID`, `sName`, `iQty`, `iStk`, `bTemp`), every quest,
+  gzipped: `bot/tests/world/quests.json.gz`, 10,345 quests, 402 KB, written the same way for the
+  same input (the owner chose a committed file over the local cache or a download). The fake gives
+  a quest it loads the real name, requirements and rewards, and keeps the placeholder slot (the
+  quest's ID at value 1: unlocked, not done). A quest with nothing to take or give (a chain quest)
+  is that too: a placeholder requirement stopped `1DoomwoodForest` at quest 1089. A quest not in
+  the file stays a placeholder. A turn-in takes every requirement, temporary or not, of what you
+  hold; it still always goes through.
+- **The items' identity.** A kill dropped what the script asked for under the script's spelling
+  and an ID made from it, temporary when asked of the temporary inventory: "Nulgath's mask"
+  (small m), temporary, never the quest's item 52926. Now an item a quest names drops as that
+  item (its ID, its spelling, temporary or not), and a merge shop's material or an item bought by
+  name takes that ID too, so a merge's check by ID still matches. `bTemp: 0` read as temporary
+  (only a JSON bool or `1` counted); fixed in `sim::requirements`.
+- **The status.** The engine turns in a registered quest only when `world.questTree.<id>.status`
+  is `"c"`, which the client sets once you hold everything; the fake never set one. It now gives
+  each read of a quest the client's status: `"p"` in progress, `"c"` in progress with every item
+  held, none otherwise.
+- **The Quest Thread's clock and packet.** Its 2 s accept and 3 s turn-in cooldowns were real
+  `Instant`s: on a virtual clock (60 s in about a second) a quest stayed "just accepted" to the end.
+  They are on the bot's clock now (`api/quests.rs`; production's clock is real, so nothing changes
+  there). And it turns in by packet (`tryQuestComplete`), which the fake didn't handle.
+
+`ThirdErrand` now kills Nulgath, turns the mask in and goes again: 13 kills and 14 turn-ins in its
+60 s, 4,700 calls (41,600) in 0.2 s of real time (1.4 s).
+
+Full run (2026-11-28), compared draft by draft: kills 9,880 to 11,505, quests turned in 3,274 (915
+drafts) to 4,379 (1,089), purchases 521 to 630, no error. 315 drafts kill more, 118 fewer (they
+buy, skip or finish instead). 58 outcomes changed, 29 each way. The newly finished end properly
+(a merge's last item, "all rewards gathered", a story's last quest) or on the account (an owned
+reward skips a quest, a full house inventory) or a monster the catalog lacks on a path reached
+only now (`ArkariesMerge`'s Hollowborn Wyvern). The newly running ones had finished on
+placeholders (a story turning in placeholder quests, a reward farm ending on "Reward of quest
+7715") and do the real quests now. The run takes 140 s (90 s): 9.2 million calls (5.2), the same
+time per call. One draft is cut by the real-time cap: `SunkenTreasureQuestRewards` reaches its
+`toBank` of 26 real rewards every 5 loops, and the fake answers no bank slots (`iBankSlots`,
+`iBankCount` null), so each finds the bank full after reading the whole inventory and house (8.4 s
+alone, 10 s beside eleven others).
+
 **Not done:** the first nightly run and the first "Changed drafts" run on GitHub; the fight
 signals between partners.
 

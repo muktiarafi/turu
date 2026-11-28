@@ -66,6 +66,8 @@ pub struct WorldFake {
     texts: Mutex<HashMap<String, String>>,
     /// What each shop sells, by shop ID, from the scripts ([`Self::with_shops`]).
     shops: HashMap<i64, ShopStock>,
+    /// Real quests, for the ones scripts load ([`Self::with_quests`]).
+    quests: Arc<Quests>,
     /// The shops' materials' names by the IDs they're given, so an item asked for by ID drops
     /// under its name.
     materials: HashMap<i64, String>,
@@ -169,11 +171,20 @@ impl WorldFake {
             potion: Mutex::default(),
             auras: Mutex::default(),
             potion_auras: HashMap::new(),
+            quests: Arc::default(),
         }
     }
 
     /// The aura each potion puts on you where its name isn't the potion's (`"Sage Tonic"`:
     /// `"Sage"`), as the scripts that check for it spell it. Names are matched without case.
+    /// Real quests (a quest cache in VibeSkua's format): a quest a script loads gets its name,
+    /// requirements and rewards from here, a quest not here placeholders; and an item a kill
+    /// drops that a quest names is that item (its ID, its name's spelling, temporary or not).
+    pub fn with_quests(mut self, quests: Arc<Quests>) -> Self {
+        self.quests = quests;
+        self
+    }
+
     pub fn with_potion_auras(mut self, auras: HashMap<String, String>) -> Self {
         self.potion_auras = auras
             .into_iter()
@@ -307,14 +318,20 @@ impl WorldFake {
         // One of each: an item asked for by ID and by name is one item.
         let mut dropped = std::collections::HashSet::new();
         for w in wanted {
-            let name = w
-                .name
-                .clone()
-                .or_else(|| w.id.and_then(|id| self.materials.get(&id).cloned()))
-                .unwrap_or_else(|| format!("Item {}", w.id.unwrap_or_default()));
-            let id = w.id.unwrap_or_else(|| sim::id_for(&name));
-            if dropped.insert((id, w.temp)) {
-                self.give(id, &name, 1, w.temp);
+            // An item a quest names drops as that item, however the script spells or keeps it.
+            let (id, name, temp) = match self.quests.item(w.id, w.name.as_deref()) {
+                Some(known) => (known.id, known.name.clone(), known.temp),
+                None => {
+                    let name = w
+                        .name
+                        .clone()
+                        .or_else(|| w.id.and_then(|id| self.materials.get(&id).cloned()))
+                        .unwrap_or_else(|| format!("Item {}", w.id.unwrap_or_default()));
+                    (w.id.unwrap_or_else(|| sim::id_for(&name)), name, w.temp)
+                }
+            };
+            if dropped.insert((id, temp)) {
+                self.give(id, &name, 1, temp);
             }
         }
     }
@@ -556,7 +573,8 @@ impl WorldFake {
     }
 
     /// A turn-in: it always goes through (scripts wait for their items themselves). The quest's
-    /// slot gets its value (done), its temporary items go, and the server's `ccqr` comes.
+    /// slot gets its value (done), its items go (as many as it takes, of what you hold), and the
+    /// server's `ccqr` comes.
     fn turn_in(&self, quest: i64) {
         self.in_progress.lock().remove(&quest);
         let room = self.get("world.curRoom").unwrap_or(json!(1));
@@ -572,8 +590,8 @@ impl WorldFake {
                 let have = values.entry(slot).or_insert(0);
                 *have = (*have).max(value);
             }
-            for req in sim::requirements(&entry).into_iter().filter(|r| r.temp) {
-                let path = Self::container(true);
+            for req in sim::requirements(&entry) {
+                let path = Self::container(req.temp);
                 if let Some(Value::Array(mut items)) = self.get(path) {
                     sim::take_item(&mut items, req.id, req.quantity);
                     self.set(path, Value::Array(items));
@@ -611,6 +629,22 @@ impl WorldFake {
         if path == "world.questTree" {
             return Some(self.quest_tree());
         }
+        // A quest, or a field of one: with its status as the client keeps it.
+        if let Some(rest) = path.strip_prefix("world.questTree.") {
+            let (id, field) = rest
+                .split_once('.')
+                .map_or((rest, None), |(id, f)| (id, Some(f)));
+            if let Ok(id) = id.parse::<i64>() {
+                let mut quest = self.stored(&format!("world.questTree.{id}"))?;
+                self.set_statuses(std::iter::once((id, &mut quest)));
+                return Some(field.map_or_else(|| quest.clone(), |f| sub_path(&quest, f)));
+            }
+        }
+        self.stored(path)
+    }
+
+    /// A path's value as stored: the overlay, else the tape, else inside a value either has whole.
+    fn stored(&self, path: &str) -> Option<Value> {
         if let Some(value) = self.overlay.lock().get(path) {
             return Some(value.clone());
         }
@@ -647,12 +681,47 @@ impl WorldFake {
                 tree.insert(id.to_owned(), quest.clone());
             }
         }
+        drop(overlay);
+        self.set_statuses(
+            tree.iter_mut()
+                .filter_map(|(id, quest)| Some((id.parse().ok()?, quest))),
+        );
         Value::Object(tree)
     }
 
+    /// Each quest's `status` as the client keeps it: `"c"` in progress with every item it takes
+    /// held, `"p"` in progress without, none when not in progress (the engine's `completable`
+    /// and `active` read it).
+    fn set_statuses<'q>(&self, quests: impl Iterator<Item = (i64, &'q mut Value)>) {
+        let in_progress = self.in_progress.lock().clone();
+        // The inventories, read once and only for a quest in progress.
+        let mut held: Option<[Vec<Value>; 2]> = None;
+        for (id, quest) in quests {
+            if !in_progress.contains(&id) {
+                if let Some(fields) = quest.as_object_mut() {
+                    fields.remove("status");
+                }
+                continue;
+            }
+            let [items, temp_items] = held.get_or_insert_with(|| {
+                [false, true].map(|temp| match self.stored(Self::container(temp)) {
+                    Some(Value::Array(items)) => items,
+                    _ => Vec::new(),
+                })
+            });
+            let done = sim::requirements(quest).iter().all(|r| {
+                sim::quantity(if r.temp { temp_items } else { items }, r.id) >= r.quantity
+            });
+            if let Some(fields) = quest.as_object_mut() {
+                fields.insert("status".into(), Value::from(if done { "c" } else { "p" }));
+            }
+        }
+    }
+
     /// Loading quests (`world.showQuests("1,2,3")`): each one the world hasn't yet comes as a quest
-    /// the tape has, its ID, name, slot, requirement and reward changed, as the server's
-    /// `getQuests` answer would fill `world.questTree`.
+    /// the tape has, its ID, name, slot, requirements and rewards changed, as the server's
+    /// `getQuests` answer would fill `world.questTree`: the real quest's name, requirements and
+    /// rewards ([`Self::with_quests`]), else placeholders.
     fn load_quests(&self, ids: &str) {
         let template = self
             .paths
@@ -682,22 +751,65 @@ impl WorldFake {
                 // -1 (a repeatable quest) reads as done.
                 fields.insert("iSlot".into(), Value::from(id));
                 fields.insert("iValue".into(), Value::from(1));
-                // One item to turn in and one reward, placeholders named after the quest: real
-                // quests have both, and scripts read them (`rewards[0]`).
-                let (need, give) = (900_000_000 + id, 910_000_000 + id);
-                let item = |item_id: i64, name: String| serde_json::json!({ "ItemID": item_id, "sName": name, "iQty": 1, "iStk": 1 });
-                fields.insert(
-                    "oItems".into(),
-                    serde_json::json!({ need.to_string(): item(need, format!("Item for quest {id}")) }),
-                );
+                // A real quest with nothing to take or give (a chain quest) is that too.
+                let real = self.quests.get(id);
+                let (needs, gives) = match real {
+                    Some(quest) => {
+                        if !quest.name.is_empty() {
+                            fields.insert("sName".into(), Value::from(quest.name.clone()));
+                        }
+                        let items = |list: &[crate::quest_cache::QuestDataItem]| -> Vec<Value> {
+                            list.iter()
+                                .map(|i| {
+                                    let name =
+                                        i.name.clone().unwrap_or_else(|| format!("Item {}", i.id));
+                                    quest_item(
+                                        i.id,
+                                        &name,
+                                        i.quantity.max(1),
+                                        i.max_stack.max(1),
+                                        i.temp,
+                                    )
+                                })
+                                .collect()
+                        };
+                        (items(&quest.requirements), items(&quest.rewards))
+                    }
+                    // One item to turn in and one reward, placeholders named after the quest:
+                    // real quests have both, and scripts read them (`rewards[0]`).
+                    None => (
+                        vec![quest_item(
+                            900_000_000 + id,
+                            &format!("Item for quest {id}"),
+                            1,
+                            1,
+                            true,
+                        )],
+                        vec![quest_item(
+                            910_000_000 + id,
+                            &format!("Reward of quest {id}"),
+                            1,
+                            1,
+                            false,
+                        )],
+                    ),
+                };
+                let by_id = |list: &[Value]| -> serde_json::Map<String, Value> {
+                    list.iter()
+                        .map(|i| (i["ItemID"].to_string(), i.clone()))
+                        .collect()
+                };
+                fields.insert("oItems".into(), Value::Object(by_id(&needs)));
                 fields.insert(
                     "turnin".into(),
-                    serde_json::json!([{ "ItemID": need, "iQty": 1 }]),
+                    Value::Array(
+                        needs
+                            .iter()
+                            .map(|i| json!({ "ItemID": i["ItemID"], "iQty": i["iQty"] }))
+                            .collect(),
+                    ),
                 );
-                fields.insert(
-                    "oRewards".into(),
-                    serde_json::json!({ "itemsS": { give.to_string(): item(give, format!("Reward of quest {id}")) } }),
-                );
+                fields.insert("oRewards".into(), json!({ "itemsS": by_id(&gives) }));
             }
             self.set(&path, quest);
         }
@@ -712,9 +824,24 @@ impl WorldFake {
             .get("world.shopinfo")
             .filter(|shop| shop["ShopID"].as_f64() == Some(id as f64))
             .cloned();
-        let shop = recorded
-            .unwrap_or_else(|| sim::shop(id, self.shops.get(&id).unwrap_or(&ShopStock::default())));
+        let shop = recorded.unwrap_or_else(|| {
+            let mut stock = self.shops.get(&id).cloned().unwrap_or_default();
+            // An item bought by name has the ID made from its name: a quest's, when one names it.
+            for (item, name) in &mut stock.sold {
+                if *item == sim::id_for(name) {
+                    *item = self.item_id(name);
+                }
+            }
+            sim::shop(id, &stock, |name| self.item_id(name))
+        });
         self.set("world.shopinfo", shop);
+    }
+
+    /// The ID of an item known by name: a quest's that names it, else one made from the name.
+    fn item_id(&self, name: &str) -> i64 {
+        self.quests
+            .item(None, Some(name))
+            .map_or_else(|| sim::id_for(name), |known| known.id)
     }
 
     /// The loaded shop's entry for an item (`shop_item_id` <= 0: any), as turu.swf's `shopItem`.
@@ -968,6 +1095,12 @@ impl WorldFake {
                     self.equip(item, false);
                 }
             }
+            // A turn-in by packet (the Quest Thread's): `%xt%zm%tryQuestComplete%<room>%<quest>%...`.
+            Some("tryQuestComplete") => {
+                if let Some(quest) = id(5) {
+                    self.turn_in(quest);
+                }
+            }
             Some("sellItem") => {
                 if let (Some(item), Some(quantity)) = (id(5), id(6)) {
                     self.sell(item, quantity);
@@ -1183,6 +1316,83 @@ fn loose_key(name: &str, args: &[Value]) -> String {
 
 fn parse(raw: &str) -> Value {
     serde_json::from_str(raw.trim()).unwrap_or(Value::Null)
+}
+
+/// Real quests for [`WorldFake::with_quests`], by ID, and the items they name, by ID and by name
+/// (without case): what a kill drops when a script asks for one of them.
+#[derive(Debug, Default)]
+pub struct Quests {
+    by_id: HashMap<i64, crate::quest_cache::QuestData>,
+    items_by_id: HashMap<i64, QuestItem>,
+    items_by_name: HashMap<String, QuestItem>,
+}
+
+/// An item a quest names: as a requirement or a reward.
+#[derive(Debug, Clone)]
+struct QuestItem {
+    id: i64,
+    name: String,
+    temp: bool,
+}
+
+impl Quests {
+    /// From a quest cache's quests. An item several quests name is the first quest's (by ID).
+    pub fn new(mut quests: Vec<crate::quest_cache::QuestData>) -> Arc<Self> {
+        quests.sort_by_key(|q| q.id);
+        let mut this = Self::default();
+        for quest in &quests {
+            for item in quest.requirements.iter().chain(&quest.rewards) {
+                let Some(name) = item.name.clone().filter(|n| !n.is_empty()) else {
+                    continue;
+                };
+                let known = QuestItem {
+                    id: item.id,
+                    name: name.clone(),
+                    temp: item.temp,
+                };
+                this.items_by_id
+                    .entry(item.id)
+                    .or_insert_with(|| known.clone());
+                this.items_by_name
+                    .entry(name.to_lowercase())
+                    .or_insert(known);
+            }
+        }
+        this.by_id = quests.into_iter().map(|q| (q.id, q)).collect();
+        Arc::new(this)
+    }
+
+    pub fn len(&self) -> usize {
+        self.by_id.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_id.is_empty()
+    }
+
+    fn get(&self, id: i64) -> Option<&crate::quest_cache::QuestData> {
+        self.by_id.get(&id)
+    }
+
+    /// The quest item a script asked for by ID or by name, if a quest names it.
+    fn item(&self, id: Option<i64>, name: Option<&str>) -> Option<&QuestItem> {
+        match id {
+            Some(id) => self.items_by_id.get(&id),
+            None => self.items_by_name.get(&name?.to_lowercase()),
+        }
+    }
+}
+
+/// An item of a loaded quest, as the game's `world.questTree` holds it: a requirement in `oItems`,
+/// a reward in `oRewards.itemsS`.
+fn quest_item(id: i64, name: &str, quantity: i64, max_stack: i64, temp: bool) -> Value {
+    json!({
+        "ItemID": id,
+        "sName": name,
+        "iQty": quantity,
+        "iStk": max_stack,
+        "bTemp": if temp { 1 } else { 0 },
+    })
 }
 
 /// `rest` (`items.length`, `items.0.sName`) inside `value`, as turu.swf's `getGameObject` would.
@@ -1667,6 +1877,62 @@ mod tests {
             ],
         );
         assert_eq!(in_progress(), "false");
+    }
+
+    #[test]
+    fn a_real_quest_loads_its_items_and_a_turn_in_takes_them() {
+        let quests: Vec<crate::quest_cache::QuestData> = serde_json::from_value(json!([{
+            "ID": 7326,
+            "Name": "Darkon's Third Errand",
+            "Requirements": [{"ItemID": 52926, "sName": "Nulgath's Mask", "iQty": 1, "iStk": 222, "bTemp": "0"}],
+            "Rewards": [{"ItemID": 52927, "sName": "Darkon's Receipt", "iQty": 1, "iStk": 222, "bTemp": "0"}],
+        }]))
+        .unwrap();
+        let world = from_lines(vec![call(
+            0,
+            "getGameObject",
+            json!(["world.myAvatar.items"]),
+            r#"[{"ItemID":52926,"sName":"Nulgath's Mask","iQty":1,"bTemp":0}]"#,
+        )])
+        .with_quests(Quests::new(quests));
+        ask(
+            &world,
+            "callGameFunction",
+            vec!["world.showQuests".into(), "7326,7327".into(), "q".into()],
+        );
+        let parsed = |id: &str| -> crate::models::Quest {
+            serde_json::from_str(&ask(
+                &world,
+                "getGameObject",
+                vec![format!("world.questTree.{id}").into()],
+            ))
+            .unwrap()
+        };
+        let quest = parsed("7326");
+        assert_eq!(quest.name, "Darkon's Third Errand");
+        assert_eq!(
+            (
+                quest.requirements[0].name.as_str(),
+                quest.requirements[0].temp
+            ),
+            ("Nulgath's Mask", false)
+        );
+        assert_eq!(quest.rewards[0].name, "Darkon's Receipt");
+        assert_eq!(quest.rewards[0].max_stack, 222);
+        // A quest the data doesn't have keeps its placeholders.
+        assert_eq!(parsed("7327").requirements[0].name, "Item for quest 7327");
+
+        ask(
+            &world,
+            "callGameFunction",
+            vec!["world.acceptQuest".into(), 7326.0.into()],
+        );
+        ask(
+            &world,
+            "callGameFunction",
+            vec!["world.tryQuestComplete".into(), 7326.0.into()],
+        );
+        assert!(held_by_name(&world, "Nulgath's Mask").is_empty());
     }
 
     fn world_with_a_merge_shop() -> WorldFake {
