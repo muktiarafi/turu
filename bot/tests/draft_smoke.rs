@@ -328,6 +328,18 @@ const SHOP_EXTRAS: &[(i64, &[&str], &str)] = &[
     ),
 ];
 
+/// The auras potions put on you where the aura isn't named after the potion, as the scripts that
+/// check for them spell them (the fake names the rest after the potion): CoreLoneWolf's
+/// `getPotionAuraName`, which the run checks still names each.
+const POTION_AURAS: &[(&str, &str)] = &[
+    ("Sage Tonic", "Sage"),
+    ("Might Tonic", "Might"),
+    ("Fate Tonic", "Fate"),
+    ("Body Tonic", "Body"),
+    ("Potent Honor Potion", "Potent Honor Malice"),
+];
+const POTION_AURAS_FROM: &str = "scripts/ultraslw/CoreLoneWolf.ts";
+
 /// Each merge shop's stock, by shop ID, from its merge script: the shop it names
 /// (`startBuyAllMerge("map", id, ...)`), the items its options list (`option.bool("29574",
 /// "Synderes' Cape of Doom", ...)`, the `Select` group's switches, named by item ID) and the
@@ -527,7 +539,13 @@ fn run_one(
     let fake = Arc::new(
         WorldFake::from_tape(world)
             .with_monsters(catalog.monsters.clone())
-            .with_shops(catalog.shops.clone()),
+            .with_shops(catalog.shops.clone())
+            .with_potion_auras(
+                POTION_AURAS
+                    .iter()
+                    .map(|(potion, aura)| ((*potion).to_owned(), (*aura).to_owned()))
+                    .collect(),
+            ),
     );
     fake.attach(&bot);
     // A virtual clock (decision 2): the draft's sleeps and waits take no real time, so its
@@ -713,6 +731,13 @@ fn draft_smoke_sample() {
     let outcomes = Arc::new(Mutex::new(Vec::new()));
     let world = Arc::new(world);
     let (shops, shop_gaps) = shop_catalog();
+    let source = std::fs::read_to_string(repo().join(POTION_AURAS_FROM)).unwrap_or_default();
+    for (potion, aura) in POTION_AURAS {
+        assert!(
+            source.contains(&format!("\"{potion}\"")) && source.contains(&format!("\"{aura}\"")),
+            "POTION_AURAS' {potion} -> {aura} isn't in {POTION_AURAS_FROM} any more"
+        );
+    }
     let (monsters, monster_gaps) = monster_catalog();
     let catalog = Arc::new(Catalogs { monsters, shops });
     // A script that fights by map ID in a map it doesn't name (`mapName`): its IDs go unused.

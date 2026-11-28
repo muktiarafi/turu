@@ -6,8 +6,9 @@
 //! its name and arguments. On top is an overlay that sends change, through a short list of rules:
 //! `setGameObject` sets the path, joining a map (the `tfer` packet) moves you there, a jump moves
 //! you to the cell, a bank move (`bankToInv`, `bankFromInv`, `bankSwapInv`) moves the item, an
-//! equip (`equipItem`, `world.equipUseableItem`) puts it on. Batched reads (`snapshot`, `getMany`,
-//! ...) are built from the single ones, as turu.swf builds them from the game.
+//! equip (`equipItem`, `world.equipUseableItem`) puts it on, skill 5 drinks the potion slot's
+//! potion and puts its aura on you. Batched reads (`snapshot`, `getMany`, ...) are built from the
+//! single ones, as turu.swf builds them from the game.
 //!
 //! It is a model, so it is wrong in places: its job is only to get a draft past its setup into its
 //! own code. Each rule is there because a draft needed it; the answers come from the tape, not
@@ -70,6 +71,12 @@ pub struct WorldFake {
     materials: HashMap<i64, String>,
     /// Purchases made, for a report.
     purchases: Mutex<u64>,
+    /// The potion in the potion slot (`world.equipUseableItem`), by item ID.
+    potion: Mutex<Option<i64>>,
+    /// The auras used potions put on you, by name, with when (Unix ms).
+    auras: Mutex<Vec<(String, u64)>>,
+    /// A potion's aura's name where it isn't the potion's own ([`Self::with_potion_auras`]).
+    potion_auras: HashMap<String, String>,
 }
 
 impl WorldFake {
@@ -156,7 +163,20 @@ impl WorldFake {
             shops: HashMap::new(),
             materials: HashMap::new(),
             purchases: Mutex::default(),
+            potion: Mutex::default(),
+            auras: Mutex::default(),
+            potion_auras: HashMap::new(),
         }
+    }
+
+    /// The aura each potion puts on you where its name isn't the potion's (`"Sage Tonic"`:
+    /// `"Sage"`), as the scripts that check for it spell it. Names are matched without case.
+    pub fn with_potion_auras(mut self, auras: HashMap<String, String>) -> Self {
+        self.potion_auras = auras
+            .into_iter()
+            .map(|(potion, aura)| (potion.to_lowercase(), aura))
+            .collect();
+        self
     }
 
     /// What each shop sells, by shop ID, for the shops a script loads (the tape's shop keeps its
@@ -396,6 +416,78 @@ impl WorldFake {
             }
         }
         self.set(path, Value::Array(items));
+    }
+
+    /// Uses the potion in the potion slot, as the game does: one of it goes and its aura (for
+    /// half an hour) is on you. False with no potion there, or none left.
+    fn drink(&self) -> bool {
+        let Some(id) = *self.potion.lock() else {
+            return false;
+        };
+        let path = Self::container(false);
+        let Some(Value::Array(mut items)) = self.get(path) else {
+            return false;
+        };
+        let Some(name) = items
+            .iter()
+            .find(|i| sim::num(&i["ItemID"]) == Some(id) && sim::num(&i["iQty"]).unwrap_or(0) > 0)
+            .and_then(|i| i["sName"].as_str().map(str::to_owned))
+        else {
+            return false;
+        };
+        sim::take_item(&mut items, id, 1);
+        self.set(path, Value::Array(items));
+        let aura = self
+            .potion_auras
+            .get(&name.to_lowercase())
+            .cloned()
+            .unwrap_or(name);
+        let mut auras = self.auras.lock();
+        auras.retain(|(a, _)| !a.eq_ignore_ascii_case(&aura));
+        auras.push((aura, crate::gear::now_ms()));
+        true
+    }
+
+    /// turu.swf's aura reads for you, with the potions' auras added to what the tape answered
+    /// (None: not about you, the tape's answer stands). Times are the wall clock's, as the
+    /// engine reads them ([`crate::gear::now_ms`]).
+    fn aura_answer(&self, name: &str, args: &[Value]) -> Option<String> {
+        const SECS: u64 = 1800;
+        let text = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or_default();
+        if name != "GetPlayerAura" && text(0) != "Self" {
+            return None;
+        }
+        let recorded = || {
+            let answer = self
+                .answers
+                .get(&key(name, args))
+                .cloned()
+                .unwrap_or_default();
+            serde_json::from_str::<Vec<Value>>(&answer).unwrap_or_default()
+        };
+        let auras = self.auras.lock().clone();
+        let mine = |aura: &str| auras.iter().any(|(a, _)| a.eq_ignore_ascii_case(aura));
+        Some(match name {
+            "GetPlayerAura" => {
+                let mut list = recorded();
+                list.extend(auras.iter().map(|(a, ts)| {
+                    json!({ "nam": a, "val": 1, "dur": SECS, "ts": ts, "cat": "", "t": "s" })
+                }));
+                Value::Array(list).to_string()
+            }
+            "GetAuraSnapshots" => {
+                let now = crate::gear::now_ms();
+                let mut list = recorded();
+                list.extend(auras.iter().map(|(a, ts)| {
+                    let left = SECS.saturating_sub(now.saturating_sub(*ts) / 1000);
+                    json!({ "nam": a, "n": 1, "dur": SECS, "remaining": left, "persist": false })
+                }));
+                Value::Array(list).to_string()
+            }
+            "HasAnyActiveAura" if text(1).split(',').any(|a| mine(a.trim())) => "true".into(),
+            "GetAurasValue" if mine(text(1)) => "1".into(),
+            _ => return None,
+        })
     }
 
     /// `inventoryHasSpaceFor(item, quantity, purchase, outgoing)`, as turu.swf answers it: a stack
@@ -789,10 +881,12 @@ impl WorldFake {
             // A map item: what the quests in progress still need.
             "callGameFunction" if text(0) == "world.getMapItem" => self.give_quest_items(),
             "callGameFunction" if text(0) == "sfc.sendString" => self.packet(text(1)),
-            // A potion or scroll: the game sends `equipItem` for it.
+            // A potion or scroll: the game sends `equipItem` for it and puts it in the potion
+            // slot (skill 5).
             "callGameFunction" if text(0) == "world.equipUseableItem" => {
                 if let Some(item) = args.get(1).and_then(|a| sim::num(&a["ItemID"])) {
                     self.equip(item, true);
+                    *self.potion.lock() = Some(item);
                 }
             }
             _ => {}
@@ -884,9 +978,20 @@ impl WorldFake {
             "attackMonsterName" => {
                 return self.combat.lock().attack(None, Some(first)).to_string();
             }
+            // The potion slot drinks the potion there: one goes, its aura comes.
+            "useSkill" if json.first().and_then(sim::num) == Some(5) => {
+                return self.drink().to_string();
+            }
             "useSkill" => {
                 self.hit();
                 return "true".into();
+            }
+            "GetPlayerAura" | "GetAuraSnapshots" | "HasAnyActiveAura" | "GetAurasValue"
+                if !self.auras.lock().is_empty() =>
+            {
+                if let Some(answer) = self.aura_answer(name, &json) {
+                    return answer;
+                }
             }
             // A quest slot's value says which quests are done: one the tape never read is 0 (not
             // done), never another slot's.
@@ -1133,6 +1238,67 @@ mod tests {
 
     fn ask(world: &WorldFake, name: &str, args: Vec<FlashArg>) -> String {
         world.call(name, args).unwrap()
+    }
+
+    #[test]
+    fn a_drunk_potion_goes_and_leaves_its_aura() {
+        let world = from_lines(vec![
+            call(
+                0,
+                "getGameObject",
+                json!(["world.myAvatar.items"]),
+                r#"[{"ItemID":7,"sName":"Sage Tonic","sES":"mi","bEquip":false,"iQty":2}]"#,
+            ),
+            call(1, "GetPlayerAura", json!(["questwalker"]), "[]"),
+        ])
+        .with_potion_auras(HashMap::from([(
+            "Sage Tonic".to_owned(),
+            "Sage".to_owned(),
+        )]));
+        let names = |raw: String| -> Vec<String> {
+            let list: Vec<Value> = serde_json::from_str(&raw).unwrap();
+            list.iter()
+                .map(|a| a["nam"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        let mine = || names(ask(&world, "GetPlayerAura", vec!["questwalker".into()]));
+        // Nothing in the potion slot: nothing to drink.
+        assert_eq!(ask(&world, "useSkill", vec![5.0.into()]), "false");
+        assert!(mine().is_empty());
+
+        let tonic = FlashArg::Object([("ItemID".to_owned(), FlashArg::from(7.0))].into());
+        ask(
+            &world,
+            "callGameFunction",
+            vec!["world.equipUseableItem".into(), tonic],
+        );
+        assert_eq!(ask(&world, "useSkill", vec![5.0.into()]), "true");
+        assert_eq!(mine(), ["Sage"]);
+        assert_eq!(
+            names(ask(&world, "GetAuraSnapshots", vec!["Self".into()])),
+            ["Sage"]
+        );
+        let any = |list: &str| ask(&world, "HasAnyActiveAura", vec!["Self".into(), list.into()]);
+        assert_eq!(any("Might,sage"), "true");
+        let items: Vec<Value> = serde_json::from_str(&ask(
+            &world,
+            "getGameObject",
+            vec!["world.myAvatar.items".into()],
+        ))
+        .unwrap();
+        assert_eq!(items[0]["iQty"], 1);
+        // The engine reads it as active, with its time left.
+        let aura: crate::models::Aura = serde_json::from_value(
+            serde_json::from_str::<Vec<Value>>(&ask(
+                &world,
+                "GetPlayerAura",
+                vec!["questwalker".into()],
+            ))
+            .unwrap()[0]
+                .clone(),
+        )
+        .unwrap();
+        assert!(aura.with_times(crate::gear::now_ms() as i64).remaining_time > 1700);
     }
 
     #[test]

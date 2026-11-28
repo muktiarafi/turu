@@ -731,6 +731,18 @@ the very 30.3 s it ends at locally (416 finished, 417 locally). Optimized, a dra
 rather than waiting, so more drafts than cores only slows each one: the workflows now run one per
 core (`DRAFT_JOBS=$(nproc)`).
 
+**Potion auras.** CoreLoneWolf checks a potion worked by its aura after skill 5
+(`hasActiveAura`), and the fake gave none, so every used potion was "not verified after use"
+(skill 5 hit the target instead). Now `world.equipUseableItem` puts the item in the potion slot,
+and skill 5 drinks it: one goes and its aura is on you for half an hour, in all four of turu.swf's
+reads for you (`GetPlayerAura`, `GetAuraSnapshots`, `HasAnyActiveAura`, `GetAurasValue`), beside
+what the tape answered. The time stamp is the wall clock's, as the engine reads auras. An aura is
+named after its potion except for those in the run's `POTION_AURAS` (CoreLoneWolf's
+`getPotionAuraName`: "Sage Tonic" gives "Sage"), which the run checks that file still names.
+
+Full run (2026-11-28): the same outcome for every draft, no error, no "not verified after use"
+(2 before); the potions log "applied". Kills 9,866 (9,870): skill 5 no longer hits.
+
 **Pull requests:** CI's "Changed drafts" job (`ci.yml`) runs the drafts a pull request's scripts
 change. `tools/drafts/changed.sh <base>` compares the scripts submodule's commit on the base branch
 with the pull request's and prints `skip`, `DRAFT_FILTER=<paths>` or `DRAFT_EVERY=16`: the changed
