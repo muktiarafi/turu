@@ -22,7 +22,8 @@
 //! core since the reading before and the busiest threads' shares (ColorOS closed Turu "for using
 //! too much CPU" in the background: TURU-ANDROID-D's log showed 12-16% at 2 FPS and stretches of
 //! ~94% for 10 minutes, and couldn't say whose): RSS and its parts, PSS,
-//! the `malloc` heap, the address space and the number of mappings, every 5 minutes with the
+//! the `malloc` heap, the address space and the number of mappings, the shapes' geometry on the
+//! GPU ([`shape_geometry`]: is it shapes that grow?), every 5 minutes with the
 //! largest mappings by name. The last readings are kept in the data folder's
 //! `crash/memory-<pid>.log`, which `CrashReports.kt` adds to that process's exit report, and every
 //! 5 minutes one goes to Sentry as a breadcrumb. A Pixel 8 aborted on a failed allocation after 27
@@ -163,12 +164,14 @@ pub fn tick(player: &mut Player) {
         }
         if now.duration_since(watch.last_sweep) >= SWEEP_EVERY {
             watch.last_sweep = now;
+            let before_mb = shape_geometry().1;
             let freed = ruffle_core::evict_unused_shapes(SWEEP_UNUSED_SECS);
             if freed > 0 {
                 tracing::info!(
                     target: "ruffle_aqw_perf",
-                    "freed {freed} shapes not drawn for {} minutes",
-                    SWEEP_UNUSED_SECS / 60
+                    "freed {freed} shapes not drawn for {} minutes (shape geometry: {before_mb} -> {} MB)",
+                    SWEEP_UNUSED_SECS / 60,
+                    shape_geometry().1
                 );
             }
         }
@@ -360,6 +363,7 @@ fn restart_times(text: &str, now: u64) -> Option<Vec<u64>> {
 /// Frees the idle pooled textures (waiting for the GPU to let them go) and the shapes not drawn
 /// for [`TRIM_UNUSED_SECS`]. On the engine thread.
 pub fn trim(player: &mut Player, why: &str) {
+    let before_mb = shape_geometry().1;
     let shapes = ruffle_core::evict_unused_shapes(TRIM_UNUSED_SECS);
     if let Some(renderer) =
         <dyn Any>::downcast_mut::<WgpuRenderBackend<MovieTexture>>(player.renderer_mut())
@@ -368,8 +372,17 @@ pub fn trim(player: &mut Player, why: &str) {
     }
     tracing::info!(
         target: "ruffle_aqw_perf",
-        "freed spare textures and {shapes} unused shapes: {why}"
+        "freed spare textures and {shapes} unused shapes (shape geometry: {before_mb} -> {} MB): {why}",
+        shape_geometry().1
     );
+}
+
+/// The shapes' geometry the GPU holds in this process, as ruffle-aqw counts it: (meshes, MB). On a
+/// phone it is the phone's RAM; the desktop's sweep reads the same count to free sooner when it is
+/// large (`app/src/memory.rs`), and here it is logged so a run shows its share of the process.
+fn shape_geometry() -> (u64, u64) {
+    let (meshes, bytes, _, _) = ruffle_render_wgpu::perf_counters::live();
+    (meshes.max(0) as u64, (bytes.max(0) as u64) >> 20)
 }
 
 /// Options > Application > Free Memory Now (Mugetsu 2.0.0's "Free memory now", as a desktop tab
@@ -433,19 +446,21 @@ fn log_memory(log: &mut MemoryLog, now: Instant) {
     // The tabs' states are in `crash/tabs-<pid>.log` (`turu_frontend::tabs_log`); the count here
     // ties each reading to it.
     let tabs = turu::tabs().len();
+    let (meshes, mesh_mb) = shape_geometry();
+    let shapes = format!("; shape geometry {mesh_mb} MB ({meshes} meshes)");
     let mut line = format!(
-        "{} up {up} min, {tabs} tab{}: {cpu}{reading}",
+        "{} up {up} min, {tabs} tab{}: {cpu}{reading}{shapes}",
         chrono::Local::now().format("%H:%M:%S"),
         if tabs == 1 { "" } else { "s" }
     );
-    tracing::info!("Memory: {cpu}{reading}");
+    tracing::info!("Memory: {cpu}{reading}{shapes}");
     if detail {
         let largest =
             process_memory::format_mappings(&process_memory::largest_mappings(LARGEST_MAPPINGS));
         tracing::info!("Largest mappings: {largest}");
         crate::notify::breadcrumb(
             "memory",
-            &format!("up {up} min: {cpu}{reading}; largest: {largest}"),
+            &format!("up {up} min: {cpu}{reading}{shapes}; largest: {largest}"),
         );
         line.push_str("\n    largest: ");
         line.push_str(&largest);

@@ -485,7 +485,10 @@ works from the phone's memory:
 * Idle pooled textures are capped at Mugetsu's low-memory budget, 64 MB, for the whole run
   (`set_memory_pressure(true)`; the "idle texture budget" log line still prints the normal one).
 * Every minute, the geometry of shapes not drawn for 5 minutes is freed (AQW keeps every SWF it
-  loaded; on a desktop this grew ~500 MB an hour).
+  loaded; on a desktop this grew ~500 MB an hour). Unlike the desktop's sweep, the 5 minutes
+  don't shorten as the store fills. Each reading in `memory-<pid>.log` gives the shapes'
+  geometry ("shape geometry N MB (M meshes)"), and each sweep and trim logs it before and after,
+  to tell from a phone's run whether shapes are a large part of its memory.
 * Spare textures and the shapes not drawn for 2 minutes are freed when the window goes away,
   when Android calls `onTrimMemory` at `RUNNING_LOW` or above (the service passes it on), and
   every 30 s while `/proc/meminfo`'s `MemAvailable` is under 15% of the phone's memory.
