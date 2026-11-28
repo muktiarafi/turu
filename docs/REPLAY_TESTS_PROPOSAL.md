@@ -982,6 +982,16 @@ before), one outcome changed: `GoatRep` buys and goes on to its quest where it s
 house. `SunkenTreasureQuestRewards` banks its rewards and plays its 60 s in 5.9 s beside the
 others. The run takes 133 s.
 
+**No network.** That fetch went out because nothing stopped it. The run now sets `HTTP_PROXY`,
+`HTTPS_PROXY` and `ALL_PROXY` to a listener of its own on 127.0.0.1 before it starts a bot;
+reqwest builds every client with the system's proxies, and no client in the engine opts out
+(`.no_proxy()`), so each request reaches the listener, which notes its first line
+(`CONNECT account.aq.com:443 HTTP/1.1`) and answers 403. Nothing leaves the machine, and the run
+fails on any request (the report lists them under "network requests (refused)"), before it
+looks at the drafts' errors, which such a request usually causes. Checked by giving the fake a
+`CharID` again: `StoneCold` asked for its badges, the proxy refused it, the run failed. Full run
+(2026-11-28): no request, no outcome changed.
+
 **Not done:** the first nightly run and the first "Changed drafts" run on GitHub; the fight
 signals between partners.
 

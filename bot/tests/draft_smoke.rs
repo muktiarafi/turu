@@ -171,6 +171,44 @@ impl turu_bot::testing::ArmyStandIn for Partners {
     }
 }
 
+/// Keeps the run off the network: every HTTP client the engine builds (reqwest, with the system's
+/// proxies) goes through a proxy of the run's own on 127.0.0.1, which refuses each request (403)
+/// and notes its first line (`CONNECT account.aq.com:443 HTTP/1.1`). The run fails on any.
+fn refuse_network() -> Arc<Mutex<Vec<String>>> {
+    use std::io::{BufRead, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a local port");
+    let proxy = format!("http://{}", listener.local_addr().unwrap());
+    // SAFETY: at the test's start, before it starts a bot or a thread that reads them; nextest
+    // runs each test in its own process.
+    unsafe {
+        for name in [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+        ] {
+            std::env::set_var(name, &proxy);
+        }
+        std::env::remove_var("NO_PROXY");
+        std::env::remove_var("no_proxy");
+    }
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = requests.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let mut line = String::new();
+            let _ = std::io::BufReader::new(&stream).read_line(&mut line);
+            seen.lock().push(line.trim().to_owned());
+            let _ = (&stream).write_all(
+                b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+        }
+    });
+    requests
+}
+
 /// Sets the loaded draft's [`DRAFT_OPTIONS`]: the indexes of the entries it declares, or why one
 /// was refused.
 fn set_draft_options(bot: &Bot, script: &str) -> Result<Vec<usize>, String> {
@@ -840,6 +878,7 @@ fn run_one(
 #[ignore = "runs drafts for seconds each: by hand or nightly"]
 fn draft_smoke_sample() {
     crate::common::data_dir();
+    let requests = refuse_network();
     let every: usize = env_or("DRAFT_EVERY", 32);
     let filter = std::env::var("DRAFT_FILTER").unwrap_or_default();
     let budget = Duration::from_secs_f64(env_or("DRAFT_SECS", 60.0));
@@ -1016,9 +1055,22 @@ fn draft_smoke_sample() {
             }
         }
     }
+    let requests = requests.lock().clone();
+    report.push_str(&format!("network requests (refused): {}\n", requests.len()));
+    for request in &requests {
+        report.push_str(&format!("  {request}\n"));
+    }
     let out = repo().join("target/draft-smoke.txt");
     std::fs::write(&out, &report).unwrap();
     println!("\n{report}\nReport: {}", out.display());
+    // The run plays a fake world: a request to the internet is a value of the fake's that set
+    // off what the tape never did (a `CharID` once fetched the badges), or a draft that reaches
+    // AQW's API. Its draft's log says which.
+    assert!(
+        requests.is_empty(),
+        "drafts made {} HTTP requests (refused; see the report): {requests:?}",
+        requests.len()
+    );
     let failed: Vec<&str> = outcomes
         .iter()
         .filter(|o| matches!(o.kind, "error" | "not started"))

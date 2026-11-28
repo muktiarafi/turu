@@ -215,8 +215,11 @@ A script that changes what it sends needs its tape recorded again: remove the ol
   screen (`servers::log_out_and_in`).
 - **A fake value can set off a network call.** Seeding every `objData` field from the login gave
   the fake a `CharID`, and 22 badge drafts fetched their badges from account.aq.com
-  (`player.webBadges`; it answered 429). The fake seeds only what a draft needs; check a full
-  run's errors for an HTTP status after giving the fake a new value.
+  (`player.webBadges`; it answered 429). The fake seeds only what a draft needs, and the run now
+  refuses the network: every reqwest client goes through a proxy of the run's own on 127.0.0.1
+  (`refuse_network`, through the `HTTP(S)_PROXY` variables), which answers 403, and the run fails
+  on any request, listing them in the report ("network requests (refused)"). A client built
+  with `.no_proxy()` would get past it: keep the engine's clients on the system's proxies.
 - **Inputs outside Flash:** the server list (HTTP) and the CoreBots Options file are noted on the
   tape; anything else a script reads from outside the game will need the same.
 - **Startup scripts started before the player loaded**, so a bare `map.join` did nothing; startup
