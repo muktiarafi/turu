@@ -3,6 +3,7 @@
 use super::inventory::{self, Container};
 use super::{Args, NameOrId, map, ok, player, wait};
 use crate::Bot;
+use crate::control::ClockTime;
 use crate::error::{BotError, BotResult};
 use crate::events::BotEvent;
 use crate::models::Quest;
@@ -29,8 +30,10 @@ struct Registry {
     quests: Vec<i64>,
     /// The reward to pick per quest (-1: none).
     rewards: HashMap<i64, i64>,
-    complete_cooldowns: HashMap<i64, Instant>,
-    accept_cooldowns: HashMap<i64, Instant>,
+    /// When each quest was last turned in and accepted, on the bot's clock (a virtual clock in
+    /// tests: a real `Instant` would keep a quest "just accepted" through a whole draft).
+    complete_cooldowns: HashMap<i64, ClockTime>,
+    accept_cooldowns: HashMap<i64, ClockTime>,
 }
 
 #[derive(Default)]
@@ -43,7 +46,7 @@ struct QuestShared {
     /// The `Logout` subscription.
     subscribed: OnceLock<u64>,
     /// When [`load`] last asked for each quest (pruned after [`LOAD_REPEAT_GAP`]).
-    recent_loads: Mutex<HashMap<i64, Instant>>,
+    recent_loads: Mutex<HashMap<i64, ClockTime>>,
 }
 
 /// The registered-quest auto turn-in loop (VibeSkua `RegisterQuests`).
@@ -165,14 +168,15 @@ impl QuestRunner {
 }
 
 fn quest_loop(weak: &Weak<Bot>, shared: &QuestShared, cancel: &AtomicBool) {
-    let mut last_complete = Instant::now();
+    let mut last_complete = None;
     loop {
         let Some(bot) = weak.upgrade() else { return };
+        let last_complete = last_complete.get_or_insert_with(|| bot.control.now());
         let result = (|| -> BotResult<()> {
             if player::playing(&bot)? {
                 let registered = shared.registry.lock().quests.clone();
                 if !registered.is_empty() {
-                    complete_registered(&bot, shared, &registered, &mut last_complete, cancel)?;
+                    complete_registered(&bot, shared, &registered, last_complete, cancel)?;
                 }
             }
             Ok(())
@@ -270,10 +274,10 @@ fn complete_registered(
     bot: &Bot,
     shared: &QuestShared,
     registered: &[i64],
-    last_complete: &mut Instant,
+    last_complete: &mut ClockTime,
     cancel: &AtomicBool,
 ) -> BotResult<()> {
-    if last_complete.elapsed() > Duration::from_secs(60) {
+    if bot.control.now().since(*last_complete) > Duration::from_secs(60) {
         let mut registry = shared.registry.lock();
         let quests = registry.quests.clone();
         registry
@@ -289,7 +293,7 @@ fn complete_registered(
             .registry
             .lock()
             .accept_cooldowns
-            .insert(quest, Instant::now());
+            .insert(quest, bot.control.now());
         let in_progress = wait_cancellable(bot, 20, cancel, || is_in_progress(bot, quest))?;
         tracing::debug!(
             "Quest Thread: accepted quest {quest} (accept: {accepted}, in progress: {in_progress})"
@@ -309,7 +313,7 @@ fn complete_registered(
             .lock()
             .complete_cooldowns
             .get(&quest)
-            .is_some_and(|t| t.elapsed() < Duration::from_secs(3));
+            .is_some_and(|t| bot.control.now().since(*t) < Duration::from_secs(3));
         if recently_tried {
             continue;
         }
@@ -323,7 +327,7 @@ fn complete_registered(
                 .lock()
                 .accept_cooldowns
                 .get(&quest)
-                .is_some_and(|t| t.elapsed() < Duration::from_secs(2));
+                .is_some_and(|t| bot.control.now().since(*t) < Duration::from_secs(2));
             if recently_accepted {
                 continue;
             }
@@ -371,7 +375,7 @@ fn complete_registered(
             .registry
             .lock()
             .complete_cooldowns
-            .insert(quest, Instant::now());
+            .insert(quest, bot.control.now());
         tracing::debug!(
             "Quest Thread: turning in quest {quest} ({}) with reward {reward}, {turn_ins} turn-in(s)",
             data.name
@@ -388,7 +392,7 @@ fn complete_registered(
         if !bot.flash.get_or("litePreference.data.bReaccept", false)? {
             accept_again(quest)?;
         }
-        *last_complete = Instant::now();
+        *last_complete = bot.control.now();
         // One turn-in per pass: the game handles one at a time.
         break;
     }
@@ -423,8 +427,8 @@ pub fn get(bot: &Bot, id: i64) -> BotResult<Option<Quest>> {
 pub fn load(bot: &Bot, ids: &[i64]) -> BotResult<()> {
     let ids: Vec<i64> = {
         let mut recent = bot.quests.shared.recent_loads.lock();
-        let now = Instant::now();
-        recent.retain(|_, at| now.duration_since(*at) < LOAD_REPEAT_GAP);
+        let now = bot.control.now();
+        recent.retain(|_, at| now.since(*at) < LOAD_REPEAT_GAP);
         let mut fresh = Vec::with_capacity(ids.len());
         for &id in ids {
             if !recent.contains_key(&id) && !fresh.contains(&id) {
