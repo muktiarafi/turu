@@ -138,7 +138,19 @@ export default function main(): void {{
 
 fn new_bot() -> Arc<Bot> {
     crate::common::data_dir();
-    let bot = Bot::new();
+    setup(Bot::new())
+}
+
+/// A bot on a data folder of its own: a replay's files (its script's options, CoreBots' own, the
+/// logs) apart from those of the replays running beside it in the same process. `cargo test`
+/// (the release workflow's) runs them as threads of one process, which shares `TURU_DATA_DIR`,
+/// and every replay's script is `replayed.ts`: there the core_story replay went off its tape
+/// most runs (a read it never answered, as CoreBots put its options back), never alone.
+fn new_bot_in(root: PathBuf) -> Arc<Bot> {
+    setup(Bot::with_paths(turu_bot::paths::Paths { root }))
+}
+
+fn setup(bot: Arc<Bot>) -> Arc<Bot> {
     {
         let mut options = bot.options.write();
         options.action_delay = 100;
@@ -210,7 +222,7 @@ fn replay(
     source: &str,
     options: ReplayOptions,
 ) -> (Arc<Bot>, Arc<ReplayHost>) {
-    let bot = new_bot();
+    let bot = new_bot_in(dir.join("data"));
     // A recorded run logged in with `--user`/`--password`, which relogins use: a made-up one
     // stands in (the tape's login arguments are redacted and match anything).
     turu_bot::api::servers::set_login_info(&bot, "Questwalker", "not-a-password");
