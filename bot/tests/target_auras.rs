@@ -169,13 +169,15 @@ fn a_read_names_what_the_packets_dont() {
         ]
     );
     // The earlier auras: Decay with the 20 s it has left, Aria (no time stamp) without a
-    // countdown, and the one that ran out left out.
-    let earlier: Vec<(&str, Option<i64>)> = view.casters[1]
+    // countdown, and the one that ran out left out. Decay's time stamp is taken when the fake
+    // answers and its time left when the view is read: a slow runner can spend a second between
+    // them (CI read 19 once).
+    let earlier: Vec<(&str, Option<bool>)> = view.casters[1]
         .auras
         .iter()
-        .map(|a| (a.name.as_str(), a.left.map(|l| l.round() as i64)))
+        .map(|a| (a.name.as_str(), a.left.map(|l| (18.5..=20.5).contains(&l))))
         .collect();
-    assert_eq!(earlier, [("Decay", Some(20)), ("Aria", None)]);
+    assert_eq!(earlier, [("Decay", Some(true)), ("Aria", None)]);
 
     // A caster no read can name is asked for once, not every second.
     receive(
