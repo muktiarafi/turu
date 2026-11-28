@@ -94,9 +94,57 @@ const PARTNERS: [&str; 6] = [
 ///   to its protocol version, session and step. Names off the draft's roster are ignored by it.
 /// - A barrier (`bot.army.barrier`, CoreArmySync's `WaitForArmy`): the others are there.
 ///
-/// Not played: the signals one player sends another in a fight (`sendArmySignal`,
-/// `hasArmySignal`), which are each ultra's own choreography.
-struct Partners;
+/// - The draft's [`SHARED_SIGNALS`]: when it sends one (`SIGNAL`), each partner sends it too.
+///
+/// Not played: the other signals one player sends another in a fight (`sendArmySignal`,
+/// `hasArmySignal`), which are one player's own (player 4's Mystify, an owner's clear, a
+/// failure): a partner copying one would claim what no partner did.
+struct Partners {
+    /// The names of the draft's shared signals, as patterns.
+    shared: Vec<regex::Regex>,
+}
+
+impl Partners {
+    /// The partners of the draft `script` (its path under `scripts/`).
+    fn of(script: &str) -> Self {
+        let shared = SHARED_SIGNALS
+            .iter()
+            .filter(|(s, _, _)| *s == script)
+            .flat_map(|(_, signals, _)| signals.iter().map(|s| signal_pattern(s)))
+            .collect();
+        Self { shared }
+    }
+}
+
+/// A signal's name as a script writes it (``CYCLE_${farmCycle}_COMPLETE``), as a pattern for the
+/// names it sends (`CYCLE_1_COMPLETE`): each `${...}` any record name's characters.
+fn signal_pattern(template: &str) -> regex::Regex {
+    let mut pattern = String::from("^");
+    let mut rest = template;
+    while let Some(at) = rest.find("${") {
+        pattern.push_str(&regex::escape(&rest[..at]));
+        pattern.push_str("[A-Z0-9_]+");
+        rest = rest[at..].find('}').map_or("", |end| &rest[at + end + 1..]);
+    }
+    pattern.push_str(&regex::escape(rest));
+    pattern.push('$');
+    regex::Regex::new(&pattern).unwrap()
+}
+
+/// Signals every player of a draft's army sends for its own part, which the draft waits to have
+/// from all of them (`allPlayersSignaled`): the draft's path, the signals as its source writes
+/// them, and why. [`Partners`] send each when the draft does, as if they got there with it. A
+/// signal the source doesn't write any more fails the run, so the list can't go stale.
+const SHARED_SIGNALS: &[(&str, &[&str], &str)] = &[(
+    "ultraslw/extras/ArmyPrismatasGoldFarm_LW.ts",
+    &[
+        "CYCLE_${farmCycle}_BINDING_READY",
+        "CYCLE_${farmCycle}_CURRENCY_COMPLETE",
+        "CYCLE_${farmCycle}_COMPLETE",
+    ],
+    "each player sends them when its own Elemental Binding, gold voucher and goal are done, and \
+     the cycle goes on when all have",
+)];
 
 impl turu_bot::testing::ArmyStandIn for Partners {
     fn answer(&self, _name: &str, line: &str) -> Vec<String> {
@@ -104,6 +152,8 @@ impl turu_bot::testing::ArmyStandIn for Partners {
         let name_at = match (parts.first(), parts.len()) {
             (Some(&"READY"), 5) => 3,
             (Some(&"ARRIVED"), 5) => 4,
+            // `SIGNAL|<version>|<session>|<signal>|<sender>`.
+            (Some(&"SIGNAL"), 5) if self.shared.iter().any(|p| p.is_match(parts[3])) => 4,
             _ => return Vec::new(),
         };
         PARTNERS
@@ -549,7 +599,7 @@ fn run_one(
             .join("drafts")
             .join(DRAFTS.fetch_add(1, Ordering::Relaxed).to_string()),
     });
-    bot.army.set_stand_in(Some(Arc::new(Partners)));
+    bot.army.set_stand_in(Some(Arc::new(Partners::of(&script))));
     if let Ok(options) = serde_json::from_value(world.header.options.clone()) {
         *bot.options.write() = options;
     }
@@ -755,6 +805,17 @@ fn draft_smoke_sample() {
             source.contains(&format!("\"{potion}\"")) && source.contains(&format!("\"{aura}\"")),
             "POTION_AURAS' {potion} -> {aura} isn't in {POTION_AURAS_FROM} any more"
         );
+    }
+    for (script, signals, _) in SHARED_SIGNALS {
+        let source =
+            std::fs::read_to_string(repo().join("scripts").join(script)).unwrap_or_default();
+        for signal in *signals {
+            assert!(
+                source.contains(&format!("`{signal}`"))
+                    || source.contains(&format!("\"{signal}\"")),
+                "SHARED_SIGNALS' {signal} isn't in {script} any more"
+            );
+        }
     }
     let (monsters, monster_gaps) = monster_catalog();
     let catalog = Arc::new(Catalogs { monsters, shops });

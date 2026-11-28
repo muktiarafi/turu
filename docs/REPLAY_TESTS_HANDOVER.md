@@ -70,7 +70,8 @@ requests; no run of it has been looked at yet.
   has a data folder of its own (`Bot::with_paths`), and `Partners` plays the rest of its army
   through `bot.army.set_stand_in` (`testing::ArmyStandIn`): it answers the draft's own
   `CoreLoneWolf` READY and ARRIVED lines inside its `appendLog`, on the bot's clock, and lets
-  barriers through. Fight signals between players aren't played. The run takes part in each
+  barriers through, and sends the signals every player sends for its own part (`SHARED_SIGNALS`:
+  Prismatas' cycle gates); one player's own fight signals aren't played. The run takes part in each
   draft's clock and waits until exactly the budget, so a draft stops at 60.0 s on any machine; a
   throw counts even when the draft was still running then (proposal, "The budget, exactly").
   `tools/drafts/changed.sh` picks a pull request's drafts for CI.
@@ -146,8 +147,9 @@ A script that changes what it sends needs its tape recorded again: remove the ol
 4. ~~Monsters by map ID.~~ Done (proposal, "Monsters by map ID"): each map is as long as the
    highest map ID a script hunts or fights there by (`huntMonsterMapID`, the ultras' `...MapId`
    constants). ~~`TowerOfDoom`.~~ Done (proposal, "Monsters no script names"): `MONSTER_EXTRAS`
-   names floors 2, 3, 7 and 8's bosses from the wiki. Left: `ArmyPrismatasGoldFarm_LW`'s
-   "everyone ready" signal past 60 s. ~~The Void
+   names floors 2, 3, 7 and 8's bosses from the wiki. ~~`ArmyPrismatasGoldFarm_LW`'s "everyone
+   ready" signal.~~ Done (proposal, "Signals every player sends"): it gets through its cycle's
+   gate. Left: the fake sells nothing, so it stops on "Elemental Binding failed to sell" (151 s). ~~The Void
    bosses' bank move.~~ Done (proposal, "The bank"): the fake moves items to and from the bank,
    answers `loadBank` and `inventoryHasSpaceFor`; 37 more drafts end.
 5. **Correctness (decision 4).** The smoke run catches throws, not wrong behaviour. Comparing a

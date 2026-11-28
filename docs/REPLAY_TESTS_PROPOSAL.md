@@ -810,6 +810,7 @@ rest of its army is played by `Partners` in `draft_smoke.rs`, through a seam in 
 - `bot.army.barrier` (CoreArmySync's `WaitForArmy`, the Army dailies): the others are there.
 - Not played: the signals one player sends another in a fight (`sendArmySignal`, `hasArmySignal`,
   38 waits), each ultra's own choreography; a draft that waits for one waits until its budget.
+  (Since: the signals every player sends for its own part, "Signals every player sends", below.)
 
 Each draft also runs on a data folder of its own (`Bot::with_paths`), so drafts that run at once
 share no options file or army log: `0AllUltras_LW` syncs under its ultras' own log names, and a
@@ -870,6 +871,24 @@ Full run (2026-11-28), compared draft by draft, kills per draft included: the sa
 every draft but `TowerOfDoom` (known before, now running: floors 1 to 6 done, fighting Dread
 Warrior at its budget, 6 kills where it had 1), no error. (One earlier "before" run counted 1,258
 drafts with kills, one more than the runs after it: noise, gone in the per-draft count.)
+
+**Signals every player sends.** `ArmyPrismatasGoldFarm_LW` was the one draft still waiting on
+its partners: after 100 Elemental Binding it sends `CYCLE_<n>_BINDING_READY` and helps until every
+player has (`allPlayersSignaled`), and its cycle has two more gates like it,
+`CYCLE_<n>_CURRENCY_COMPLETE` and `CYCLE_<n>_COMPLETE`. Each player sends those for its own goal,
+so partners sending them when the draft does is what an army that got there with it would do.
+`SHARED_SIGNALS` in the run lists them by draft, written as the source writes them
+(``CYCLE_${farmCycle}_COMPLETE``, each `${...}` matching any name), and `Partners` (now one per
+draft) appends each partner's copy of the draft's own `SIGNAL` line under the same lock, as it does
+`READY` and `ARRIVED`. The other signals stay unplayed: one player's own (player 4's Mystify, an
+owner's clear) or a failure, where a copy would claim what no partner did. A listed signal the
+source doesn't write any more fails the run. Greatblade's `GREATBLADE_READY` / `RITE_READY` and
+Voidbuquerque's `<phase>_ESSENCE_READY` are gates of the same kind, left out until a draft is seen
+waiting on one.
+
+With 600 s of play it now gets through cycle 1's gate and ends by itself at 151 s, on "Elemental
+Binding failed to sell": the fake answers no sale. Full run at 60 s (2026-11-28), kills per draft
+included: no outcome or kill count changed (the gate comes after 60 s), no error.
 
 **Not done:** the first nightly run and the first "Changed drafts" run on GitHub; the fight
 signals between partners.
